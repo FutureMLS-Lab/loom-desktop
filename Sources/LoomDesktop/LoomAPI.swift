@@ -184,6 +184,25 @@ struct LoomAPI {
         try await request(scoped("/api/tasks/\(slugPath(slug))/diff", projectId))
     }
 
+    /// `git push -u origin <branch>` for one worktree.
+    func pushWorktree(projectId: String, slug: String, path: String) async throws -> OkResponse {
+        try await request(
+            scoped("/api/tasks/\(slugPath(slug))/worktree/push", projectId),
+            method: "POST",
+            body: ["path": path]
+        )
+    }
+
+    /// Merge the worktree's branch into its base. Server-side this refuses on
+    /// a dirty tree and aborts on conflicts, and never pushes.
+    func mergeWorktree(projectId: String, slug: String, path: String) async throws -> OkResponse {
+        try await request(
+            scoped("/api/tasks/\(slugPath(slug))/worktree/merge", projectId),
+            method: "POST",
+            body: ["path": path]
+        )
+    }
+
     /// Pane scrollback as plain text — what the terminal view renders.
     func capture(target: String, lines: Int = 400) async throws -> TerminalCapture {
         let encoded = target.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? target

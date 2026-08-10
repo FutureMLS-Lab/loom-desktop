@@ -44,8 +44,29 @@ struct TaskDetail: Decodable {
         var agent: String?
     }
 
+    struct WorktreeStatus: Decodable, Identifiable, Equatable {
+        var path: String
+        var branch: String?
+        var upstream: String?
+        var has_remote: Bool?
+        var ahead: Int?
+        var behind: Int?
+        var staged: Int?
+        var unstaged: Int?
+        var untracked: Int?
+        var clean: Bool?
+        var dirty_count: Int?
+
+        var id: String { path }
+
+        /// Last path component — the repo name, which is what identifies a
+        /// worktree in a task that has several.
+        var repoName: String { (path as NSString).lastPathComponent }
+    }
+
     var meta: LoomTaskMeta
     var claude: AgentStatus?
+    var worktree_statuses: [WorktreeStatus]?
     /// File name → contents. `PLAN.md` lives here.
     var templates: [String: String]?
     /// Names only, of the markdown the server scanned in the task directory.

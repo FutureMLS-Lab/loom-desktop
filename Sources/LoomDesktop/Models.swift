@@ -180,6 +180,28 @@ struct TaskDiff: Decodable {
     var worktrees: [WorktreeDiff]?
 }
 
+// MARK: - Agent sessions
+
+struct SessionInfo: Decodable, Identifiable, Equatable {
+    var id: String
+    var path: String?
+    var mtime: Double?
+    var size: Int?
+
+    var lastUsed: Date? { mtime.map { Date(timeIntervalSince1970: $0) } }
+}
+
+struct SessionList: Decodable {
+    var sessions: [SessionInfo]?
+    /// Sessions Loom itself started for this task, newest last.
+    var tracked: [String]?
+    var agent: String?
+    var agent_label: String?
+    var agent_running: Bool?
+    var tmux_alive: Bool?
+    var tmux_target: String?
+}
+
 struct TerminalCapture: Decodable {
     var ok: Bool?
     var text: String?

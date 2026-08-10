@@ -90,6 +90,7 @@ struct TaskPane: View {
                 }
                 Spacer(minLength: 8)
                 statusChip
+                agentMenu
             }
 
             HStack(spacing: 3) {
@@ -145,6 +146,45 @@ struct TaskPane: View {
         .padding(.top, 16)
         .padding(.bottom, 10)
         .background(LoomColors.bgBase)
+    }
+
+    /// Start/stop the pane, and reopen a past session. Resuming works even
+    /// when the original tmux was killed, which is the whole point of it on a
+    /// remote box.
+    private var agentMenu: some View {
+        Menu {
+            if session.online {
+                Button("Stop agent") { session.stopAgent() }
+            } else {
+                Button("Start agent") { session.startAgent() }
+            }
+            Divider()
+            if session.sessions.isEmpty {
+                Text("No past sessions")
+            } else {
+                Section("Resume session") {
+                    ForEach(session.sessions.prefix(10)) { past in
+                        Button(Self.sessionLabel(past)) { session.resume(past) }
+                    }
+                }
+            }
+        } label: {
+            Image(systemName: "ellipsis.circle")
+                .font(.system(size: 15))
+        }
+        .menuStyle(.borderlessButton)
+        .menuIndicator(.hidden)
+        .fixedSize()
+        .disabled(session.starting)
+        .onAppear { session.loadSessions() }
+    }
+
+    private static func sessionLabel(_ session: SessionInfo) -> String {
+        let shortID = String(session.id.prefix(8))
+        guard let date = session.lastUsed else { return shortID }
+        let formatter = DateFormatter()
+        formatter.dateFormat = "MMM d, HH:mm"
+        return "\(formatter.string(from: date))  ·  \(shortID)"
     }
 
     @ViewBuilder

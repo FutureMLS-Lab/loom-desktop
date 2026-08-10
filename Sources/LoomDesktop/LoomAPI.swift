@@ -165,6 +165,34 @@ struct LoomAPI {
         )
     }
 
+    /// Past agent sessions for this task, plus the live pane's status.
+    func sessions(projectId: String, slug: String) async throws -> SessionList {
+        try await request(
+            scoped("/api/tasks/\(slugPath(slug))/claude-sessions", projectId)
+        )
+    }
+
+    /// Reopens a past session in a fresh pane (`--resume <id>`), which works
+    /// even when the original tmux was killed.
+    func resumeSession(
+        projectId: String,
+        slug: String,
+        sessionId: String
+    ) async throws -> AgentStartResult {
+        try await request(
+            scoped("/api/tasks/\(slugPath(slug))/claude/resume", projectId),
+            method: "POST",
+            body: ["session_id": sessionId]
+        )
+    }
+
+    func stopAgent(projectId: String, slug: String) async throws {
+        let _: OkResponse = try await request(
+            scoped("/api/tasks/\(slugPath(slug))/interview/stop", projectId),
+            method: "POST"
+        )
+    }
+
     func startAgent(projectId: String, slug: String) async throws -> AgentStartResult {
         try await request(
             scoped("/api/tasks/\(slugPath(slug))/interview/start", projectId),

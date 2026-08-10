@@ -309,4 +309,49 @@ final class ChatSession: ObservableObject, Identifiable {
             starting = false
         }
     }
+
+    func stopAgent() {
+        guard !starting else { return }
+        starting = true
+        Task {
+            do {
+                try await api.stopAgent(projectId: projectId, slug: slug)
+                await loadDetail()
+            } catch {
+                self.error = error.localizedDescription
+            }
+            starting = false
+        }
+    }
+
+    // MARK: Sessions
+
+    @Published private(set) var sessions: [SessionInfo] = []
+
+    func loadSessions() {
+        Task {
+            guard let list = try? await api.sessions(projectId: projectId, slug: slug) else { return }
+            // Newest first: resuming almost always means "the one I was just
+            // in", and on-disk transcripts arrive in no useful order.
+            sessions = (list.sessions ?? []).sorted { ($0.mtime ?? 0) > ($1.mtime ?? 0) }
+        }
+    }
+
+    /// Reopens a past session in a fresh pane, even if its tmux was killed.
+    func resume(_ session: SessionInfo) {
+        guard !starting else { return }
+        starting = true
+        Task {
+            do {
+                _ = try await api.resumeSession(
+                    projectId: projectId, slug: slug, sessionId: session.id
+                )
+                await loadDetail()
+                refreshBurst()
+            } catch {
+                self.error = error.localizedDescription
+            }
+            starting = false
+        }
+    }
 }

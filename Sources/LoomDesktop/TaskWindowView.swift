@@ -35,6 +35,14 @@ struct TaskPane: View {
             case .changes: return "arrow.triangle.branch"
             }
         }
+
+        var shortcut: KeyEquivalent {
+            switch self {
+            case .conversation: return "1"
+            case .terminal: return "2"
+            case .changes: return "3"
+            }
+        }
     }
 
     var body: some View {
@@ -102,8 +110,30 @@ struct TaskPane: View {
                             .contentShape(Rectangle())
                     }
                     .buttonStyle(.plain)
+                    .keyboardShortcut(item.shortcut, modifiers: .command)
                 }
+
                 Spacer()
+
+                // The web console's flow toolbar: interview → /goal → write
+                // result. Disabled until there is a pane to paste into.
+                ForEach(ChatSession.FlowStep.allCases) { step in
+                    Button {
+                        session.run(step)
+                    } label: {
+                        Label(step.label, systemImage: step.symbol)
+                            .font(.system(size: 12, weight: .medium))
+                            .padding(.horizontal, 10)
+                            .padding(.vertical, 5)
+                            .background(Color.primary.opacity(0.05), in: Rectangle())
+                            .overlay(Rectangle().strokeBorder(LoomColors.border, lineWidth: 1))
+                            .foregroundColor(.secondary)
+                            .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                    .help(step.help)
+                    .disabled(session.paneTarget.isEmpty || session.sending)
+                }
             }
         }
         .padding(.horizontal, 20)

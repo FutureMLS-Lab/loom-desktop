@@ -141,6 +141,7 @@ final class TaskStore: ObservableObject {
             }
             pills = next
             connection = .online
+            Notifier.shared.reconcile(pills: next)
         } catch {
             connection = .offline(error.localizedDescription)
         }

@@ -157,6 +157,14 @@ struct LoomAPI {
         )
     }
 
+    /// Re-pastes the task's deep-interview prompt (goal + skills) into the pane.
+    func pasteInterviewPrompt(projectId: String, slug: String) async throws {
+        let _: OkResponse = try await request(
+            scoped("/api/tasks/\(slugPath(slug))/interview/paste-prompt", projectId),
+            method: "POST"
+        )
+    }
+
     func startAgent(projectId: String, slug: String) async throws -> AgentStartResult {
         try await request(
             scoped("/api/tasks/\(slugPath(slug))/interview/start", projectId),

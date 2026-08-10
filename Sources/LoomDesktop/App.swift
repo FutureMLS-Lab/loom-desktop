@@ -28,12 +28,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         DistributedNotificationCenter.default().addObserver(
             forName: .init(Self.summonNotification), object: nil, queue: .main
         ) { [weak self] _ in
-            self?.summon()
+            Task { @MainActor in self?.summon() }
         }
         DistributedNotificationCenter.default().addObserver(
             forName: .init(Self.showPanelNotification), object: nil, queue: .main
         ) { [weak self] _ in
-            self?.panel.setPanelHidden(false)
+            Task { @MainActor in self?.panel.setPanelHidden(false) }
         }
 
         // A regular app: Dock icon, ⌘Tab, ordinary activation. `.accessory`
@@ -56,6 +56,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             panel.orderFrontRegardless()
         }
 
+        Notifier.shared.start(store: store)
         store.start()
 
         // First run: the main window opens so there is something to land on.

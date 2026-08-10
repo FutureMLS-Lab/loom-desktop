@@ -192,6 +192,93 @@ final class ChatSession: ObservableObject, Identifiable {
         }
     }
 
+    // MARK: The Loom flow
+
+    /// The three prompts the web console's toolbar pastes. Same wording, so a
+    /// task driven from the desktop and one driven from the browser leave the
+    /// same trail in `PLAN.md`.
+    enum FlowStep: String, CaseIterable, Identifiable {
+        case interview, goal, result
+
+        var id: String { rawValue }
+
+        var label: String {
+            switch self {
+            case .interview: return "Deep Interview"
+            case .goal: return "Run /goal"
+            case .result: return "Write result"
+            }
+        }
+
+        var symbol: String {
+            switch self {
+            case .interview: return "text.bubble"
+            case .goal: return "play"
+            case .result: return "square.and.pencil"
+            }
+        }
+
+        var help: String {
+            switch self {
+            case .interview:
+                return "Paste the deep-interview prompt (goal + skills) into the pane"
+            case .goal:
+                return "Paste /goal, which runs the agent against PLAN.md"
+            case .result:
+                return "Ask the agent to write progress and results back into PLAN.md"
+            }
+        }
+    }
+
+    /// Where the agent should keep the plan. The web console uses the opened
+    /// markdown file and falls back to this same path.
+    private var planPath: String { ".RUD/\(slug)/PLAN.md" }
+
+    func run(_ step: FlowStep) {
+        guard !sending else { return }
+        sending = true
+        Task {
+            do {
+                switch step {
+                case .interview:
+                    try await api.pasteInterviewPrompt(projectId: projectId, slug: slug)
+                case .goal:
+                    try await api.send(
+                        projectId: projectId,
+                        slug: slug,
+                        text: """
+                        /goal Execute the task plan in \(planPath). Keep \(planPath) \
+                        updated with useful progress, blockers, decisions, and final \
+                        results. Do not create separate status files.
+                        """
+                    )
+                case .result:
+                    try await api.send(
+                        projectId: projectId,
+                        slug: slug,
+                        text: """
+                        Please summarize the current execution result back into \(planPath).
+
+                        Update only useful information:
+                        - what was done
+                        - important decisions
+                        - test/eval results
+                        - blockers or follow-up work
+                        - final status
+
+                        Remove obsolete noisy details, but preserve unrelated prior \
+                        sections. Do not create separate status files.
+                        """
+                    )
+                }
+                refreshBurst()
+            } catch {
+                self.error = error.localizedDescription
+            }
+            sending = false
+        }
+    }
+
     /// Sends Escape into the agent's pane — the "stop what you're doing" nudge.
     func interrupt() {
         guard !paneTarget.isEmpty else { return }

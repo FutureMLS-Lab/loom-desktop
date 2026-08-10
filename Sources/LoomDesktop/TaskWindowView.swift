@@ -16,7 +16,7 @@ struct TaskPane: View {
     }
 
     enum Tab: String, CaseIterable, Identifiable {
-        case conversation, terminal, changes
+        case conversation, terminal, plan, changes
 
         var id: String { rawValue }
 
@@ -24,6 +24,7 @@ struct TaskPane: View {
             switch self {
             case .conversation: return "Chat"
             case .terminal: return "Terminal"
+            case .plan: return "Plan"
             case .changes: return "Changes"
             }
         }
@@ -32,6 +33,7 @@ struct TaskPane: View {
             switch self {
             case .conversation: return "bubble.left.and.bubble.right"
             case .terminal: return "apple.terminal"
+            case .plan: return "doc.text"
             case .changes: return "arrow.triangle.branch"
             }
         }
@@ -40,7 +42,8 @@ struct TaskPane: View {
             switch self {
             case .conversation: return "1"
             case .terminal: return "2"
-            case .changes: return "3"
+            case .plan: return "3"
+            case .changes: return "4"
             }
         }
     }
@@ -55,6 +58,8 @@ struct TaskPane: View {
                     ChatView(session: session)
                 case .terminal:
                     terminalContent
+                case .plan:
+                    PlanView(session: session)
                 case .changes:
                     ChangesView(session: session)
                 }

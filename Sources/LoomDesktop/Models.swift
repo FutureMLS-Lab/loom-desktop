@@ -46,6 +46,13 @@ struct TaskDetail: Decodable {
 
     var meta: LoomTaskMeta
     var claude: AgentStatus?
+    /// File name → contents. `PLAN.md` lives here.
+    var templates: [String: String]?
+    /// Names only, of the markdown the server scanned in the task directory.
+    var task_markdown_files: [String]?
+    /// Where the server says the plan lives, which is what the flow prompts
+    /// should name so the agent writes to the same file the viewer reads.
+    var plan_path: String?
 
     /// Best-known tmux target for the agent pane, mirroring the app's
     /// `agentTarget()` helper.

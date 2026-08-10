@@ -16,6 +16,8 @@ struct ProjectPickerView: View {
     private var selection: String? { store.selection }
     private var projects: [LoomProject] { store.projects }
 
+    @State private var quickOpen = false
+
     var body: some View {
         HStack(spacing: 0) {
             sidebar
@@ -26,6 +28,22 @@ struct ProjectPickerView: View {
         .background(LoomColors.bgBase)
         .frame(minWidth: 940, minHeight: 640)
         .onAppear { store.refreshNow() }
+        .background(
+            // Invisible ⌘P host: a button is the simplest way to register a
+            // shortcut that works wherever focus happens to be.
+            Button("Open Task…") { quickOpen = true }
+                .keyboardShortcut("p", modifiers: .command)
+                .opacity(0)
+        )
+        .sheet(isPresented: $quickOpen) {
+            QuickOpenView(
+                store: store,
+                onOpen: { projectId, slug in
+                    store.select(projectId: projectId, slug: slug)
+                },
+                onDismiss: { quickOpen = false }
+            )
+        }
     }
 
     // MARK: Sidebar

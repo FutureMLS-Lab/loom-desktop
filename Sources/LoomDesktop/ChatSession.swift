@@ -31,6 +31,9 @@ final class ChatSession: ObservableObject, Identifiable {
     @Published private(set) var starting = false
 
     private(set) var paneTarget = ""
+    /// Bumped whenever a flow step that rewrites PLAN.md completes, so an open
+    /// plan view knows to re-read it.
+    @Published private(set) var planRevision = 0
 
     nonisolated var id: String { "\(projectId)/\(slug)" }
 
@@ -79,8 +82,11 @@ final class ChatSession: ObservableObject, Identifiable {
     private func loadDetail() async {
         guard let detail = try? await api.taskDetail(projectId: projectId, slug: slug) else { return }
         paneTarget = detail.paneTarget
+        serverPlanPath = detail.plan_path
         if let t = detail.meta.title, !t.isEmpty { title = t }
     }
+
+    private var serverPlanPath: String?
 
     private func load(full: Bool) async {
         do {
@@ -230,9 +236,9 @@ final class ChatSession: ObservableObject, Identifiable {
         }
     }
 
-    /// Where the agent should keep the plan. The web console uses the opened
-    /// markdown file and falls back to this same path.
-    private var planPath: String { ".RUD/\(slug)/PLAN.md" }
+    /// Where the agent should keep the plan: the server's own answer when it
+    /// has one, so the flow writes to the file the Plan tab reads.
+    private var planPath: String { serverPlanPath ?? ".RUD/\(slug)/PLAN.md" }
 
     func run(_ step: FlowStep) {
         guard !sending else { return }
@@ -272,6 +278,7 @@ final class ChatSession: ObservableObject, Identifiable {
                     )
                 }
                 refreshBurst()
+                planRevision += 1
             } catch {
                 self.error = error.localizedDescription
             }

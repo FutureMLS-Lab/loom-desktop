@@ -26,9 +26,9 @@ struct ChangesView: View {
                         .font(.system(size: 22))
                         .foregroundColor(.orange)
                     Text("Changes unavailable")
-                        .font(.system(size: 13, weight: .semibold))
+                        .font(.system(size: 14, weight: .semibold))
                     Text(error)
-                        .font(.system(size: 11))
+                        .font(.system(size: 12))
                         .foregroundColor(.secondary)
                     Button("Retry") { Task { await load() } }
                         .buttonStyle(.borderedProminent)
@@ -41,9 +41,9 @@ struct ChangesView: View {
                         .font(.system(size: 22))
                         .foregroundColor(LoomColors.green)
                     Text("No changes")
-                        .font(.system(size: 13, weight: .semibold))
+                        .font(.system(size: 14, weight: .semibold))
                     Text("Every worktree matches its base branch.")
-                        .font(.system(size: 11))
+                        .font(.system(size: 12))
                         .foregroundColor(.secondary)
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -54,7 +54,7 @@ struct ChangesView: View {
                             Section("Worktree errors") {
                                 ForEach(errors, id: \.self) { message in
                                     Text(message)
-                                        .font(.system(size: 11))
+                                        .font(.system(size: 12))
                                         .foregroundColor(.orange)
                                 }
                             }
@@ -123,23 +123,23 @@ private struct FileRow: View {
     var body: some View {
         HStack(spacing: 6) {
             Text(file.path)
-                .font(.system(size: 12, design: .monospaced))
+                .font(.system(size: 13, design: .monospaced))
                 .lineLimit(1)
                 .truncationMode(.middle)
             Spacer()
             if let worktree = file.worktree {
                 Text(worktree)
-                    .font(.system(size: 9, weight: .medium))
+                    .font(.system(size: 10, weight: .medium))
                     .foregroundColor(.secondary)
                     .padding(.horizontal, 5)
                     .padding(.vertical, 2)
                     .background(Color.secondary.opacity(0.10), in: Rectangle())
             }
             Text("+\(file.additions ?? 0)")
-                .font(.system(size: 10, weight: .medium, design: .monospaced))
+                .font(.system(size: 11, weight: .medium, design: .monospaced))
                 .foregroundColor(LoomColors.green)
             Text("-\(file.deletions ?? 0)")
-                .font(.system(size: 10, weight: .medium, design: .monospaced))
+                .font(.system(size: 11, weight: .medium, design: .monospaced))
                 .foregroundColor(.red)
         }
     }
@@ -159,7 +159,7 @@ private struct DiffDetailView: View {
                     }
                 } else {
                     Text("Binary or empty diff")
-                        .font(.system(size: 11))
+                        .font(.system(size: 12))
                         .foregroundColor(.secondary)
                         .padding()
                 }
@@ -178,7 +178,7 @@ private struct DiffLine: View {
 
     var body: some View {
         Text(text.isEmpty ? " " : text)
-            .font(.system(size: 11, design: .monospaced))
+            .font(.system(size: 12, design: .monospaced))
             .textSelection(.enabled)
             .frame(maxWidth: .infinity, alignment: .leading)
             .padding(.horizontal, 8)

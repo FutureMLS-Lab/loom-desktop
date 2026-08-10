@@ -34,17 +34,17 @@ struct ProjectPickerView: View {
         VStack(spacing: 0) {
             HStack(spacing: 8) {
                 Image(systemName: "magnifyingglass")
-                    .font(.system(size: 12))
+                    .font(.system(size: 13))
                     .foregroundColor(.secondary)
                 TextField("Filter tasks", text: $search)
                     .textFieldStyle(.plain)
-                    .font(.system(size: 13))
+                    .font(.system(size: 14))
                 if !search.isEmpty {
                     Button {
                         search = ""
                     } label: {
                         Image(systemName: "xmark.circle.fill")
-                            .font(.system(size: 12))
+                            .font(.system(size: 13))
                             .foregroundColor(.secondary)
                     }
                     .buttonStyle(.plain)
@@ -88,7 +88,7 @@ struct ProjectPickerView: View {
                     }
                     if filteredProjects.isEmpty {
                         Text(store.projects.isEmpty ? "No projects yet" : "No matches")
-                            .font(.system(size: 12))
+                            .font(.system(size: 13))
                             .foregroundColor(.secondary)
                             .frame(maxWidth: .infinity)
                             .padding(.top, 24)
@@ -104,13 +104,13 @@ struct ProjectPickerView: View {
                 Spacer()
                 Button { store.refreshNow() } label: {
                     Image(systemName: "arrow.clockwise")
-                        .font(.system(size: 12, weight: .medium))
+                        .font(.system(size: 13, weight: .medium))
                 }
                 .buttonStyle(.plain)
                 .help("Refresh")
                 Button { SettingsWindowController.shared.show() } label: {
                     Image(systemName: "gearshape")
-                        .font(.system(size: 12, weight: .medium))
+                        .font(.system(size: 13, weight: .medium))
                 }
                 .buttonStyle(.plain)
                 .help("Settings")
@@ -155,7 +155,7 @@ struct ProjectPickerView: View {
             VStack(spacing: 10) {
                 ProgressView()
                 Text("Connecting to Loom…")
-                    .font(.system(size: 13))
+                    .font(.system(size: 14))
                     .foregroundColor(.secondary)
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -216,7 +216,7 @@ private struct ProjectCard: View {
                         .foregroundColor(.secondary)
                         .rotationEffect(.degrees(collapsed ? 0 : 90))
                     Text(project.label.uppercased())
-                        .font(.system(size: 11, weight: .semibold))
+                        .font(.system(size: 12, weight: .semibold))
                         .tracking(0.7)
                         .foregroundColor(.secondary)
                         .lineLimit(1)
@@ -254,7 +254,7 @@ private struct ProjectCard: View {
                     }
                     if tasks.isEmpty {
                         Text("No tasks")
-                            .font(.system(size: 11.5))
+                            .font(.system(size: 12.5))
                             .foregroundColor(.secondary)
                             .frame(maxWidth: .infinity, alignment: .leading)
                             .padding(.vertical, 4)
@@ -288,18 +288,24 @@ private struct SidebarTaskRow: View {
                 // Wrapping, not truncating: long research-paper titles are
                 // the ones you most need to read in full.
                 Text(meta.title ?? meta.slug)
-                    .font(.system(size: 13))
+                    .font(.system(size: 15))
                     .foregroundColor(.primary)
                     .multilineTextAlignment(.leading)
                     .fixedSize(horizontal: false, vertical: true)
                     .frame(maxWidth: .infinity, alignment: .leading)
             }
-            .padding(.horizontal, 10)
-            .padding(.vertical, 9)
-            .background(
-                selected ? LoomColors.accentSoft : (hovering ? Color.white : Color.white.opacity(0.72)),
-                in: Rectangle()
-            )
+            .padding(.horizontal, 11)
+            .padding(.vertical, 10)
+            .background(rowBackground, in: Rectangle())
+            .overlay(alignment: .leading) {
+                // A standing amber edge on a task that finished unseen, so it
+                // is findable in a long list even between blinks.
+                if state == .finished {
+                    Rectangle()
+                        .fill(LoomColors.amber)
+                        .frame(width: 3)
+                }
+            }
             .overlay(
                 Rectangle()
                     .strokeBorder(
@@ -321,15 +327,19 @@ private struct SidebarTaskRow: View {
         }
     }
 
+    private var rowBackground: Color {
+        if selected { return LoomColors.accentSoft }
+        if state == .finished { return LoomColors.amber.opacity(0.10) }
+        return hovering ? Color.white : Color.white.opacity(0.72)
+    }
+
     @ViewBuilder
     private var statusDot: some View {
         switch state {
         case .working:
-            LoomActivityDot(size: 11)
+            LoomActivityDot(size: 12)
         case .finished:
-            Image(systemName: "exclamationmark.circle.fill")
-                .font(.system(size: 11))
-                .foregroundColor(LoomColors.amber)
+            LoomBlinkDot(size: 12)
         case .idle:
             Circle()
                 .strokeBorder(Color.secondary.opacity(0.45), lineWidth: 1.2)
@@ -349,7 +359,7 @@ private struct ConnectionPill: View {
         HStack(spacing: 5) {
             Circle().fill(color).frame(width: 7, height: 7)
             Text(label)
-                .font(.system(size: 11))
+                .font(.system(size: 12))
                 .foregroundColor(.secondary)
                 .lineLimit(1)
         }
@@ -383,9 +393,9 @@ private struct OfflineDetail: View {
                 .font(.system(size: 30))
                 .foregroundColor(LoomColors.amber)
             Text("Cannot reach the Loom backend")
-                .font(.system(size: 16, weight: .semibold))
+                .font(.system(size: 17, weight: .semibold))
             Text(message)
-                .font(.system(size: 12))
+                .font(.system(size: 13))
                 .foregroundColor(.secondary)
                 .multilineTextAlignment(.center)
                 .padding(.horizontal, 40)
@@ -414,9 +424,9 @@ private struct EmptyDetail: View {
                     .font(.system(size: 30))
                     .foregroundColor(.secondary.opacity(0.7))
                 Text(title)
-                    .font(.system(size: 16, weight: .semibold))
+                    .font(.system(size: 17, weight: .semibold))
                 Text(detail)
-                    .font(.system(size: 12.5))
+                    .font(.system(size: 13.5))
                     .foregroundColor(.secondary)
                     .multilineTextAlignment(.center)
                     .padding(.horizontal, 40)

@@ -64,15 +64,15 @@ struct TaskPane: View {
             HStack(alignment: .top, spacing: 12) {
                 VStack(alignment: .leading, spacing: 3) {
                     Text(session.title)
-                        .font(.system(size: 19, weight: .semibold))
+                        .font(.system(size: 21, weight: .semibold))
                         .fixedSize(horizontal: false, vertical: true)
                     HStack(spacing: 6) {
                         Text(session.projectLabel)
                         Text("·")
                         Text(session.slug)
-                            .font(.system(size: 12, design: .monospaced))
+                            .font(.system(size: 13, design: .monospaced))
                     }
-                    .font(.system(size: 12))
+                    .font(.system(size: 13))
                     .foregroundColor(.secondary)
                 }
                 Spacer(minLength: 8)
@@ -85,7 +85,7 @@ struct TaskPane: View {
                         tab = item
                     } label: {
                         Label(item.label, systemImage: item.symbol)
-                            .font(.system(size: 12, weight: .medium))
+                            .font(.system(size: 13, weight: .medium))
                             .padding(.horizontal, 12)
                             .padding(.vertical, 6)
                             .background(
@@ -144,7 +144,7 @@ struct TaskPane: View {
         @ViewBuilder content: () -> Content
     ) -> some View {
         HStack(spacing: 6) { content() }
-            .font(.system(size: 12, weight: .medium))
+            .font(.system(size: 13, weight: .medium))
             .foregroundColor(color)
             .padding(.horizontal, 10)
             .padding(.vertical, 5)
@@ -161,11 +161,11 @@ struct TaskPane: View {
                     .font(.system(size: 26))
                     .foregroundColor(.secondary.opacity(0.7))
                 Text("No terminal yet")
-                    .font(.system(size: 15, weight: .semibold))
+                    .font(.system(size: 16, weight: .semibold))
                 Text(session.online
                      ? "Waiting for the pane target…"
                      : "Start the agent to open its terminal.")
-                    .font(.system(size: 12.5))
+                    .font(.system(size: 13.5))
                     .foregroundColor(.secondary)
                 if !session.online {
                     Button("Start agent") { session.startAgent() }

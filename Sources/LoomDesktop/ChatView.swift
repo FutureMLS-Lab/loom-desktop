@@ -29,7 +29,7 @@ struct ChatView: View {
                     .font(.system(size: 14, weight: .semibold))
                     .lineLimit(1)
                 Text("\(session.projectLabel) · \(session.slug)")
-                    .font(.system(size: 11))
+                    .font(.system(size: 12))
                     .foregroundColor(.secondary)
                     .lineLimit(1)
             }
@@ -46,7 +46,7 @@ struct ChatView: View {
             HStack(spacing: 6) {
                 LoomSpinnerDot(size: 13)
                 Text("Working")
-                    .font(.system(size: 11, weight: .medium))
+                    .font(.system(size: 12, weight: .medium))
                     .foregroundColor(LoomColors.accent)
             }
             .padding(.horizontal, 9)
@@ -56,7 +56,7 @@ struct ChatView: View {
             HStack(spacing: 6) {
                 Circle().fill(LoomColors.green).frame(width: 7, height: 7)
                 Text("Ready")
-                    .font(.system(size: 11, weight: .medium))
+                    .font(.system(size: 12, weight: .medium))
                     .foregroundColor(LoomColors.green)
             }
             .padding(.horizontal, 9)
@@ -66,13 +66,13 @@ struct ChatView: View {
             HStack(spacing: 6) {
                 Circle().fill(Color.secondary).frame(width: 7, height: 7)
                 Text("Offline")
-                    .font(.system(size: 11, weight: .medium))
+                    .font(.system(size: 12, weight: .medium))
                     .foregroundColor(.secondary)
                 Button(session.starting ? "Starting…" : "Start agent") {
                     session.startAgent()
                 }
                 .buttonStyle(.link)
-                .font(.system(size: 11, weight: .medium))
+                .font(.system(size: 12, weight: .medium))
                 .disabled(session.starting)
             }
             .padding(.horizontal, 9)
@@ -96,7 +96,7 @@ struct ChatView: View {
                                     "Load earlier · \(max(0, session.total - session.messages.count)) remaining",
                                     systemImage: "clock.arrow.circlepath"
                                 )
-                                .font(.system(size: 11, weight: .medium))
+                                .font(.system(size: 12, weight: .medium))
                             }
                             .buttonStyle(.plain)
                             .foregroundColor(LoomColors.accent)
@@ -168,7 +168,7 @@ struct ChatView: View {
                         withAnimation { proxy.scrollTo(Self.bottomAnchor, anchor: .bottom) }
                     } label: {
                         Label("Latest", systemImage: "arrow.down")
-                            .font(.system(size: 11, weight: .semibold))
+                            .font(.system(size: 12, weight: .semibold))
                             .padding(.horizontal, 10)
                             .padding(.vertical, 6)
                             .background(LoomColors.accent, in: Rectangle())
@@ -190,16 +190,16 @@ struct ChatView: View {
             if session.loading {
                 ProgressView()
                 Text("Loading conversation…")
-                    .font(.system(size: 12))
+                    .font(.system(size: 13))
                     .foregroundColor(.secondary)
             } else if !session.error.isEmpty {
                 Image(systemName: "exclamationmark.triangle")
                     .font(.system(size: 22))
                     .foregroundColor(.orange)
                 Text("Conversation unavailable")
-                    .font(.system(size: 13, weight: .semibold))
+                    .font(.system(size: 14, weight: .semibold))
                 Text(session.error)
-                    .font(.system(size: 11))
+                    .font(.system(size: 12))
                     .foregroundColor(.secondary)
                     .multilineTextAlignment(.center)
             } else if !session.available {
@@ -207,20 +207,20 @@ struct ChatView: View {
                     .font(.system(size: 22))
                     .foregroundColor(.secondary)
                 Text("No structured transcript")
-                    .font(.system(size: 13, weight: .semibold))
+                    .font(.system(size: 14, weight: .semibold))
                 Text("This session has terminal output only.")
-                    .font(.system(size: 11))
+                    .font(.system(size: 12))
                     .foregroundColor(.secondary)
             } else {
                 Image(systemName: "bubble.left.and.bubble.right")
                     .font(.system(size: 22))
                     .foregroundColor(.secondary)
                 Text("No messages yet")
-                    .font(.system(size: 13, weight: .semibold))
+                    .font(.system(size: 14, weight: .semibold))
                 Text(session.online
                      ? "The agent is ready for a follow-up."
                      : "Start the agent to begin.")
-                    .font(.system(size: 11))
+                    .font(.system(size: 12))
                     .foregroundColor(.secondary)
             }
         }
@@ -234,7 +234,7 @@ struct ChatView: View {
             HStack(spacing: 7) {
                 LoomSpinnerDot(size: 13)
                 Text("Agent is working…")
-                    .font(.system(size: 11, weight: .medium))
+                    .font(.system(size: 12, weight: .medium))
                     .foregroundColor(.secondary)
             }
             .frame(maxWidth: .infinity)
@@ -242,10 +242,10 @@ struct ChatView: View {
         } else if session.online && !session.messages.isEmpty {
             HStack(spacing: 6) {
                 Image(systemName: "checkmark.circle")
-                    .font(.system(size: 11))
+                    .font(.system(size: 12))
                     .foregroundColor(LoomColors.green)
                 Text("Agent ready")
-                    .font(.system(size: 11))
+                    .font(.system(size: 12))
                     .foregroundColor(.secondary)
             }
             .frame(maxWidth: .infinity)
@@ -259,7 +259,7 @@ struct ChatView: View {
         HStack(alignment: .bottom, spacing: 8) {
             TextField("Message the agent… (⏎ to send, ⌥⏎ for newline)", text: $draft, axis: .vertical)
                 .textFieldStyle(.plain)
-                .font(.system(size: 13))
+                .font(.system(size: 14))
                 .lineLimit(1...6)
                 .padding(.horizontal, 10)
                 .padding(.vertical, 7)
@@ -333,7 +333,7 @@ private struct MessageRow: View {
             }
         case "event":
             Text(message.text ?? "")
-                .font(.system(size: 10.5, weight: .medium))
+                .font(.system(size: 11.5, weight: .medium))
                 .foregroundColor(.secondary)
                 .frame(maxWidth: .infinity)
                 .padding(.vertical, 2)
@@ -352,7 +352,7 @@ struct UserBubble: View {
             Spacer(minLength: 80)
             VStack(alignment: .trailing, spacing: 3) {
                 Text(text)
-                    .font(.system(size: 13))
+                    .font(.system(size: 14))
                     .lineSpacing(2)
                     .foregroundColor(.white)
                     .textSelection(.enabled)
@@ -363,7 +363,7 @@ struct UserBubble: View {
                     .fixedSize(horizontal: false, vertical: true)
                 if let delivery {
                     Text(delivery)
-                        .font(.system(size: 10))
+                        .font(.system(size: 11))
                         .foregroundColor(.secondary)
                 }
             }
@@ -383,7 +383,7 @@ private struct AssistantRow: View {
             LoomSpinningRingStatic()
                 .frame(width: 4)
             Text(MarkdownCache.attributed(text))
-                .font(.system(size: 13))
+                .font(.system(size: 14))
                 .lineSpacing(2)
                 .textSelection(.enabled)
                 .frame(maxWidth: .infinity, alignment: .leading)
@@ -462,31 +462,31 @@ private struct ToolCard: View {
             } label: {
                 HStack(spacing: 8) {
                     Image(systemName: "terminal")
-                        .font(.system(size: 12))
+                        .font(.system(size: 13))
                         .foregroundColor(LoomColors.accent)
                     VStack(alignment: .leading, spacing: 1) {
                         HStack(spacing: 6) {
                             Text(tool.name)
-                                .font(.system(size: 11.5, weight: .semibold))
+                                .font(.system(size: 12.5, weight: .semibold))
                                 .lineLimit(1)
                             Spacer()
                             Image(systemName: status.symbol)
-                                .font(.system(size: 10))
+                                .font(.system(size: 11))
                                 .foregroundColor(status.color)
                             Text(status.label)
-                                .font(.system(size: 10, weight: .medium))
+                                .font(.system(size: 11, weight: .medium))
                                 .foregroundColor(status.color)
                         }
                         if let summary = tool.summary, !summary.isEmpty, summary != tool.name {
                             Text(summary)
-                                .font(.system(size: 10.5))
+                                .font(.system(size: 11.5))
                                 .foregroundColor(.secondary)
                                 .lineLimit(2)
                         }
                     }
                     if hasDetails {
                         Image(systemName: expanded ? "chevron.up" : "chevron.down")
-                            .font(.system(size: 10))
+                            .font(.system(size: 11))
                             .foregroundColor(.secondary)
                     }
                 }
@@ -528,7 +528,7 @@ private struct ToolDetail: View {
                 .foregroundColor(.secondary)
             ScrollView(.horizontal) {
                 Text(content)
-                    .font(.system(size: 11, design: .monospaced))
+                    .font(.system(size: 12, design: .monospaced))
                     .textSelection(.enabled)
             }
             .frame(maxHeight: 180)
@@ -574,9 +574,9 @@ private struct QuestionCard: View {
                     .foregroundColor(LoomColors.accent)
                 VStack(alignment: .leading, spacing: 1) {
                     Text(question.title ?? "Input needed")
-                        .font(.system(size: 12, weight: .semibold))
+                        .font(.system(size: 13, weight: .semibold))
                     Text(statusLabel)
-                        .font(.system(size: 10.5))
+                        .font(.system(size: 11.5))
                         .foregroundColor(.secondary)
                 }
             }
@@ -585,14 +585,14 @@ private struct QuestionCard: View {
                 VStack(alignment: .leading, spacing: 5) {
                     if let header = prompt.header, !header.isEmpty {
                         Text(header)
-                            .font(.system(size: 10, weight: .bold))
+                            .font(.system(size: 11, weight: .bold))
                             .foregroundColor(.secondary)
                     }
                     Text(prompt.prompt)
-                        .font(.system(size: 12))
+                        .font(.system(size: 13))
                     if prompt.allow_multiple == true {
                         Text("Select all that apply")
-                            .font(.system(size: 10))
+                            .font(.system(size: 11))
                             .foregroundColor(.secondary)
                     }
                     ForEach(prompt.options) { option in
@@ -610,7 +610,7 @@ private struct QuestionCard: View {
             if pending && selectedOther {
                 TextField("Type a custom answer…", text: $custom, axis: .vertical)
                     .textFieldStyle(.roundedBorder)
-                    .font(.system(size: 12))
+                    .font(.system(size: 13))
                     .lineLimit(1...4)
             }
 
@@ -623,19 +623,19 @@ private struct QuestionCard: View {
                             ProgressView().controlSize(.small)
                         } else {
                             Label("Send answer", systemImage: "arrow.forward")
-                                .font(.system(size: 11.5, weight: .semibold))
+                                .font(.system(size: 12.5, weight: .semibold))
                         }
                     }
                     .disabled(!complete || session.answering)
                     if !session.answerFeedback.isEmpty {
                         Text(session.answerFeedback)
-                            .font(.system(size: 10.5))
+                            .font(.system(size: 11.5))
                             .foregroundColor(.orange)
                     }
                 }
             } else if let answer = question.answer, !answer.isEmpty {
                 Text(answer)
-                    .font(.system(size: 11))
+                    .font(.system(size: 12))
                     .foregroundColor(.secondary)
                     .lineLimit(3)
             }
@@ -698,15 +698,15 @@ private struct OptionRow: View {
         Button(action: toggle) {
             HStack(alignment: .top, spacing: 8) {
                 Image(systemName: active ? "checkmark.square.fill" : "square")
-                    .font(.system(size: 13))
+                    .font(.system(size: 14))
                     .foregroundColor(active ? LoomColors.accent : .secondary)
                 VStack(alignment: .leading, spacing: 1) {
                     Text(option.label)
-                        .font(.system(size: 11.5, weight: active ? .semibold : .regular))
+                        .font(.system(size: 12.5, weight: active ? .semibold : .regular))
                         .foregroundColor(.primary)
                     if let description = option.description, !description.isEmpty {
                         Text(description)
-                            .font(.system(size: 10.5))
+                            .font(.system(size: 11.5))
                             .foregroundColor(.secondary)
                     }
                 }

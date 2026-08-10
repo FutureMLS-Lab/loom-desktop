@@ -14,7 +14,7 @@ struct TerminalPane: View {
     @State private var error = ""
     @State private var loading = true
     @State private var followTail = true
-    @AppStorage("terminalFontSize") private var fontSize: Double = 12
+    @AppStorage("terminalFontSize") private var fontSize: Double = 13
     @State private var draft = ""
     @State private var sending = false
     @State private var poller: Task<Void, Never>?
@@ -50,12 +50,12 @@ struct TerminalPane: View {
                     .fill(error.isEmpty ? LoomColors.green : LoomColors.red)
                     .frame(width: 7, height: 7)
                 Text(error.isEmpty ? "Live" : error)
-                    .font(.system(size: 11))
+                    .font(.system(size: 12))
                     .foregroundColor(TerminalTheme.dimText)
                     .lineLimit(1)
             }
             Text(session.paneTarget)
-                .font(.system(size: 10.5, design: .monospaced))
+                .font(.system(size: 11.5, design: .monospaced))
                 .foregroundColor(TerminalTheme.dimText.opacity(0.7))
                 .lineLimit(1)
                 .truncationMode(.middle)
@@ -63,7 +63,7 @@ struct TerminalPane: View {
             Spacer()
 
             Text(typingFocused ? "typing here" : "click to type")
-                .font(.system(size: 10, weight: .medium))
+                .font(.system(size: 11, weight: .medium))
                 .foregroundColor(typingFocused ? LoomColors.accent : TerminalTheme.dimText.opacity(0.75))
                 .padding(.horizontal, 7)
                 .padding(.vertical, 3)
@@ -95,7 +95,7 @@ struct TerminalPane: View {
         }
         .buttonStyle(.plain)
         .foregroundColor(TerminalTheme.dimText)
-        .font(.system(size: 12))
+        .font(.system(size: 13))
         .padding(.horizontal, 12)
         .padding(.vertical, 7)
         .background(TerminalTheme.chrome)
@@ -109,7 +109,7 @@ struct TerminalPane: View {
             VStack(spacing: 8) {
                 ProgressView().controlSize(.small)
                 Text("Attaching to the pane…")
-                    .font(.system(size: 12))
+                    .font(.system(size: 13))
                     .foregroundColor(TerminalTheme.dimText)
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -139,7 +139,7 @@ struct TerminalPane: View {
                         Task { await sendKey(item.key) }
                     } label: {
                         Text(item.label)
-                            .font(.system(size: 11, weight: .medium, design: .monospaced))
+                            .font(.system(size: 12, weight: .medium, design: .monospaced))
                             .padding(.horizontal, 9)
                             .padding(.vertical, 4)
                             .background(TerminalTheme.keycap, in: Rectangle())
@@ -161,7 +161,7 @@ struct TerminalPane: View {
                 // sent to the pane.
                 TextField("输入文字发送到终端 · type here, ⏎ to send", text: $draft, axis: .vertical)
                     .textFieldStyle(.plain)
-                    .font(.system(size: 13))
+                    .font(.system(size: 14))
                     .lineLimit(1...5)
                     .foregroundColor(TerminalTheme.text)
                     .padding(.horizontal, 10)
@@ -177,7 +177,7 @@ struct TerminalPane: View {
                     Task { await sendDraft(submit: false) }
                 } label: {
                     Text("Paste")
-                        .font(.system(size: 11, weight: .medium))
+                        .font(.system(size: 12, weight: .medium))
                         .padding(.horizontal, 10)
                         .padding(.vertical, 7)
                         .background(TerminalTheme.keycap, in: Rectangle())

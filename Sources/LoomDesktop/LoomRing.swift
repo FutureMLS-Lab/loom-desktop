@@ -194,3 +194,59 @@ struct LoomActivityDot: View {
             .frame(width: size, height: size)
     }
 }
+
+/// One clock for every blinking row in a list.
+///
+/// Giving each row its own `repeatForever` animation is what made the sidebar
+/// expensive: SwiftUI drives those by re-evaluating the view graph every
+/// frame, so thirteen rows meant thirteen continuous re-render loops. This
+/// publishes a single phase the rows read, so the whole list blinks in unison
+/// off one timer — which also looks deliberate rather than like a dozen
+/// lights firing out of step.
+@MainActor
+final class BlinkClock: ObservableObject {
+    static let shared = BlinkClock()
+
+    /// Matches the web console's `loom-ring-blink` half-cycle.
+    static let interval: TimeInterval = 0.62
+
+    @Published private(set) var on = true
+
+    private var timer: Timer?
+    private var subscribers = 0
+
+    /// Rows start and stop the clock as they appear, so a list with nothing
+    /// to announce costs nothing at all.
+    func subscribe() {
+        subscribers += 1
+        guard timer == nil else { return }
+        timer = Timer.scheduledTimer(withTimeInterval: Self.interval, repeats: true) { [weak self] _ in
+            Task { @MainActor in self?.on.toggle() }
+        }
+    }
+
+    func unsubscribe() {
+        subscribers = max(0, subscribers - 1)
+        guard subscribers == 0 else { return }
+        timer?.invalidate()
+        timer = nil
+        on = true
+    }
+}
+
+/// "Finished while you were looking elsewhere", for a row in a list. Blinks
+/// off the shared clock.
+struct LoomBlinkDot: View {
+    var size: CGFloat = 11
+    @ObservedObject private var clock = BlinkClock.shared
+
+    var body: some View {
+        Image(systemName: "exclamationmark.circle.fill")
+            .font(.system(size: size))
+            .foregroundColor(LoomColors.amber)
+            .opacity(clock.on ? 1 : 0.2)
+            .animation(.easeInOut(duration: BlinkClock.interval), value: clock.on)
+            .onAppear { clock.subscribe() }
+            .onDisappear { clock.unsubscribe() }
+    }
+}

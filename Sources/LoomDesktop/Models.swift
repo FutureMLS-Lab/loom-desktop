@@ -22,7 +22,7 @@ struct ProjectsResponse: Decodable {
 }
 
 struct LoomTaskMeta: Decodable, Equatable {
-    let slug: String
+    var slug: String
     var title: String?
     var general_goal: String?
     var kind: String?

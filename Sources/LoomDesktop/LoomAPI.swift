@@ -165,6 +165,35 @@ struct LoomAPI {
         )
     }
 
+    /// Creates a task. The server slugifies the title and lays out
+    /// `.RUD/<slug>/`; the worktree is created on first agent start.
+    func createTask(
+        projectId: String,
+        title: String,
+        goal: String,
+        agent: String
+    ) async throws -> LoomTaskMeta {
+        struct Created: Decodable {
+            var meta: LoomTaskMeta?
+            var slug: String?
+            var title: String?
+        }
+        let created: Created = try await request(
+            scoped("/api/tasks", projectId),
+            method: "POST",
+            body: ["title": title, "general_goal": goal, "agent": agent]
+        )
+        if let meta = created.meta { return meta }
+        return LoomTaskMeta(
+            slug: created.slug ?? "",
+            title: created.title ?? title,
+            general_goal: goal,
+            kind: nil,
+            agent: agent,
+            tmux_interview_target: nil
+        )
+    }
+
     /// Past agent sessions for this task, plus the live pane's status.
     func sessions(projectId: String, slug: String) async throws -> SessionList {
         try await request(

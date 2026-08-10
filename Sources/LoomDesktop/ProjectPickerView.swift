@@ -17,6 +17,7 @@ struct ProjectPickerView: View {
     private var projects: [LoomProject] { store.projects }
 
     @State private var quickOpen = false
+    @State private var newTask = false
 
     var body: some View {
         HStack(spacing: 0) {
@@ -29,12 +30,25 @@ struct ProjectPickerView: View {
         .frame(minWidth: 940, minHeight: 640)
         .onAppear { store.refreshNow() }
         .background(
-            // Invisible ⌘P host: a button is the simplest way to register a
-            // shortcut that works wherever focus happens to be.
-            Button("Open Task…") { quickOpen = true }
-                .keyboardShortcut("p", modifiers: .command)
-                .opacity(0)
+            // Invisible shortcut hosts: a button is the simplest way to
+            // register one that works wherever focus happens to be.
+            ZStack {
+                Button("Open Task…") { quickOpen = true }
+                    .keyboardShortcut("p", modifiers: .command)
+                Button("New Task…") { newTask = true }
+                    .keyboardShortcut("n", modifiers: .command)
+            }
+            .opacity(0)
         )
+        .sheet(isPresented: $newTask) {
+            NewTaskView(
+                store: store,
+                onCreated: { projectId, slug in
+                    store.select(projectId: projectId, slug: slug)
+                },
+                onDismiss: { newTask = false }
+            )
+        }
         .sheet(isPresented: $quickOpen) {
             QuickOpenView(
                 store: store,
@@ -120,6 +134,12 @@ struct ProjectPickerView: View {
             HStack(spacing: 8) {
                 ConnectionPill(connection: store.connection)
                 Spacer()
+                Button { newTask = true } label: {
+                    Image(systemName: "plus")
+                        .font(.system(size: 13, weight: .medium))
+                }
+                .buttonStyle(.plain)
+                .help("New task (⌘N)")
                 Button { store.refreshNow() } label: {
                     Image(systemName: "arrow.clockwise")
                         .font(.system(size: 13, weight: .medium))

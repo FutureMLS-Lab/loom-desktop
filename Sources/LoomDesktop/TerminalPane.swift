@@ -78,6 +78,20 @@ struct TerminalPane: View {
 
             Spacer()
 
+            if !terminal.paneSize.isEmpty {
+                Text(terminal.paneSize)
+                    .font(.system(size: 11, design: .monospaced))
+                    .foregroundColor(TerminalTheme.dimText)
+                    .help(
+                        """
+                        Columns × rows this window asked for.
+                        The session is sized to its smallest client, so another \
+                        browser tab or `tmux attach` open on this task will \
+                        shrink the pane here too.
+                        """
+                    )
+            }
+
             HStack(spacing: 2) {
                 toolbarIcon("textformat.size.smaller", help: "Smaller text (⌘−)") {
                     fontSize = max(9, fontSize - 1)

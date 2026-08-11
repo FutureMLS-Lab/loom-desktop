@@ -18,6 +18,12 @@ import WebKit
 final class TerminalSession: NSObject, ObservableObject {
     @Published private(set) var connected = false
     @Published private(set) var error = ""
+    /// The size this client asked tmux for. Worth showing, because the session
+    /// is set to `window-size smallest`: every attached client — other browser
+    /// tabs, a terminal running `tmux attach` — shrinks the pane for everyone,
+    /// and the symptom is a small screen adrift in a large window with no
+    /// indication of why.
+    @Published private(set) var paneSize = ""
 
     /// Bumped by the pane to re-attach after a Start/Stop.
     var target = "" {
@@ -450,6 +456,7 @@ extension TerminalSession: WKScriptMessageHandler {
         guard cols != self.cols || rows != self.rows || streamTask == nil else { return }
         self.cols = cols
         self.rows = rows
+        paneSize = "\(cols)×\(rows)"
         reattach?.cancel()
         reattach = Task { [weak self] in
             try? await Task.sleep(nanoseconds: 250_000_000)

@@ -1,24 +1,64 @@
+import AppKit
 import SwiftUI
 
-/// The task's markdown — `PLAN.md` by default, plus any other top-level
-/// markdown the server scanned. Read-only, like the web console's viewer: the
-/// agent writes the plan, you drive the agent.
+/// Task markdown as a tiny editor: a folder list on the left, source on the
+/// right. The old SwiftUI markdown renderer froze on large `PLAN.md` files;
+/// an `NSTextView` does not. `PLAN.md` / `WIKI.md` can be saved back through
+/// the gateway's template API — everything else stays read-only.
 struct PlanView: View {
     @ObservedObject var session: ChatSession
 
     @State private var files: [PlanFile] = []
-    @State private var selected: String = ""
+    @State private var selected = ""
+    @State private var draft = ""
+    @State private var savedBaseline = ""
     @State private var loading = true
+    @State private var saving = false
     @State private var error = ""
+    @State private var status = ""
+    /// Bumped when the editor must accept an external buffer (load / file switch).
+    @State private var editorRevision = 0
+    @State private var autosaveTask: Task<Void, Never>?
+    /// Source = edit markdown; Preview = browser page; Split = both.
+    @AppStorage("filesViewMode") private var viewModeRaw = ViewMode.preview.rawValue
+
+    private enum ViewMode: String, CaseIterable, Identifiable {
+        case edit, preview, split
+        var id: String { rawValue }
+        var label: String {
+            switch self {
+            case .edit: return "Edit"
+            case .preview: return "Preview"
+            case .split: return "Split"
+            }
+        }
+    }
+
+    private var viewMode: ViewMode {
+        get { ViewMode(rawValue: viewModeRaw) ?? .preview }
+        nonmutating set { viewModeRaw = newValue.rawValue }
+    }
+
+    private static let writable: Set<String> = ["PLAN.md", "WIKI.md"]
 
     struct PlanFile: Identifiable, Equatable {
         let name: String
         let content: String
         var id: String { name }
+
+        var isDirectoryHint: Bool { name.contains("/") }
+        var displayName: String { (name as NSString).lastPathComponent }
     }
 
     private var current: PlanFile? {
         files.first { $0.name == selected } ?? files.first
+    }
+
+    private var dirty: Bool { draft != savedBaseline }
+    private var canEdit: Bool {
+        guard let name = current?.name else { return false }
+        return Self.writable.contains((name as NSString).lastPathComponent)
+            || Self.writable.contains(name)
     }
 
     var body: some View {
@@ -26,69 +66,212 @@ struct PlanView: View {
             if loading && files.isEmpty {
                 HStack(spacing: 9) {
                     ProgressView().controlSize(.small)
-                    Text("Loading plan…").foregroundColor(.secondary)
+                    Text("Loading files…").foregroundColor(.secondary)
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
-            } else if !error.isEmpty {
+            } else if !error.isEmpty && files.isEmpty {
                 emptyState(
                     symbol: "exclamationmark.triangle",
-                    title: "Plan unavailable",
+                    title: "Files unavailable",
                     detail: error
                 )
             } else if files.isEmpty {
                 emptyState(
-                    symbol: "doc.text",
-                    title: "No plan yet",
+                    symbol: "folder",
+                    title: "No markdown yet",
                     detail: "Run the deep interview and the agent will write PLAN.md."
                 )
             } else {
-                VStack(spacing: 0) {
-                    if files.count > 1 {
-                        HStack(spacing: 4) {
-                            ForEach(files) { file in
-                                Button {
-                                    selected = file.name
-                                } label: {
-                                    Text(file.name)
-                                        .font(.system(size: 12, weight: .medium))
-                                        .padding(.horizontal, 10)
-                                        .padding(.vertical, 5)
-                                        .background(
-                                            file.name == current?.name
-                                                ? LoomColors.accentSoft : Color.clear,
-                                            in: Rectangle()
-                                        )
-                                        .foregroundColor(
-                                            file.name == current?.name
-                                                ? LoomColors.accent : .secondary
-                                        )
-                                        .contentShape(Rectangle())
-                                }
-                                .buttonStyle(.plain)
-                            }
-                            Spacer()
-                        }
-                        .padding(.horizontal, 16)
-                        .padding(.vertical, 8)
-                        Divider()
-                    }
-
-                    ScrollView {
-                        LazyVStack(alignment: .leading, spacing: 9) {
-                            ForEach(MarkdownBlock.parse(current?.content ?? "")) { block in
-                                block.view
-                            }
-                        }
-                        .textSelection(.enabled)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .padding(26)
-                    }
+                HSplitView {
+                    fileSidebar
+                        .frame(minWidth: 180, idealWidth: 220, maxWidth: 320)
+                    editorPane
+                        .frame(minWidth: 320)
                 }
             }
         }
         .background(LoomColors.bgElev1)
         .task(id: session.id) { await load() }
-        .onChange(of: session.planRevision) { _, _ in Task { await load() } }
+        .onChange(of: session.planRevision) { _, _ in
+            guard !dirty else { return }
+            Task { await load() }
+        }
+        .onChange(of: draft) { _, newValue in
+            guard !selected.isEmpty else { return }
+            session.persistFileDraft(selected, text: newValue, baseline: savedBaseline)
+            scheduleAutosave()
+        }
+        .onDisappear {
+            autosaveTask?.cancel()
+            if !selected.isEmpty {
+                session.persistFileDraft(selected, text: draft, baseline: savedBaseline)
+            }
+        }
+    }
+
+    // MARK: Sidebar
+
+    private var fileSidebar: some View {
+        VStack(spacing: 0) {
+            HStack(spacing: 6) {
+                Image(systemName: "folder.fill")
+                    .foregroundColor(LoomColors.amber)
+                Text("Task files")
+                    .font(.system(size: 12, weight: .semibold))
+                Spacer()
+                Text("\(files.count)")
+                    .font(.system(size: 11, design: .monospaced))
+                    .foregroundColor(.secondary)
+            }
+            .padding(.horizontal, 12)
+            .padding(.vertical, 9)
+            Divider()
+
+            ScrollView {
+                LazyVStack(alignment: .leading, spacing: 1) {
+                    ForEach(files) { file in
+                        Button {
+                            select(file)
+                        } label: {
+                            HStack(spacing: 8) {
+                                Image(systemName: file.name.hasSuffix(".md")
+                                      ? "doc.text" : "doc")
+                                    .font(.system(size: 12))
+                                    .foregroundColor(
+                                        file.name == selected
+                                            ? LoomColors.accent : .secondary
+                                    )
+                                    .frame(width: 14)
+                                VStack(alignment: .leading, spacing: 1) {
+                                    Text(file.displayName)
+                                        .font(.system(size: 12.5, weight: .medium))
+                                        .foregroundColor(
+                                            file.name == selected
+                                                ? LoomColors.accent : .primary
+                                        )
+                                        .lineLimit(1)
+                                    if file.isDirectoryHint {
+                                        Text(file.name)
+                                            .font(.system(size: 10.5, design: .monospaced))
+                                            .foregroundColor(.secondary)
+                                            .lineLimit(1)
+                                            .truncationMode(.middle)
+                                    }
+                                }
+                                Spacer(minLength: 0)
+                            }
+                            .padding(.horizontal, 10)
+                            .padding(.vertical, 7)
+                            .background(
+                                file.name == selected
+                                    ? LoomColors.accentSoft : Color.clear,
+                                in: Rectangle()
+                            )
+                            .contentShape(Rectangle())
+                        }
+                        .buttonStyle(.plain)
+                    }
+                }
+                .padding(.vertical, 6)
+            }
+        }
+        .background(LoomColors.bgBase)
+    }
+
+    // MARK: Editor
+
+    private var editorPane: some View {
+        VStack(spacing: 0) {
+            HStack(spacing: 10) {
+                Text(current?.name ?? "")
+                    .font(.system(size: 13, weight: .semibold, design: .monospaced))
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+                if dirty {
+                    Text("Edited")
+                        .font(.system(size: 11, weight: .medium))
+                        .foregroundColor(LoomColors.amber)
+                        .padding(.horizontal, 7)
+                        .padding(.vertical, 2)
+                        .background(LoomColors.amber.opacity(0.14), in: Rectangle())
+                }
+                if !canEdit {
+                    Text("Read-only")
+                        .font(.system(size: 11, weight: .medium))
+                        .foregroundColor(.secondary)
+                }
+                Spacer()
+                if !status.isEmpty {
+                    Text(status)
+                        .font(.system(size: 11.5))
+                        .foregroundColor(.secondary)
+                        .lineLimit(1)
+                }
+
+                Picker("View", selection: $viewModeRaw) {
+                    ForEach(ViewMode.allCases) { mode in
+                        Text(mode.label).tag(mode.rawValue)
+                    }
+                }
+                .pickerStyle(.segmented)
+                .frame(maxWidth: 220)
+                .help("Edit source, browser preview, or both")
+
+                Button {
+                    Task { await load(keepSelection: true) }
+                } label: {
+                    Image(systemName: "arrow.clockwise")
+                }
+                .help("Reload from server")
+                .disabled(loading || dirty)
+
+                Button {
+                    Task { await save() }
+                } label: {
+                    if saving {
+                        ProgressView().controlSize(.small)
+                    } else {
+                        Text("Save")
+                            .font(.system(size: 12, weight: .semibold))
+                    }
+                }
+                .buttonStyle(.borderedProminent)
+                .controlSize(.small)
+                .disabled(!canEdit || !dirty || saving)
+                .keyboardShortcut("s", modifiers: .command)
+                .help(canEdit ? "Save (⌘S)" : "Only PLAN.md / WIKI.md can be saved")
+            }
+            .buttonStyle(.plain)
+            .padding(.horizontal, 12)
+            .padding(.vertical, 8)
+            Divider()
+
+            switch viewMode {
+            case .edit:
+                PlainTextEditor(
+                    text: $draft,
+                    documentID: selected,
+                    contentRevision: editorRevision,
+                    editable: canEdit,
+                    fontSize: 13.5
+                )
+            case .preview:
+                MarkdownPreview(markdown: draft, documentID: selected)
+            case .split:
+                HSplitView {
+                    PlainTextEditor(
+                        text: $draft,
+                        documentID: selected,
+                        contentRevision: editorRevision,
+                        editable: canEdit,
+                        fontSize: 13.5
+                    )
+                    .frame(minWidth: 240)
+                    MarkdownPreview(markdown: draft, documentID: selected)
+                        .frame(minWidth: 280)
+                }
+            }
+        }
     }
 
     private func emptyState(symbol: String, title: String, detail: String) -> some View {
@@ -106,179 +289,232 @@ struct PlanView: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 
-    private func load() async {
+    // MARK: Actions
+
+    private func select(_ file: PlanFile) {
+        guard file.name != selected else { return }
+        // Stash the current buffer before switching — drafts survive per file.
+        if !selected.isEmpty {
+            session.persistFileDraft(selected, text: draft, baseline: savedBaseline)
+        }
+        applyBuffer(for: file)
+        status = dirty ? "Restored unsaved edits" : ""
+    }
+
+    private func applyBuffer(for file: PlanFile) {
+        selected = file.name
+        savedBaseline = file.content
+        if let local = session.loadFileDraft(file.name), local != file.content {
+            draft = local
+        } else {
+            draft = file.content
+        }
+        editorRevision += 1
+    }
+
+    private func load(keepSelection: Bool = false) async {
+        if !keepSelection { loading = true }
         do {
             let detail = try await session.api.taskDetail(
                 projectId: session.projectId,
                 slug: session.slug
             )
-            // `templates` carries the contents; `task_markdown_files` is only
-            // a list of names, so the viewer shows what actually arrived.
             var collected: [PlanFile] = []
-            for (name, content) in (detail.templates ?? [:])
-            where !content.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            let templates = detail.templates ?? [:]
+            // Prefer the scanned name list so empty files still appear; fall
+            // back to whatever arrived in `templates`.
+            let names: [String] = {
+                if let listed = detail.task_markdown_files, !listed.isEmpty {
+                    return listed
+                }
+                return Array(templates.keys).sorted()
+            }()
+            var seen = Set<String>()
+            for name in names {
+                guard seen.insert(name).inserted else { continue }
+                collected.append(PlanFile(name: name, content: templates[name] ?? ""))
+            }
+            for (name, content) in templates where seen.insert(name).inserted {
                 collected.append(PlanFile(name: name, content: content))
             }
             collected.sort { left, right in
                 if left.name == "PLAN.md" { return true }
                 if right.name == "PLAN.md" { return false }
-                return left.name < right.name
+                return left.name.localizedCaseInsensitiveCompare(right.name) == .orderedAscending
             }
             files = collected
-            if selected.isEmpty || !collected.contains(where: { $0.name == selected }) {
-                selected = collected.first?.name ?? ""
+            let pick: String = {
+                if keepSelection,
+                   collected.contains(where: { $0.name == selected }) {
+                    return selected
+                }
+                if collected.contains(where: { $0.name == "PLAN.md" }) {
+                    return "PLAN.md"
+                }
+                return collected.first?.name ?? ""
+            }()
+            // Keep typing in progress when a background reload lands.
+            if keepSelection, dirty, pick == selected {
+                if let idx = collected.firstIndex(where: { $0.name == selected }) {
+                    savedBaseline = collected[idx].content
+                }
+            } else if let file = collected.first(where: { $0.name == pick }) {
+                applyBuffer(for: file)
+            } else {
+                selected = ""
+                draft = ""
+                savedBaseline = ""
+                editorRevision += 1
             }
             error = ""
+            if dirty {
+                status = status.isEmpty ? "Unsaved edits kept" : status
+            } else {
+                status = ""
+            }
         } catch {
             self.error = error.localizedDescription
         }
         loading = false
     }
+
+    private func scheduleAutosave() {
+        guard canEdit, dirty else { return }
+        autosaveTask?.cancel()
+        autosaveTask = Task {
+            try? await Task.sleep(nanoseconds: 1_200_000_000)
+            guard !Task.isCancelled else { return }
+            await save(silent: true)
+        }
+    }
+
+    private func save(silent: Bool = false) async {
+        guard canEdit, let name = current?.name else { return }
+        let payload = draft
+        guard payload != savedBaseline else { return }
+        if !silent { saving = true }
+        if !silent { status = "" }
+        do {
+            try await session.api.writeTemplate(
+                projectId: session.projectId,
+                slug: session.slug,
+                name: (name as NSString).lastPathComponent,
+                content: payload
+            )
+            savedBaseline = payload
+            session.clearFileDraft(name)
+            if let idx = files.firstIndex(where: { $0.name == name }) {
+                files[idx] = PlanFile(name: name, content: payload)
+            }
+            status = silent ? "Auto-saved" : "Saved"
+        } catch {
+            status = error.localizedDescription
+        }
+        if !silent { saving = false }
+    }
 }
 
-/// A plan rendered block by block.
-///
-/// `AttributedString(markdown:)` in `.full` mode flattens a document into one
-/// run — headings, list items and paragraphs all arrive as a single wall of
-/// text, which is what a plan is least useful as. Splitting into blocks first
-/// keeps the shape the agent wrote, and inline markdown still gets parsed
-/// within each block.
-struct MarkdownBlock: Identifiable {
-    enum Kind {
-        case heading(level: Int)
-        case bullet(indent: Int)
-        case code
-        case rule
-        case paragraph
+// MARK: - Plain source editor
+
+/// Editable `NSTextView` for markdown source. Avoids SwiftUI `Text` /
+/// `AttributedString(markdown:)` which stalls the main thread on big plans.
+private struct PlainTextEditor: NSViewRepresentable {
+    @Binding var text: String
+    var documentID: String
+    /// Parent bumps this when the binding was replaced externally (load / switch).
+    var contentRevision: Int
+    var editable: Bool
+    var fontSize: Double
+
+    func makeCoordinator() -> Coordinator { Coordinator(text: $text) }
+
+    func makeNSView(context: Context) -> NSScrollView {
+        let scroll = NSScrollView()
+        scroll.hasVerticalScroller = true
+        scroll.hasHorizontalScroller = false
+        scroll.autohidesScrollers = true
+        scroll.borderType = .noBorder
+        scroll.drawsBackground = true
+        scroll.backgroundColor = NSColor(LoomColors.bgElev1)
+
+        let textView = NSTextView()
+        textView.minSize = .zero
+        textView.maxSize = NSSize(
+            width: CGFloat.greatestFiniteMagnitude,
+            height: CGFloat.greatestFiniteMagnitude
+        )
+        textView.isVerticallyResizable = true
+        textView.isHorizontallyResizable = false
+        textView.autoresizingMask = [.width]
+        textView.textContainer?.widthTracksTextView = true
+        textView.textContainer?.containerSize = NSSize(
+            width: 0,
+            height: CGFloat.greatestFiniteMagnitude
+        )
+        textView.drawsBackground = true
+        textView.backgroundColor = NSColor(LoomColors.bgElev1)
+        textView.textColor = NSColor.labelColor
+        textView.insertionPointColor = NSColor(LoomColors.accent)
+        textView.font = NSFont.monospacedSystemFont(ofSize: fontSize, weight: .regular)
+        textView.textContainerInset = NSSize(width: 14, height: 14)
+        textView.isRichText = false
+        textView.allowsUndo = true
+        textView.isAutomaticQuoteSubstitutionEnabled = false
+        textView.isAutomaticDashSubstitutionEnabled = false
+        textView.isAutomaticTextReplacementEnabled = false
+        textView.isAutomaticSpellingCorrectionEnabled = false
+        textView.delegate = context.coordinator
+        textView.string = text
+        scroll.documentView = textView
+        context.coordinator.textView = textView
+        context.coordinator.documentID = documentID
+        context.coordinator.contentRevision = contentRevision
+        return scroll
     }
 
-    let id: Int
-    let kind: Kind
-    let text: String
+    func updateNSView(_ scroll: NSScrollView, context: Context) {
+        guard let textView = scroll.documentView as? NSTextView else { return }
+        context.coordinator.text = $text
+        textView.isEditable = editable
+        textView.isSelectable = true
+        let font = NSFont.monospacedSystemFont(ofSize: fontSize, weight: .regular)
+        if textView.font != font { textView.font = font }
 
-    @ViewBuilder
-    var view: some View {
-        switch kind {
-        case .heading(let level):
-            Text(inline(text))
-                .font(.system(size: level <= 1 ? 21 : (level == 2 ? 17 : 15), weight: .semibold))
-                .padding(.top, level <= 2 ? 8 : 4)
-        case .bullet(let indent):
-            HStack(alignment: .firstTextBaseline, spacing: 8) {
-                Text("•")
-                    .font(.system(size: 14))
-                    .foregroundColor(LoomColors.accent)
-                Text(inline(text))
-                    .font(.system(size: 14))
-                    .lineSpacing(3)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
-            .padding(.leading, CGFloat(indent) * 18)
-        case .code:
-            Text(text)
-                .font(.system(size: 12.5, design: .monospaced))
-                .lineSpacing(2)
-                .padding(11)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .background(LoomColors.bgElev2, in: Rectangle())
-                .overlay(Rectangle().strokeBorder(LoomColors.border, lineWidth: 1))
-        case .rule:
-            Rectangle()
-                .fill(LoomColors.border)
-                .frame(height: 1)
-                .padding(.vertical, 4)
-        case .paragraph:
-            Text(inline(text))
-                .font(.system(size: 14))
-                .lineSpacing(3)
-                .fixedSize(horizontal: false, vertical: true)
-        }
-    }
-
-    private func inline(_ raw: String) -> AttributedString {
-        (try? AttributedString(
-            markdown: raw,
-            options: .init(
-                allowsExtendedAttributes: false,
-                interpretedSyntax: .inlineOnlyPreservingWhitespace
-            )
-        )) ?? AttributedString(raw)
-    }
-
-    static func parse(_ document: String) -> [MarkdownBlock] {
-        var blocks: [MarkdownBlock] = []
-        var paragraph: [String] = []
-        var code: [String] = []
-        var inCode = false
-        var next = 0
-
-        func flushParagraph() {
-            let joined = paragraph.joined(separator: "\n")
-            paragraph.removeAll()
-            guard !joined.trimmingCharacters(in: .whitespaces).isEmpty else { return }
-            blocks.append(MarkdownBlock(id: next, kind: .paragraph, text: joined))
-            next += 1
-        }
-
-        for line in document.components(separatedBy: .newlines) {
-            let trimmed = line.trimmingCharacters(in: .whitespaces)
-
-            if trimmed.hasPrefix("```") {
-                if inCode {
-                    blocks.append(
-                        MarkdownBlock(id: next, kind: .code, text: code.joined(separator: "\n"))
-                    )
-                    next += 1
-                    code.removeAll()
+        // Only replace the buffer on an explicit document/content change.
+        // Never push the SwiftUI binding back while the user is typing — that
+        // is what made characters appear to vanish.
+        let documentChanged = context.coordinator.documentID != documentID
+        let revisionChanged = context.coordinator.contentRevision != contentRevision
+        if documentChanged || revisionChanged {
+            context.coordinator.documentID = documentID
+            context.coordinator.contentRevision = contentRevision
+            if textView.string != text {
+                textView.string = text
+                textView.setSelectedRange(NSRange(location: 0, length: 0))
+                if documentChanged {
+                    textView.scrollToBeginningOfDocument(nil)
                 }
-                inCode.toggle()
-                continue
             }
-            if inCode {
-                code.append(line)
-                continue
-            }
+        }
+    }
 
-            if trimmed.isEmpty {
-                flushParagraph()
-                continue
+    final class Coordinator: NSObject, NSTextViewDelegate {
+        var text: Binding<String>
+        weak var textView: NSTextView?
+        var documentID = ""
+        var contentRevision = -1
+
+        init(text: Binding<String>) { self.text = text }
+
+        func textDidEndEditing(_ notification: Notification) {
+            if let textView {
+                text.wrappedValue = textView.string
             }
-            if trimmed.hasPrefix("#") {
-                flushParagraph()
-                let level = trimmed.prefix(while: { $0 == "#" }).count
-                let body = trimmed.drop(while: { $0 == "#" }).trimmingCharacters(in: .whitespaces)
-                blocks.append(MarkdownBlock(id: next, kind: .heading(level: level), text: body))
-                next += 1
-                continue
-            }
-            if trimmed == "---" || trimmed == "***" || trimmed == "___" {
-                flushParagraph()
-                blocks.append(MarkdownBlock(id: next, kind: .rule, text: ""))
-                next += 1
-                continue
-            }
-            if let marker = trimmed.first, marker == "-" || marker == "*" || marker == "+",
-               trimmed.dropFirst().hasPrefix(" ") {
-                flushParagraph()
-                let leading = line.prefix { $0 == " " || $0 == "\t" }.count
-                blocks.append(
-                    MarkdownBlock(
-                        id: next,
-                        kind: .bullet(indent: min(3, leading / 2)),
-                        text: String(trimmed.dropFirst(2))
-                    )
-                )
-                next += 1
-                continue
-            }
-            paragraph.append(line)
         }
 
-        if inCode, !code.isEmpty {
-            blocks.append(MarkdownBlock(id: next, kind: .code, text: code.joined(separator: "\n")))
-            next += 1
+        func textDidChange(_ notification: Notification) {
+            guard let textView else { return }
+            text.wrappedValue = textView.string
         }
-        flushParagraph()
-        return blocks
     }
 }

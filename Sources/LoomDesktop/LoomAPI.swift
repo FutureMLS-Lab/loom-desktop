@@ -115,6 +115,20 @@ struct LoomAPI {
         try await request(scoped("/api/tasks/\(slugPath(slug))", projectId))
     }
 
+    /// Writes an allowed task template (`PLAN.md` / `WIKI.md`) on the server.
+    func writeTemplate(
+        projectId: String,
+        slug: String,
+        name: String,
+        content: String
+    ) async throws {
+        let _: OkResponse = try await request(
+            scoped("/api/tasks/\(slugPath(slug))/template", projectId),
+            method: "PUT",
+            body: ["name": name, "content": content]
+        )
+    }
+
     func conversation(
         projectId: String, slug: String, limit: Int
     ) async throws -> ConversationFeed {

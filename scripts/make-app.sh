@@ -19,6 +19,8 @@ swift build -c release >/dev/null
 echo "▸ assembling bundle…"
 mkdir -p "$STAGE/Contents/MacOS" "$STAGE/Contents/Resources"
 cp .build/release/LoomDesktop "$STAGE/Contents/MacOS/LoomDesktop"
+# Markdown preview engine, loaded via Bundle.main at runtime.
+cp Resources/marked.min.js "$STAGE/Contents/Resources/"
 
 cat > "$STAGE/Contents/Info.plist" <<PLIST
 <?xml version="1.0" encoding="UTF-8"?>

@@ -24,7 +24,7 @@ struct TaskPane: View {
             switch self {
             case .conversation: return "Chat"
             case .terminal: return "Terminal"
-            case .plan: return "Plan"
+            case .plan: return "Files"
             case .changes: return "Changes"
             }
         }
@@ -33,7 +33,7 @@ struct TaskPane: View {
             switch self {
             case .conversation: return "bubble.left.and.bubble.right"
             case .terminal: return "apple.terminal"
-            case .plan: return "doc.text"
+            case .plan: return "folder"
             case .changes: return "arrow.triangle.branch"
             }
         }

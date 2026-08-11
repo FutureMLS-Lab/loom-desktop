@@ -32,7 +32,8 @@ final class TerminalSession: NSObject, ObservableObject {
     }
 
     private(set) lazy var webView: WKWebView = makeWebView()
-    private var streamTask: Task<Void, Never>?
+    private var streamTask: URLSessionDataTask?
+    private var streamSession: URLSession?
     private var streamID = ""
     private var cols = 80
     private var rows = 24
@@ -42,21 +43,24 @@ final class TerminalSession: NSObject, ObservableObject {
     private var pending = Data()
     private var flushTimer: Timer?
     private var reattach: Task<Void, Never>?
+    private var pendingScroll = 0
+    private var scrollInFlight = false
 
     private let api = LoomAPI()
 
     /// A stream stays open for as long as the pane is on screen, so it cannot
     /// use the short timeouts the request/response API wants.
-    private static let streamSession: URLSession = {
+    private static var streamConfiguration: URLSessionConfiguration {
         let config = URLSessionConfiguration.ephemeral
         config.timeoutIntervalForRequest = 3600
         config.timeoutIntervalForResource = 86_400
         config.networkServiceType = .responsiveData
-        return URLSession(configuration: config)
-    }()
+        return config
+    }
 
     deinit {
         streamTask?.cancel()
+        streamSession?.invalidateAndCancel()
         reattach?.cancel()
         flushTimer?.invalidate()
     }
@@ -66,10 +70,13 @@ final class TerminalSession: NSObject, ObservableObject {
     func stop() {
         streamTask?.cancel()
         streamTask = nil
+        streamSession?.invalidateAndCancel()
+        streamSession = nil
         reattach?.cancel()
         reattach = nil
         flushTimer?.invalidate()
         flushTimer = nil
+        pending.removeAll(keepingCapacity: false)
         streamID = ""
         connected = false
     }
@@ -78,7 +85,7 @@ final class TerminalSession: NSObject, ObservableObject {
         stop()
         guard ready, !target.isEmpty else { return }
         call("window.__loomReset()")
-        streamTask = Task { [weak self] in await self?.attach() }
+        attach()
     }
 
     func focusTerminal() {
@@ -110,47 +117,53 @@ final class TerminalSession: NSObject, ObservableObject {
         }
     }
 
-    private func attach() async {
+    /// Delivered in chunks by a delegate rather than pulled a byte at a time
+    /// through `URLSession.bytes`. A screen redraw is tens of kilobytes, and
+    /// one async iteration per byte is tens of thousands of hops for a single
+    /// frame of output — which is felt most while scrolling, since that is
+    /// exactly when the app repaints everything.
+    private func attach() {
         guard let request = api.streamRequest(target: target, cols: cols, rows: rows) else { return }
-        do {
-            let (bytes, response) = try await Self.streamSession.bytes(for: request)
-            guard let http = response as? HTTPURLResponse else { return }
-            guard http.statusCode == 200 else {
-                error = "Pane unavailable (\(http.statusCode))"
-                connected = false
-                return
-            }
-            streamID = http.value(forHTTPHeaderField: "X-Loom-Terminal-Stream") ?? ""
-            connected = true
-            error = ""
-            startFlushing()
-
-            var buffer = Data()
-            buffer.reserveCapacity(8192)
-            for try await byte in bytes {
-                buffer.append(byte)
-                if buffer.count >= 4096 {
-                    pending.append(buffer)
-                    buffer.removeAll(keepingCapacity: true)
+        let delegate = PtyStreamDelegate(
+            onResponse: { [weak self] http in
+                guard let self else { return }
+                guard http.statusCode == 200 else {
+                    self.error = "Pane unavailable (\(http.statusCode))"
+                    self.connected = false
+                    return
                 }
-                if Task.isCancelled { break }
+                self.streamID = http.value(forHTTPHeaderField: "X-Loom-Terminal-Stream") ?? ""
+                self.connected = true
+                self.error = ""
+                self.startFlushing()
+            },
+            onChunk: { [weak self] data in
+                self?.pending.append(data)
+            },
+            onComplete: { [weak self] failure in
+                guard let self else { return }
+                self.connected = false
+                if let failure, (failure as NSError).code != NSURLErrorCancelled {
+                    self.error = failure.localizedDescription
+                }
             }
-            if !buffer.isEmpty { pending.append(buffer) }
-        } catch is CancellationError {
-            // Expected on teardown.
-        } catch {
-            if !Task.isCancelled {
-                self.error = error.localizedDescription
-            }
-        }
-        connected = false
+        )
+        let session = URLSession(
+            configuration: Self.streamConfiguration,
+            delegate: delegate,
+            delegateQueue: .main
+        )
+        streamSession = session
+        let task = session.dataTask(with: request)
+        streamTask = task
+        task.resume()
     }
 
     // MARK: Feeding xterm
 
     private func startFlushing() {
         flushTimer?.invalidate()
-        flushTimer = Timer.scheduledTimer(withTimeInterval: 1.0 / 30.0, repeats: true) { [weak self] _ in
+        flushTimer = Timer.scheduledTimer(withTimeInterval: 1.0 / 60.0, repeats: true) { [weak self] _ in
             Task { @MainActor in self?.flush() }
         }
     }
@@ -271,28 +284,35 @@ final class TerminalSession: NSObject, ObservableObject {
           }
         }
 
-        // The wheel must not reach the terminal. On the alternate screen xterm
-        // translates it into arrow keys, and a TUI reads those as history
-        // navigation — scrolling up would walk back through past prompts
-        // instead of showing earlier output. tmux scrolls its own scrollback
-        // instead; coasting back to the bottom leaves copy-mode by itself.
-        var scrollAccum = 0, scrollTimer = null;
+        // Scrolling is local whenever it can be. On the normal screen the
+        // history is right here in xterm's buffer, so the wheel is left alone
+        // and moves instantly.
+        //
+        // A full-screen app is the exception: its history lives in the app,
+        // not in any buffer we hold, and xterm would translate the wheel into
+        // arrow keys — which a TUI reads as "previous prompt" rather than
+        // "scroll up". There the wheel is intercepted and tmux does the
+        // scrolling, which costs a round trip. Deltas are batched per frame,
+        // and Swift keeps only one request in flight, because a flick that
+        // fires a dozen overlapping requests arrives out of order and judders.
+        var scrollAccum = 0, scrollFrame = null;
         host.addEventListener('wheel', function (e) {
+          if (term.buffer.active.type !== 'alternate') return;
           e.preventDefault();
           e.stopPropagation();
           scrollAccum += (e.deltaMode === 1 ? e.deltaY * 18 : e.deltaY);
-          if (scrollTimer) return;
-          scrollTimer = setTimeout(function () {
+          if (scrollFrame) return;
+          scrollFrame = requestAnimationFrame(function () {
             var total = scrollAccum;
             scrollAccum = 0;
-            scrollTimer = null;
+            scrollFrame = null;
             if (!total) return;
             post({
               type: 'scroll',
               dir: total < 0 ? 'up' : 'down',
               lines: Math.max(1, Math.min(80, Math.round(Math.abs(total) / 24))),
             });
-          }, 40);
+          });
         }, { passive: false, capture: true });
         var fitTimer = null;
         window.addEventListener('resize', function () {
@@ -393,11 +413,33 @@ extension TerminalSession: WKScriptMessageHandler {
         }
     }
 
+    /// Signed pending scroll, negative for older output.
     private func scrollPane(direction: String, lines: Int) {
+        pendingScroll += direction == "up" ? -lines : lines
+        pumpScroll()
+    }
+
+    /// One request at a time. The gateway is remote — a round trip is around
+    /// 150ms — so a flick that fires them in parallel gets them applied out of
+    /// order, and the pane jumps back and forth. Holding a single request in
+    /// flight and folding everything that arrives meanwhile into the next one
+    /// scrolls as fast as the link allows, in order, and starts immediately
+    /// rather than after a fixed delay.
+    private func pumpScroll() {
+        guard !scrollInFlight, pendingScroll != 0, !target.isEmpty else { return }
+        let amount = pendingScroll
+        pendingScroll = 0
+        scrollInFlight = true
         let pane = target
-        guard !pane.isEmpty else { return }
-        Task { [api] in
-            try? await api.scroll(target: pane, direction: direction, lines: lines)
+        Task { [weak self] in
+            guard let self else { return }
+            try? await self.api.scroll(
+                target: pane,
+                direction: amount < 0 ? "up" : "down",
+                lines: min(80, abs(amount))
+            )
+            self.scrollInFlight = false
+            self.pumpScroll()
         }
     }
 
@@ -412,9 +454,45 @@ extension TerminalSession: WKScriptMessageHandler {
         reattach = Task { [weak self] in
             try? await Task.sleep(nanoseconds: 250_000_000)
             guard !Task.isCancelled, let self else { return }
-            self.streamTask?.cancel()
-            self.streamTask = Task { [weak self] in await self?.attach() }
+            self.stop()
+            self.attach()
         }
+    }
+}
+
+/// Chunked reader for the pty stream. Callbacks land on the main queue, which
+/// is where the buffer they feed is read.
+private final class PtyStreamDelegate: NSObject, URLSessionDataDelegate {
+    private let onResponse: (HTTPURLResponse) -> Void
+    private let onChunk: (Data) -> Void
+    private let onComplete: (Error?) -> Void
+
+    init(
+        onResponse: @escaping (HTTPURLResponse) -> Void,
+        onChunk: @escaping (Data) -> Void,
+        onComplete: @escaping (Error?) -> Void
+    ) {
+        self.onResponse = onResponse
+        self.onChunk = onChunk
+        self.onComplete = onComplete
+    }
+
+    func urlSession(
+        _ session: URLSession,
+        dataTask: URLSessionDataTask,
+        didReceive response: URLResponse,
+        completionHandler: @escaping (URLSession.ResponseDisposition) -> Void
+    ) {
+        if let http = response as? HTTPURLResponse { onResponse(http) }
+        completionHandler(.allow)
+    }
+
+    func urlSession(_ session: URLSession, dataTask: URLSessionDataTask, didReceive data: Data) {
+        onChunk(data)
+    }
+
+    func urlSession(_ session: URLSession, task: URLSessionTask, didCompleteWithError error: Error?) {
+        onComplete(error)
     }
 }
 

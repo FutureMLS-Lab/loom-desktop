@@ -32,31 +32,6 @@ struct DockView: View {
     /// loom menu, counts, expand, hide.
     private static let headerItemCount = 4
 
-    /// How many pills of each state may animate. SwiftUI runs a
-    /// `repeatForever` animation by re-evaluating the view graph every frame,
-    /// so an expanded dock of forty pills was re-rendering continuously; past
-    /// this many, the ring is drawn static.
-    private static let animationBudget = 5
-
-    private var animatedPillIDs: Set<String> {
-        var working = 0
-        var finished = 0
-        var ids: Set<String> = []
-        for pill in shownPills {
-            switch pill.state {
-            case .working where working < Self.animationBudget:
-                working += 1
-                ids.insert(pill.id)
-            case .finished where finished < Self.animationBudget:
-                finished += 1
-                ids.insert(pill.id)
-            default:
-                break
-            }
-        }
-        return ids
-    }
-
     var body: some View {
         WrappingHStack(
             horizontalSpacing: 10,
@@ -84,12 +59,10 @@ struct DockView: View {
             HideButton(action: onHidePanel)
 
             if !store.pills.isEmpty {
-                let animated = animatedPillIDs
                 ForEach(shownPills) { pill in
                     TaskPillView(
                         pill: pill,
                         showProject: store.showsProjectPrefix,
-                        animated: animated.contains(pill.id),
                         action: {
                             store.acknowledge(pill)
                             store.select(projectId: pill.projectId, slug: pill.slug)
@@ -313,12 +286,9 @@ private struct HideButton: View {
 struct TaskPillView: View {
     let pill: TaskPill
     let showProject: Bool
-    /// Past the dock's animation budget the ring is drawn frozen.
-    var animated = true
     let action: () -> Void
     let onAcknowledge: () -> Void
 
-    @State private var flash = false
     @State private var isHovering = false
 
     /// A pill never gets wider than this. One 90-character research title
@@ -355,27 +325,22 @@ struct TaskPillView: View {
             .frame(height: DockView.rowHeight)
         }
         .buttonStyle(.plain)
-        .background(background, in: Rectangle())
+        .background {
+            switch pill.state {
+            case .finished:
+                PulsingFill(color: NSColor(LoomColors.accent))
+            case .working:
+                Color.gray.opacity(0.85)
+            case .idle:
+                Color.gray.opacity(0.7)
+            }
+        }
         .overlay {
             switch pill.state {
             case .working:
-                Group {
-                    if animated {
-                        LoomSpinningRing(shape: Rectangle(), lineWidth: 2.2)
-                    } else {
-                        LoomStaticRing(shape: Rectangle(), lineWidth: 2.2)
-                    }
-                }
-                .allowsHitTesting(false)
+                PillRing(mode: .working).allowsHitTesting(false)
             case .finished:
-                Group {
-                    if animated {
-                        LoomBlinkingRing(shape: Rectangle(), lineWidth: 2.2)
-                    } else {
-                        LoomStaticRing(shape: Rectangle(), lineWidth: 2.2, finished: true)
-                    }
-                }
-                .allowsHitTesting(false)
+                PillRing(mode: .finished).allowsHitTesting(false)
             case .idle:
                 EmptyView()
             }
@@ -393,30 +358,8 @@ struct TaskPillView: View {
                 NSPasteboard.general.setString(pill.slug, forType: .string)
             }
         }
-        .onAppear { updateFlash(for: pill.state) }
-        .onChange(of: pill.state) { _, newState in updateFlash(for: newState) }
         .onHover { hovering in
             withAnimation(.easeInOut(duration: 0.12)) { isHovering = hovering }
-        }
-    }
-
-    private var background: Color {
-        switch pill.state {
-        case .finished: return LoomColors.accent.opacity(flash ? 0.85 : 0.45)
-        case .working: return Color.gray.opacity(0.85)
-        case .idle: return Color.gray.opacity(0.7)
-        }
-    }
-
-    private func updateFlash(for state: TaskPill.State) {
-        if state == .finished, animated {
-            withAnimation(.easeInOut(duration: 0.55).repeatForever(autoreverses: true)) {
-                flash = true
-            }
-        } else {
-            withAnimation(.easeInOut(duration: 0.2)) {
-                flash = false
-            }
         }
     }
 }

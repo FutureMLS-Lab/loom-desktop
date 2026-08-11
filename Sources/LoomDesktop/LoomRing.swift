@@ -39,113 +39,212 @@ enum LoomColors {
     static let red = hex(0xEF4444)
 }
 
-/// Rotating conic ring: transparent for the first 140°, then fading in
-/// through soft indigo to full accent and green before cutting back to
-/// transparent — the exact stop layout of the web gradient.
-struct LoomSpinningRing<S: InsettableShape>: View {
-    var shape: S
-    var lineWidth: CGFloat = 2
-    /// Matches the web animation's 1.8s per revolution.
-    var lapDuration: Double = 1.8
-
-    /// Driven by one Core Animation rotation rather than `TimelineView`.
-    /// TimelineView re-evaluates the view body every frame, and a dock with a
-    /// dozen working tasks then re-renders SwiftUI 120 times a second — the
-    /// app felt sluggish everywhere, not just on the dock. A rotation runs on
-    /// the render server and costs nothing per frame.
-    @State private var spinning = false
-
-    private static var gradientStops: [Gradient.Stop] {
-        [
-            .init(color: .clear, location: 0),
-            .init(color: .clear, location: 140.0 / 360.0),
-            .init(color: LoomColors.accent.opacity(0.22), location: 210.0 / 360.0),
-            .init(color: LoomColors.accent, location: 300.0 / 360.0),
-            .init(color: LoomColors.green, location: 348.0 / 360.0),
-            .init(color: .clear, location: 1),
-        ]
+/// A pill's activity ring, drawn by Core Animation.
+///
+/// Working is the web console's conic gradient rotating once every 1.8s;
+/// finished is the solid indigo→green ring blinking on the 1.1s cycle. Both
+/// run on the render server, so a dock of forty pills costs the app nothing
+/// per frame — which is why there is no longer a cap on how many may animate.
+struct PillRing: NSViewRepresentable {
+    enum Mode {
+        case working
+        case finished
     }
 
-    var body: some View {
-        GeometryReader { geometry in
-            // The gradient layer is rotated, not the shape, so a stretched
-            // capsule keeps its outline. Oversized so its square corners
-            // never rotate into view.
-            let side = max(geometry.size.width, geometry.size.height) * 1.5
-            AngularGradient(stops: Self.gradientStops, center: .center)
-                .frame(width: side, height: side)
-                .rotationEffect(.degrees(spinning ? 360 : 0))
-                .position(x: geometry.size.width / 2, y: geometry.size.height / 2)
-        }
-        .mask(shape.strokeBorder(lineWidth: lineWidth))
-        .onAppear {
-            guard !spinning else { return }
-            withAnimation(.linear(duration: lapDuration).repeatForever(autoreverses: false)) {
-                spinning = true
-            }
-        }
+    let mode: Mode
+    var lineWidth: CGFloat = 2.2
+
+    func makeNSView(context: Context) -> PillRingView {
+        PillRingView(mode: mode, lineWidth: lineWidth)
+    }
+
+    func updateNSView(_ view: PillRingView, context: Context) {
+        view.apply(mode: mode)
     }
 }
 
-/// The same ring, frozen. Used past the dock's animation budget: thirty
-/// simultaneously animating pills cost real CPU and read as noise, while a
-/// static ring still marks the state.
-struct LoomStaticRing<S: InsettableShape>: View {
-    var shape: S
-    var lineWidth: CGFloat = 2
-    var finished = false
+final class PillRingView: NSView {
+    private let gradient = CAGradientLayer()
+    private let ring = CAShapeLayer()
+    private var mode: PillRing.Mode
+    private let lineWidth: CGFloat
 
-    var body: some View {
-        shape.strokeBorder(
-            finished
-                ? AnyShapeStyle(LinearGradient(
-                    colors: [LoomColors.accent, LoomColors.green],
-                    startPoint: .topLeading,
-                    endPoint: .bottomTrailing
-                ))
-                : AnyShapeStyle(AngularGradient(
-                    stops: [
-                        .init(color: .clear, location: 0),
-                        .init(color: .clear, location: 0.39),
-                        .init(color: LoomColors.accent.opacity(0.22), location: 0.58),
-                        .init(color: LoomColors.accent, location: 0.83),
-                        .init(color: LoomColors.green, location: 0.97),
-                        .init(color: .clear, location: 1),
-                    ],
-                    center: .center
-                )),
-            lineWidth: lineWidth
+    init(mode: PillRing.Mode, lineWidth: CGFloat) {
+        self.mode = mode
+        self.lineWidth = lineWidth
+        super.init(frame: .zero)
+        wantsLayer = true
+        // The ring masks the whole view, so the gradient can spin underneath
+        // without the mask spinning with it.
+        ring.fillColor = nil
+        ring.strokeColor = NSColor.white.cgColor
+        ring.lineWidth = lineWidth
+        layer?.mask = ring
+        layer?.addSublayer(gradient)
+        applyGradient()
+    }
+
+    @available(*, unavailable)
+    required init?(coder: NSCoder) { fatalError("not used") }
+
+    func apply(mode: PillRing.Mode) {
+        guard mode != self.mode else { return }
+        self.mode = mode
+        applyGradient()
+        restartAnimation()
+    }
+
+    private func applyGradient() {
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        switch mode {
+        case .working:
+            gradient.type = .conic
+            gradient.startPoint = CGPoint(x: 0.5, y: 0.5)
+            gradient.endPoint = CGPoint(x: 0.5, y: 0)
+            gradient.colors = [
+                NSColor.clear.cgColor,
+                NSColor.clear.cgColor,
+                NSColor(LoomColors.accent).withAlphaComponent(0.22).cgColor,
+                NSColor(LoomColors.accent).cgColor,
+                NSColor(LoomColors.green).cgColor,
+                NSColor.clear.cgColor,
+            ]
+            gradient.locations = [0, 140, 210, 300, 348, 360].map {
+                NSNumber(value: $0 / 360.0)
+            }
+        case .finished:
+            gradient.type = .axial
+            gradient.startPoint = CGPoint(x: 0, y: 0)
+            gradient.endPoint = CGPoint(x: 1, y: 1)
+            gradient.colors = [
+                NSColor(LoomColors.accent).cgColor,
+                NSColor(LoomColors.green).cgColor,
+            ]
+            gradient.locations = [0, 1]
+        }
+        CATransaction.commit()
+    }
+
+    override func layout() {
+        super.layout()
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        ring.path = CGPath(
+            rect: bounds.insetBy(dx: lineWidth / 2, dy: lineWidth / 2),
+            transform: nil
         )
+        ring.frame = bounds
+        switch mode {
+        case .working:
+            // Oversized and centred, so the gradient's square corners never
+            // rotate into the ring.
+            let side = max(bounds.width, bounds.height) * 1.5
+            gradient.bounds = CGRect(x: 0, y: 0, width: side, height: side)
+            gradient.position = CGPoint(x: bounds.midX, y: bounds.midY)
+        case .finished:
+            gradient.frame = bounds
+        }
+        CATransaction.commit()
+    }
+
+    override func viewDidMoveToWindow() {
+        super.viewDidMoveToWindow()
+        if window == nil {
+            gradient.removeAllAnimations()
+        } else {
+            restartAnimation()
+        }
+    }
+
+    private func restartAnimation() {
+        guard window != nil else { return }
+        gradient.removeAllAnimations()
+        switch mode {
+        case .working:
+            let spin = CABasicAnimation(keyPath: "transform.rotation.z")
+            spin.fromValue = 0
+            spin.toValue = 2 * Double.pi
+            spin.duration = 1.8
+            spin.repeatCount = .infinity
+            gradient.add(spin, forKey: "spin")
+        case .finished:
+            let blink = CABasicAnimation(keyPath: "opacity")
+            blink.fromValue = 1.0
+            blink.toValue = 0.12
+            blink.duration = 1.1 / 2
+            blink.autoreverses = true
+            blink.repeatCount = .infinity
+            blink.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
+            let now = gradient.convertTime(CACurrentMediaTime(), from: nil)
+            blink.beginTime = now - now.truncatingRemainder(dividingBy: 1.1)
+            gradient.add(blink, forKey: "blink")
+        }
     }
 }
 
-/// Blinking finished ring: solid indigo→green gradient whose opacity pulses
-/// between 1 and 0.12 on the web's 1.1s ease-in-out cycle.
-struct LoomBlinkingRing<S: InsettableShape>: View {
-    var shape: S
-    var lineWidth: CGFloat = 2
-    var blinkDuration: Double = 1.1
+/// The pill's own background, pulsing between two opacities of one colour.
+/// Same reasoning as the ring: a layer animation instead of SwiftUI state.
+struct PulsingFill: NSViewRepresentable {
+    let color: NSColor
+    var from: Float = 0.45
+    var to: Float = 0.85
+    var halfCycle: CFTimeInterval = 0.55
 
-    @State private var dimmed = false
+    func makeNSView(context: Context) -> PulsingFillView {
+        PulsingFillView(color: color, from: from, to: to, halfCycle: halfCycle)
+    }
 
-    var body: some View {
-        shape
-            .strokeBorder(
-                LinearGradient(
-                    colors: [LoomColors.accent, LoomColors.green],
-                    startPoint: .topLeading,
-                    endPoint: .bottomTrailing
-                ),
-                lineWidth: lineWidth
-            )
-            .opacity(dimmed ? 0.12 : 1)
-            .onAppear {
-                withAnimation(
-                    .easeInOut(duration: blinkDuration / 2).repeatForever(autoreverses: true)
-                ) {
-                    dimmed = true
-                }
-            }
+    func updateNSView(_ view: PulsingFillView, context: Context) {}
+}
+
+final class PulsingFillView: NSView {
+    private let fill = CALayer()
+    private let from: Float
+    private let to: Float
+    private let halfCycle: CFTimeInterval
+
+    init(color: NSColor, from: Float, to: Float, halfCycle: CFTimeInterval) {
+        self.from = from
+        self.to = to
+        self.halfCycle = halfCycle
+        super.init(frame: .zero)
+        wantsLayer = true
+        fill.backgroundColor = color.cgColor
+        // The resting value, for the moments a layer carries no animation —
+        // off-window, or before it is attached.
+        fill.opacity = to
+        layer?.addSublayer(fill)
+    }
+
+    @available(*, unavailable)
+    required init?(coder: NSCoder) { fatalError("not used") }
+
+    override func layout() {
+        super.layout()
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        fill.frame = bounds
+        CATransaction.commit()
+    }
+
+    override func viewDidMoveToWindow() {
+        super.viewDidMoveToWindow()
+        guard window != nil else {
+            fill.removeAnimation(forKey: "pulse")
+            return
+        }
+        guard fill.animation(forKey: "pulse") == nil else { return }
+        let pulse = CABasicAnimation(keyPath: "opacity")
+        pulse.fromValue = from
+        pulse.toValue = to
+        pulse.duration = halfCycle
+        pulse.autoreverses = true
+        pulse.repeatCount = .infinity
+        pulse.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
+        let now = fill.convertTime(CACurrentMediaTime(), from: nil)
+        pulse.beginTime = now - now.truncatingRemainder(dividingBy: halfCycle * 2)
+        fill.add(pulse, forKey: "pulse")
     }
 }
 

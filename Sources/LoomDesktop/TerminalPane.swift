@@ -14,7 +14,8 @@ struct TerminalPane: View {
     @State private var error = ""
     @State private var loading = true
     @State private var followTail = true
-    @AppStorage("terminalFontSize") private var fontSize: Double = 14
+    @AppStorage("terminalFontSize") private var fontSize: Double = 15
+    @FocusState private var composerFocused: Bool
     @State private var sending = false
     @State private var poller: Task<Void, Never>?
     /// True while the output view holds keyboard focus, i.e. while typing
@@ -52,7 +53,12 @@ struct TerminalPane: View {
                 }
             }
         }
-        .onAppear { start() }
+        .onAppear {
+            start()
+            // Land ready to type. Focus has to be set after this run loop
+            // turn, or SwiftUI has not built the field yet and drops it.
+            DispatchQueue.main.async { composerFocused = true }
+        }
         .onDisappear {
             poller?.cancel()
             poller = nil
@@ -116,11 +122,19 @@ struct TerminalPane: View {
                     in: Capsule()
                 )
 
-            toolbarIcon("textformat.size.smaller", help: "Smaller text") {
-                fontSize = max(10, fontSize - 1)
-            }
-            toolbarIcon("textformat.size.larger", help: "Larger text") {
-                fontSize = min(22, fontSize + 1)
+            HStack(spacing: 2) {
+                toolbarIcon("textformat.size.smaller", help: "Smaller text (⌘−)") {
+                    fontSize = max(9, fontSize - 1)
+                }
+                .keyboardShortcut("-", modifiers: .command)
+                Text("\(Int(fontSize))")
+                    .font(.system(size: 11, weight: .medium, design: .monospaced))
+                    .foregroundColor(TerminalTheme.dimText)
+                    .frame(minWidth: 18)
+                toolbarIcon("textformat.size.larger", help: "Larger text (⌘+)") {
+                    fontSize = min(28, fontSize + 1)
+                }
+                .keyboardShortcut("+", modifiers: .command)
             }
             toolbarIcon("doc.on.doc", help: "Copy the whole pane") {
                 NSPasteboard.general.clearContents()
@@ -242,6 +256,7 @@ struct TerminalPane: View {
                     axis: .vertical
                 )
                     .textFieldStyle(.plain)
+                    .focused($composerFocused)
                     .font(.system(size: 14.5))
                     .lineLimit(1...5)
                     .foregroundColor(TerminalTheme.text)
@@ -753,6 +768,7 @@ private struct SelectableTerminalText: NSViewRepresentable {
         /// True while the view is being scrolled by code rather than by hand.
         var suppressFollowUpdates = false
         private var observer: NSObjectProtocol?
+        private var reflowObserver: NSObjectProtocol?
 
         init(followTail: Binding<Bool>) {
             self.followTail = followTail
@@ -779,10 +795,32 @@ private struct SelectableTerminalText: NSViewRepresentable {
                     self.followTail.wrappedValue = atBottom
                 }
             }
+
+            // Anything that changes the wrap width — opening the plan panel,
+            // dragging the split, resizing the window — re-flows the text and
+            // changes its height, which silently strands a bottom-pinned view
+            // partway up. No text changed, so nothing else would notice.
+            guard let textView = scroll.documentView else { return }
+            textView.postsFrameChangedNotifications = true
+            reflowObserver = NotificationCenter.default.addObserver(
+                forName: NSView.frameDidChangeNotification,
+                object: textView,
+                queue: .main
+            ) { [weak scroll] _ in
+                guard self.followTail.wrappedValue,
+                      !self.suppressFollowUpdates,
+                      let documentView = scroll?.documentView as? NSTextView
+                else { return }
+                self.suppressFollowUpdates = true
+                documentView.scrollToEndOfDocument(nil)
+                DispatchQueue.main.async { self.suppressFollowUpdates = false }
+            }
         }
 
         deinit {
-            if let observer { NotificationCenter.default.removeObserver(observer) }
+            let center = NotificationCenter.default
+            if let observer { center.removeObserver(observer) }
+            if let reflowObserver { center.removeObserver(reflowObserver) }
         }
     }
 }

@@ -48,18 +48,18 @@ Run `/goal`, Write result — and start / stop / resume for the agent session.
   poller, so browsing forty tasks does not leave forty pollers running; the
   feed itself tail-merges by message id and bursts after a send so replies
   land quickly — the same behavior as the loom-app.
-- The terminal renders `tmux capture-pane` into an `NSTextView`. Two details
-  matter and are easy to undo by accident:
-  - **No line spacing, no kerning.** A TUI draws frames out of `│ ─ ╭ ╯`;
-    any gap between lines breaks them into dashes.
-  - **Updates replace only the span that changed.** A poll usually moves a
-    spinner, not 800 lines, and rewriting the whole buffer twice a second
-    re-lays out the document, drops the selection, and burns CPU.
-- Scrolling is hybrid, because history lives in two places: an ordinary pane's
-  scrollback comes down with the capture and scrolls locally, while a
-  full-screen app (Claude Code's TUI, vim, less) draws to the alternate
-  screen, which has no scrollback — there the wheel is forwarded to
-  `/api/tmux/scroll`.
+- The terminal is **xterm in a `WKWebView`**, attached to the pane's pty
+  through `/api/tmux/stream` — the same terminal, theme and transport the web
+  console uses. Swift streams the bytes and hands them to `term.write`;
+  keystrokes go back through `/api/tmux/stream-input`.
+  This is worth keeping rather than "simplifying" back to `capture-pane`:
+  - The stream carries **colour and cursor motion**. A capture is plain text,
+    so a TUI comes out grey and, worse, redraws are lost.
+  - Attaching passes **cols/rows**, so tmux sizes the pane to this window. A
+    capture is laid out for whatever width the pane happens to have — 299
+    columns reflowed into an 88-column view is unreadable.
+  - Input is a **pty write**, so keys are just their bytes. `send-keys` needs
+    tmux key names, and getting one wrong types the name into the pane.
 
 ## Requirements
 

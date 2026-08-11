@@ -19,8 +19,10 @@ swift build -c release >/dev/null
 echo "▸ assembling bundle…"
 mkdir -p "$STAGE/Contents/MacOS" "$STAGE/Contents/Resources"
 cp .build/release/LoomDesktop "$STAGE/Contents/MacOS/LoomDesktop"
-# Markdown preview engine, loaded via Bundle.main at runtime.
-cp Resources/marked.min.js "$STAGE/Contents/Resources/"
+# Web assets loaded via Bundle.main at runtime: the markdown preview engine
+# and xterm, which renders the agent's pane exactly as the web console does.
+cp Resources/marked.min.js Resources/xterm.js Resources/xterm.css Resources/addon-fit.js \
+   "$STAGE/Contents/Resources/"
 
 cat > "$STAGE/Contents/Info.plist" <<PLIST
 <?xml version="1.0" encoding="UTF-8"?>

@@ -267,33 +267,31 @@ struct LoomAPI {
         )
     }
 
-    /// Pane scrollback as plain text — what the terminal view renders.
-    func capture(target: String, lines: Int = 400) async throws -> TerminalCapture {
+    /// A live attachment to the pane's pty, which is what the web terminal
+    /// uses. Unlike `capture`, this carries the raw byte stream — colour,
+    /// cursor motion, the lot — and tells tmux to size the pane to the client,
+    /// so the output is laid out for the window it will be read in.
+    func streamRequest(target: String, cols: Int, rows: Int) -> URLRequest? {
         let encoded = target.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? target
-        return try await request("/api/tmux/capture?target=\(encoded)&lines=\(lines)")
+        guard let url = URL(
+            string: "\(LoomSettings.baseURL)/api/tmux/stream?target=\(encoded)&cols=\(cols)&rows=\(rows)"
+        ) else { return nil }
+        var request = URLRequest(url: url)
+        request.setValue("no-store", forHTTPHeaderField: "Cache-Control")
+        let token = LoomSettings.token
+        if !token.isEmpty {
+            request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+        }
+        return request
     }
 
-    /// Browse tmux scrollback / Claude's fullscreen history — same endpoint the
-    /// web terminal's wheel uses (`copy-mode`, PgUp/PgDn, or SGR wheel).
-    func scroll(target: String, direction: String, lines: Int) async throws {
+    /// Keystrokes for an attached stream. This writes to the pty, so the keys a
+    /// terminal sends are just their bytes — no tmux key names to get wrong.
+    func streamInput(streamId: String, text: String) async throws {
         let _: OkResponse = try await request(
-            "/api/tmux/scroll",
+            "/api/tmux/stream-input",
             method: "POST",
-            body: [
-                "target": target,
-                "dir": direction,
-                "lines": max(1, min(80, lines)),
-            ]
-        )
-    }
-
-    /// Raw keystrokes/bytes, which is how IME-composed text (Chinese, emoji,
-    /// anything multi-byte) has to reach the pane — key names cannot carry it.
-    func sendLiteral(target: String, text: String) async throws {
-        let _: OkResponse = try await request(
-            "/api/tmux/send-literal",
-            method: "POST",
-            body: ["target": target, "text": text]
+            body: ["stream_id": streamId, "text": text]
         )
     }
 

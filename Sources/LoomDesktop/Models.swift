@@ -202,12 +202,6 @@ struct SessionList: Decodable {
     var tmux_target: String?
 }
 
-struct TerminalCapture: Decodable {
-    var ok: Bool?
-    var text: String?
-    var error: String?
-}
-
 // MARK: - Small acknowledgement payloads
 
 struct OkResponse: Decodable {

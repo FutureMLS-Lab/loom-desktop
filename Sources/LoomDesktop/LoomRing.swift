@@ -152,29 +152,96 @@ struct LoomBlinkingRing<S: InsettableShape>: View {
 /// "This one is running", for a header or a status line — one or two on
 /// screen at a time.
 ///
-/// Motion is rationed on purpose. SwiftUI drives a `repeatForever` animation
-/// by re-evaluating the view graph every frame rather than handing it to the
-/// compositor, so a sidebar of thirteen animated dots kept the whole app
-/// re-rendering at display rate and made everything feel sluggish. Lists get
-/// `LoomActivityDot` (static); only the dock and the task header move.
+/// The pulse runs on a `CALayer`, not on SwiftUI state. A `repeatForever`
+/// animation over `@State` makes SwiftUI re-evaluate and re-render the view
+/// graph every single frame, and because this dot lives in the task header,
+/// that meant the sidebar, the terminal and the plan preview were all being
+/// re-rendered at display rate for as long as any agent was working — about a
+/// quarter of a core, spent on one blinking dot. Core Animation runs the same
+/// pulse on the render server for free.
 struct LoomSpinnerDot: View {
     var size: CGFloat = 14
 
-    @State private var pulsing = false
-
     var body: some View {
-        Circle()
-            .fill(LoomColors.accent)
-            .frame(width: size * 0.62, height: size * 0.62)
-            .scaleEffect(pulsing ? 1.0 : 0.6)
-            .opacity(pulsing ? 1 : 0.45)
+        PulsingDot(diameter: size * 0.62, color: NSColor(LoomColors.accent))
             .frame(width: size, height: size)
-            .onAppear {
-                guard !pulsing else { return }
-                withAnimation(.easeInOut(duration: 0.75).repeatForever(autoreverses: true)) {
-                    pulsing = true
-                }
-            }
+    }
+}
+
+private struct PulsingDot: NSViewRepresentable {
+    let diameter: CGFloat
+    let color: NSColor
+
+    func makeNSView(context: Context) -> PulsingDotView {
+        PulsingDotView(diameter: diameter, color: color)
+    }
+
+    func updateNSView(_ view: PulsingDotView, context: Context) {
+        view.apply(diameter: diameter, color: color)
+    }
+}
+
+/// Owns the pulsing layer. The animation is re-attached whenever the view
+/// joins a window, because Core Animation drops animations from layers that
+/// leave the hierarchy — switching tabs would otherwise freeze the dot.
+final class PulsingDotView: NSView {
+    private let dot = CALayer()
+    private var diameter: CGFloat
+    private var color: NSColor
+
+    init(diameter: CGFloat, color: NSColor) {
+        self.diameter = diameter
+        self.color = color
+        super.init(frame: .zero)
+        wantsLayer = true
+        dot.backgroundColor = color.cgColor
+        layer?.addSublayer(dot)
+    }
+
+    @available(*, unavailable)
+    required init?(coder: NSCoder) { fatalError("not used") }
+
+    func apply(diameter: CGFloat, color: NSColor) {
+        guard diameter != self.diameter || color != self.color else { return }
+        self.diameter = diameter
+        self.color = color
+        needsLayout = true
+    }
+
+    override func layout() {
+        super.layout()
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        dot.frame = CGRect(
+            x: (bounds.width - diameter) / 2,
+            y: (bounds.height - diameter) / 2,
+            width: diameter,
+            height: diameter
+        )
+        dot.cornerRadius = diameter / 2
+        dot.backgroundColor = color.cgColor
+        CATransaction.commit()
+    }
+
+    override func viewDidMoveToWindow() {
+        super.viewDidMoveToWindow()
+        if window == nil {
+            dot.removeAnimation(forKey: "pulse")
+        } else if dot.animation(forKey: "pulse") == nil {
+            let scale = CABasicAnimation(keyPath: "transform.scale")
+            scale.fromValue = 0.6
+            scale.toValue = 1.0
+            let fade = CABasicAnimation(keyPath: "opacity")
+            fade.fromValue = 0.45
+            fade.toValue = 1.0
+            let pulse = CAAnimationGroup()
+            pulse.animations = [scale, fade]
+            pulse.duration = 0.75
+            pulse.autoreverses = true
+            pulse.repeatCount = .infinity
+            pulse.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
+            dot.add(pulse, forKey: "pulse")
+        }
     }
 }
 
@@ -195,58 +262,109 @@ struct LoomActivityDot: View {
     }
 }
 
-/// One clock for every blinking row in a list.
+/// "Finished while you were looking elsewhere", for a row in a list.
 ///
-/// Giving each row its own `repeatForever` animation is what made the sidebar
-/// expensive: SwiftUI drives those by re-evaluating the view graph every
-/// frame, so thirteen rows meant thirteen continuous re-render loops. This
-/// publishes a single phase the rows read, so the whole list blinks in unison
-/// off one timer — which also looks deliberate rather than like a dozen
-/// lights firing out of step.
-@MainActor
-final class BlinkClock: ObservableObject {
-    static let shared = BlinkClock()
+/// Blinking used to be a SwiftUI animation driven by a shared timer, which
+/// meant the sidebar re-rendered the whole window at display rate for as long
+/// as anything was waiting to be seen. The pulse is a layer animation now, so
+/// it costs nothing per frame; rows stay in unison because every animation is
+/// anchored to the same point on the clock rather than to when its row
+/// appeared.
+struct LoomBlinkDot: View {
+    var size: CGFloat = 11
 
-    /// Matches the web console's `loom-ring-blink` half-cycle.
-    static let interval: TimeInterval = 0.62
-
-    @Published private(set) var on = true
-
-    private var timer: Timer?
-    private var subscribers = 0
-
-    /// Rows start and stop the clock as they appear, so a list with nothing
-    /// to announce costs nothing at all.
-    func subscribe() {
-        subscribers += 1
-        guard timer == nil else { return }
-        timer = Timer.scheduledTimer(withTimeInterval: Self.interval, repeats: true) { [weak self] _ in
-            Task { @MainActor in self?.on.toggle() }
-        }
-    }
-
-    func unsubscribe() {
-        subscribers = max(0, subscribers - 1)
-        guard subscribers == 0 else { return }
-        timer?.invalidate()
-        timer = nil
-        on = true
+    var body: some View {
+        BlinkingSymbol(
+            symbol: "exclamationmark.circle.fill",
+            pointSize: size,
+            color: NSColor(LoomColors.amber)
+        )
+        .frame(width: size * 1.2, height: size * 1.2)
     }
 }
 
-/// "Finished while you were looking elsewhere", for a row in a list. Blinks
-/// off the shared clock.
-struct LoomBlinkDot: View {
-    var size: CGFloat = 11
-    @ObservedObject private var clock = BlinkClock.shared
+private struct BlinkingSymbol: NSViewRepresentable {
+    let symbol: String
+    let pointSize: CGFloat
+    let color: NSColor
 
-    var body: some View {
-        Image(systemName: "exclamationmark.circle.fill")
-            .font(.system(size: size))
-            .foregroundColor(LoomColors.amber)
-            .opacity(clock.on ? 1 : 0.2)
-            .animation(.easeInOut(duration: BlinkClock.interval), value: clock.on)
-            .onAppear { clock.subscribe() }
-            .onDisappear { clock.unsubscribe() }
+    func makeNSView(context: Context) -> BlinkingSymbolView {
+        BlinkingSymbolView(symbol: symbol, pointSize: pointSize, color: color)
+    }
+
+    func updateNSView(_ view: BlinkingSymbolView, context: Context) {}
+}
+
+final class BlinkingSymbolView: NSView {
+    /// Matches the web console's `loom-ring-blink` half-cycle.
+    static let interval: CFTimeInterval = 0.62
+
+    private let tint = CALayer()
+    private let glyph = CALayer()
+    private let symbol: String
+    private let pointSize: CGFloat
+    private let color: NSColor
+
+    init(symbol: String, pointSize: CGFloat, color: NSColor) {
+        self.symbol = symbol
+        self.pointSize = pointSize
+        self.color = color
+        super.init(frame: .zero)
+        wantsLayer = true
+        tint.backgroundColor = color.cgColor
+        tint.mask = glyph
+        layer?.addSublayer(tint)
+    }
+
+    @available(*, unavailable)
+    required init?(coder: NSCoder) { fatalError("not used") }
+
+    override func layout() {
+        super.layout()
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        tint.frame = bounds
+        glyph.frame = bounds
+        CATransaction.commit()
+    }
+
+    override func viewDidChangeBackingProperties() {
+        super.viewDidChangeBackingProperties()
+        loadGlyph()
+    }
+
+    private func loadGlyph() {
+        let scale = window?.backingScaleFactor ?? 2
+        let configuration = NSImage.SymbolConfiguration(pointSize: pointSize, weight: .regular)
+        guard let image = NSImage(systemSymbolName: symbol, accessibilityDescription: nil)?
+            .withSymbolConfiguration(configuration)
+        else { return }
+        var rect = CGRect(origin: .zero, size: image.size)
+        glyph.contents = image.cgImage(forProposedRect: &rect, context: nil, hints: nil)
+        glyph.contentsGravity = .resizeAspect
+        glyph.contentsScale = scale
+    }
+
+    override func viewDidMoveToWindow() {
+        super.viewDidMoveToWindow()
+        guard window != nil else {
+            tint.removeAnimation(forKey: "blink")
+            return
+        }
+        loadGlyph()
+        guard tint.animation(forKey: "blink") == nil else { return }
+        let blink = CABasicAnimation(keyPath: "opacity")
+        blink.fromValue = 1.0
+        blink.toValue = 0.2
+        blink.duration = Self.interval
+        blink.autoreverses = true
+        blink.repeatCount = .infinity
+        blink.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
+        // Anchor to the shared cycle so rows blink together, however long
+        // after each other they appeared.
+        let now = tint.convertTime(CACurrentMediaTime(), from: nil)
+        let cycle = Self.interval * 2
+        blink.beginTime = now - now.truncatingRemainder(dividingBy: cycle)
+        tint.add(blink, forKey: "blink")
     }
 }

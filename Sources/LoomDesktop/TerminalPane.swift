@@ -84,13 +84,12 @@ struct TerminalPane: View {
     private var toolbar: some View {
         HStack(spacing: 12) {
             HStack(spacing: 8) {
+                // No shadow: this toolbar re-renders on every capture, and a
+                // layer shadow is re-applied each time for a 8pt dot nobody
+                // looks at.
                 Circle()
                     .fill(error.isEmpty ? LoomColors.green : LoomColors.red)
                     .frame(width: 8, height: 8)
-                    .shadow(
-                        color: (error.isEmpty ? LoomColors.green : LoomColors.red).opacity(0.45),
-                        radius: 3, y: 0
-                    )
                 VStack(alignment: .leading, spacing: 1) {
                     Text(error.isEmpty ? "Live session" : "Disconnected")
                         .font(.system(size: 12.5, weight: .semibold))

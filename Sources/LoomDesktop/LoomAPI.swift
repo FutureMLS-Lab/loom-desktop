@@ -280,6 +280,20 @@ struct LoomAPI {
         return try await request("/api/tmux/capture?target=\(encoded)&lines=\(lines)")
     }
 
+    /// Browse tmux scrollback / Claude's fullscreen history — same endpoint the
+    /// web terminal's wheel uses (`copy-mode`, PgUp/PgDn, or SGR wheel).
+    func scroll(target: String, direction: String, lines: Int) async throws {
+        let _: OkResponse = try await request(
+            "/api/tmux/scroll",
+            method: "POST",
+            body: [
+                "target": target,
+                "dir": direction,
+                "lines": max(1, min(80, lines)),
+            ]
+        )
+    }
+
     /// Raw keystrokes/bytes, which is how IME-composed text (Chinese, emoji,
     /// anything multi-byte) has to reach the pane — key names cannot carry it.
     func sendLiteral(target: String, text: String) async throws {

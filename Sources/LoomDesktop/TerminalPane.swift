@@ -14,8 +14,7 @@ struct TerminalPane: View {
     @State private var error = ""
     @State private var loading = true
     @State private var followTail = true
-    @AppStorage("terminalFontSize") private var fontSize: Double = 13
-    @State private var draft = ""
+    @AppStorage("terminalFontSize") private var fontSize: Double = 14
     @State private var sending = false
     @State private var poller: Task<Void, Never>?
     /// True while the output view holds keyboard focus, i.e. while typing
@@ -25,80 +24,143 @@ struct TerminalPane: View {
     /// A live pane deserves a fast refresh; one waiting for input does not.
     private static let workingInterval: TimeInterval = 0.7
     private static let idleInterval: TimeInterval = 2.5
-    private static let lines = 500
+    /// Capture enough of the live viewport after a tmux scroll that Claude's
+    /// fullscreen TUI still fills the pane.
+    private static let lines = 800
+    @State private var scrollAccum: CGFloat = 0
+    @State private var scrollFlush: Task<Void, Never>?
+    /// The plan digest below the pane, mirroring the web console's agent tab.
+    @AppStorage("terminalPlanExpanded") private var planExpanded = true
 
     var body: some View {
+        Group {
+            if planExpanded {
+                // Draggable divider: how much plan you want visible depends on
+                // whether you are reading it or driving the agent.
+                VSplitView {
+                    terminalCard
+                        .frame(minHeight: 360)
+                    // Capped, because the pane is what you are steering; the
+                    // plan is reference. Drag the divider to change your mind.
+                    PlanDigest(session: session)
+                        .frame(minHeight: 110, idealHeight: 180, maxHeight: 360)
+                }
+            } else {
+                VStack(spacing: 0) {
+                    terminalCard
+                    PlanDigest(session: session)
+                }
+            }
+        }
+        .onAppear { start() }
+        .onDisappear {
+            poller?.cancel()
+            poller = nil
+            session.persistTerminalDraft()
+        }
+        .onChange(of: session.paneTarget) { _, _ in start() }
+        .onChange(of: session.terminalDraft) { _, _ in
+            session.persistTerminalDraft()
+        }
+    }
+
+    private var terminalCard: some View {
         VStack(spacing: 0) {
             toolbar
-            Divider()
             content
-            Divider()
             composer
         }
-        .background(TerminalTheme.background)
-        .onAppear { start() }
-        .onDisappear { poller?.cancel(); poller = nil }
-        .onChange(of: session.paneTarget) { _, _ in start() }
+        .background(
+            LinearGradient(
+                colors: [TerminalTheme.backgroundTop, TerminalTheme.background],
+                startPoint: .top,
+                endPoint: .bottom
+            )
+        )
     }
 
     // MARK: Toolbar
 
     private var toolbar: some View {
-        HStack(spacing: 10) {
-            HStack(spacing: 6) {
+        HStack(spacing: 12) {
+            HStack(spacing: 8) {
                 Circle()
                     .fill(error.isEmpty ? LoomColors.green : LoomColors.red)
-                    .frame(width: 7, height: 7)
-                Text(error.isEmpty ? "Live" : error)
-                    .font(.system(size: 12))
-                    .foregroundColor(TerminalTheme.dimText)
-                    .lineLimit(1)
+                    .frame(width: 8, height: 8)
+                    .shadow(
+                        color: (error.isEmpty ? LoomColors.green : LoomColors.red).opacity(0.45),
+                        radius: 3, y: 0
+                    )
+                VStack(alignment: .leading, spacing: 1) {
+                    Text(error.isEmpty ? "Live session" : "Disconnected")
+                        .font(.system(size: 12.5, weight: .semibold))
+                        .foregroundColor(TerminalTheme.text)
+                    Text(error.isEmpty ? session.paneTarget : error)
+                        .font(.system(size: 11, design: .monospaced))
+                        .foregroundColor(TerminalTheme.dimText)
+                        .lineLimit(1)
+                        .truncationMode(.middle)
+                }
             }
-            Text(session.paneTarget)
-                .font(.system(size: 11.5, design: .monospaced))
-                .foregroundColor(TerminalTheme.dimText.opacity(0.7))
-                .lineLimit(1)
-                .truncationMode(.middle)
 
             Spacer()
 
-            Text(typingFocused ? "typing here" : "click to type")
+            Text(typingFocused ? "Typing into pane" : "Click pane to type")
                 .font(.system(size: 11, weight: .medium))
-                .foregroundColor(typingFocused ? LoomColors.accent : TerminalTheme.dimText.opacity(0.75))
-                .padding(.horizontal, 7)
-                .padding(.vertical, 3)
+                .foregroundColor(typingFocused ? TerminalTheme.inkAccent : TerminalTheme.dimText)
+                .padding(.horizontal, 9)
+                .padding(.vertical, 4)
                 .background(
-                    typingFocused ? LoomColors.accent.opacity(0.16) : Color.white.opacity(0.06),
-                    in: Rectangle()
+                    typingFocused
+                        ? TerminalTheme.inkAccent.opacity(0.14)
+                        : TerminalTheme.text.opacity(0.06),
+                    in: Capsule()
                 )
 
-            Button { fontSize = max(9, fontSize - 1) } label: {
-                Image(systemName: "textformat.size.smaller")
+            toolbarIcon("textformat.size.smaller", help: "Smaller text") {
+                fontSize = max(10, fontSize - 1)
             }
-            .help("Smaller text")
-            Button { fontSize = min(20, fontSize + 1) } label: {
-                Image(systemName: "textformat.size.larger")
+            toolbarIcon("textformat.size.larger", help: "Larger text") {
+                fontSize = min(22, fontSize + 1)
             }
-            .help("Larger text")
-            Button {
+            toolbarIcon("doc.on.doc", help: "Copy the whole pane") {
                 NSPasteboard.general.clearContents()
                 NSPasteboard.general.setString(text, forType: .string)
-            } label: {
-                Image(systemName: "doc.on.doc")
             }
-            .help("Copy the whole pane")
-            Button { followTail = true } label: {
-                Image(systemName: "arrow.down.to.line")
+            toolbarIcon("arrow.down.to.line", help: "Jump to the latest output") {
+                followTail = true
+                // Also bring a scrolled-back remote pane home, since a
+                // full-screen app's history is not in this buffer.
+                Task { await scrollPane(direction: "down", lines: 80) }
             }
-            .help("Jump to the latest output")
             .disabled(followTail)
+            .opacity(followTail ? 0.35 : 1)
+        }
+        .padding(.horizontal, 14)
+        .padding(.vertical, 10)
+        .background(TerminalTheme.chrome.opacity(0.92))
+        .overlay(alignment: .bottom) {
+            Rectangle()
+                .fill(TerminalTheme.rule)
+                .frame(height: 1)
+        }
+    }
+
+    private func toolbarIcon(
+        _ systemName: String,
+        help: String,
+        action: @escaping () -> Void
+    ) -> some View {
+        Button(action: action) {
+            Image(systemName: systemName)
+                .font(.system(size: 13, weight: .medium))
+                .foregroundColor(TerminalTheme.dimText)
+                .frame(width: 28, height: 28)
+                .background(TerminalTheme.text.opacity(0.06), in: RoundedRectangle(cornerRadius: 7))
+                .contentShape(RoundedRectangle(cornerRadius: 7))
         }
         .buttonStyle(.plain)
-        .foregroundColor(TerminalTheme.dimText)
-        .font(.system(size: 13))
-        .padding(.horizontal, 12)
-        .padding(.vertical, 7)
-        .background(TerminalTheme.chrome)
+        .help(help)
     }
 
     // MARK: Output
@@ -124,6 +186,9 @@ struct TerminalPane: View {
                 },
                 onKey: { key in
                     Task { await sendKey(key) }
+                },
+                onWheel: { deltaY in
+                    enqueueScroll(deltaY: deltaY)
                 }
             )
         }
@@ -132,19 +197,29 @@ struct TerminalPane: View {
     // MARK: Composer
 
     private var composer: some View {
-        VStack(spacing: 8) {
+        VStack(spacing: 10) {
             HStack(spacing: 6) {
                 ForEach(TerminalKeyButton.all, id: \.key) { item in
                     Button {
                         Task { await sendKey(item.key) }
                     } label: {
                         Text(item.label)
-                            .font(.system(size: 12, weight: .medium, design: .monospaced))
-                            .padding(.horizontal, 9)
-                            .padding(.vertical, 4)
-                            .background(TerminalTheme.keycap, in: Rectangle())
+                            .font(.system(size: 12, weight: .semibold, design: .monospaced))
+                            .padding(.horizontal, 10)
+                            .padding(.vertical, 5)
+                            .background(
+                                LinearGradient(
+                                    colors: [
+                                        TerminalTheme.keycap,
+                                        TerminalTheme.keycap.opacity(0.85),
+                                    ],
+                                    startPoint: .top,
+                                    endPoint: .bottom
+                                ),
+                                in: RoundedRectangle(cornerRadius: 7)
+                            )
                             .overlay(
-                                Rectangle()
+                                RoundedRectangle(cornerRadius: 7)
                                     .strokeBorder(TerminalTheme.keycapBorder, lineWidth: 1)
                             )
                             .foregroundColor(TerminalTheme.text)
@@ -153,23 +228,30 @@ struct TerminalPane: View {
                     .help(item.help)
                 }
                 Spacer()
+                Text("中文走下面输入框")
+                    .font(.system(size: 11))
+                    .foregroundColor(TerminalTheme.dimText.opacity(0.85))
             }
 
             HStack(alignment: .bottom, spacing: 8) {
                 // A normal AppKit text field: the input method composes here
                 // (中文/日本語/emoji all work), and only the committed text is
                 // sent to the pane.
-                TextField("输入文字发送到终端 · type here, ⏎ to send", text: $draft, axis: .vertical)
+                TextField(
+                    "输入文字发送到终端 · type here, ⏎ to send",
+                    text: $session.terminalDraft,
+                    axis: .vertical
+                )
                     .textFieldStyle(.plain)
-                    .font(.system(size: 14))
+                    .font(.system(size: 14.5))
                     .lineLimit(1...5)
                     .foregroundColor(TerminalTheme.text)
-                    .padding(.horizontal, 10)
-                    .padding(.vertical, 7)
-                    .background(TerminalTheme.inputBackground, in: Rectangle())
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 9)
+                    .background(TerminalTheme.inputBackground, in: RoundedRectangle(cornerRadius: 10))
                     .overlay(
-                        Rectangle()
-                            .strokeBorder(TerminalTheme.keycapBorder, lineWidth: 1)
+                        RoundedRectangle(cornerRadius: 10)
+                            .strokeBorder(TerminalTheme.keycapBorder.opacity(0.85), lineWidth: 1)
                     )
                     .onSubmit { Task { await sendDraft(submit: true) } }
 
@@ -177,34 +259,48 @@ struct TerminalPane: View {
                     Task { await sendDraft(submit: false) }
                 } label: {
                     Text("Paste")
-                        .font(.system(size: 12, weight: .medium))
-                        .padding(.horizontal, 10)
-                        .padding(.vertical, 7)
-                        .background(TerminalTheme.keycap, in: Rectangle())
+                        .font(.system(size: 12.5, weight: .semibold))
+                        .padding(.horizontal, 12)
+                        .padding(.vertical, 9)
+                        .background(TerminalTheme.keycap, in: RoundedRectangle(cornerRadius: 9))
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 9)
+                                .strokeBorder(TerminalTheme.keycapBorder, lineWidth: 1)
+                        )
                         .foregroundColor(TerminalTheme.text)
                 }
                 .buttonStyle(.plain)
                 .help("Send the text without pressing Enter")
-                .disabled(draft.isEmpty || sending)
+                .disabled(session.terminalDraft.isEmpty || sending)
 
                 Button {
                     Task { await sendDraft(submit: true) }
                 } label: {
                     Image(systemName: "arrow.up.circle.fill")
-                        .font(.system(size: 22))
+                        .font(.system(size: 26))
                         .foregroundStyle(
-                            draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-                                ? AnyShapeStyle(TerminalTheme.dimText.opacity(0.5))
-                                : AnyShapeStyle(LoomColors.accent)
+                            session.terminalDraft
+                                .trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                                ? AnyShapeStyle(TerminalTheme.dimText.opacity(0.45))
+                                : AnyShapeStyle(TerminalTheme.inkAccent)
                         )
                 }
                 .buttonStyle(.plain)
                 .help("Send and press Enter")
-                .disabled(draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || sending)
+                .disabled(
+                    session.terminalDraft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                        || sending
+                )
             }
         }
-        .padding(10)
-        .background(TerminalTheme.chrome)
+        .padding(.horizontal, 12)
+        .padding(.vertical, 11)
+        .background(TerminalTheme.chrome.opacity(0.95))
+        .overlay(alignment: .top) {
+            Rectangle()
+                .fill(TerminalTheme.rule)
+                .frame(height: 1)
+        }
     }
 
     // MARK: Behavior
@@ -231,6 +327,9 @@ struct TerminalPane: View {
             if capture.ok == false {
                 error = capture.error ?? "Pane unavailable"
             } else {
+                // The gateway captures with `tmux capture-pane -p` and no `-e`,
+                // so the text arrives as plain characters — no escape sequences
+                // to strip, and no colour to recover either.
                 let next = capture.text ?? ""
                 if next != text { text = next }
                 error = ""
@@ -243,17 +342,54 @@ struct TerminalPane: View {
 
     private func sendKey(_ key: String) async {
         guard !session.paneTarget.isEmpty else { return }
+        // PageUp/PageDown browse history the same way the web terminal does.
+        if key == "PageUp" || key == "PageDown" {
+            await scrollPane(direction: key == "PageUp" ? "up" : "down", lines: 24)
+            return
+        }
         try? await session.api.sendKey(target: session.paneTarget, key: key)
         followTail = true
         await refresh()
     }
 
+    /// Match the web console: coalesce trackpad deltas, then POST /api/tmux/scroll
+    /// so Claude's fullscreen (and tmux copy-mode) actually move.
+    private func enqueueScroll(deltaY: CGFloat) {
+        scrollAccum += deltaY
+        scrollFlush?.cancel()
+        scrollFlush = Task {
+            try? await Task.sleep(nanoseconds: 40_000_000)
+            guard !Task.isCancelled else { return }
+            let total = scrollAccum
+            scrollAccum = 0
+            guard total != 0 else { return }
+            let lines = max(1, min(80, Int((abs(total) / 24).rounded())))
+            await scrollPane(direction: total < 0 ? "up" : "down", lines: lines)
+        }
+    }
+
+    private func scrollPane(direction: String, lines: Int) async {
+        guard !session.paneTarget.isEmpty else { return }
+        do {
+            try await session.api.scroll(
+                target: session.paneTarget,
+                direction: direction,
+                lines: lines
+            )
+            await refresh()
+        } catch {
+            // Scroll is best-effort; keep showing the last capture.
+        }
+    }
+
     private func sendDraft(submit: Bool) async {
-        let payload = draft
+        let payload = session.terminalDraft
         guard !payload.isEmpty else { return }
-        draft = ""
+        session.terminalDraft = ""
+        session.persistTerminalDraft()
         if await !sendLiteral(payload, submit: submit) {
-            draft = payload
+            session.terminalDraft = payload
+            session.persistTerminalDraft()
         }
     }
 
@@ -273,6 +409,7 @@ struct TerminalPane: View {
             return false
         }
     }
+
 }
 
 private struct TerminalKeyButton {
@@ -290,15 +427,22 @@ private struct TerminalKeyButton {
     ]
 }
 
-/// The xterm palette the loom-app uses, so a pane looks the same everywhere.
+/// Parchment terminal — warm paper, dark ink. The yellow is held back to the
+/// tint of aged paper rather than a highlighter, because a terminal is read
+/// for minutes at a time and saturated backgrounds fight the text for
+/// attention. Contrast lands around 12:1, comfortably past WCAG AAA.
 enum TerminalTheme {
-    static let background = Color(red: 0x11 / 255, green: 0x10 / 255, blue: 0x14 / 255)
-    static let chrome = Color(red: 0x19 / 255, green: 0x18 / 255, blue: 0x1D / 255)
-    static let keycap = Color(red: 0x28 / 255, green: 0x26 / 255, blue: 0x2D / 255)
-    static let keycapBorder = Color(red: 0x4A / 255, green: 0x47 / 255, blue: 0x51 / 255)
-    static let inputBackground = Color(red: 0x1F / 255, green: 0x1E / 255, blue: 0x24 / 255)
-    static let text = Color(red: 0xDE / 255, green: 0xD9 / 255, blue: 0xE2 / 255)
-    static let dimText = Color(red: 0xAA / 255, green: 0xA5 / 255, blue: 0xB0 / 255)
+    static let backgroundTop = Color(red: 0xFE / 255, green: 0xF6 / 255, blue: 0xD6 / 255)
+    static let background = Color(red: 0xF9 / 255, green: 0xEB / 255, blue: 0xBE / 255)
+    static let chrome = Color(red: 0xF2 / 255, green: 0xE4 / 255, blue: 0xB8 / 255)
+    static let keycap = Color(red: 0xFD / 255, green: 0xF6 / 255, blue: 0xDF / 255)
+    static let keycapBorder = Color(red: 0xD4 / 255, green: 0xC1 / 255, blue: 0x8B / 255)
+    static let inputBackground = Color(red: 0xFF / 255, green: 0xFC / 255, blue: 0xF2 / 255)
+    static let text = Color(red: 0x2C / 255, green: 0x27 / 255, blue: 0x1C / 255)
+    static let dimText = Color(red: 0x7B / 255, green: 0x6E / 255, blue: 0x51 / 255)
+    static let rule = Color(red: 0xE4 / 255, green: 0xD6 / 255, blue: 0xAC / 255)
+    static let inkAccent = Color(red: 0xA8 / 255, green: 0x52 / 255, blue: 0x18 / 255)
+    static let selection = Color(red: 0xF6 / 255, green: 0xDC / 255, blue: 0x93 / 255)
 }
 
 /// A text view that types into the pane. Click it and keystrokes go straight
@@ -356,7 +500,7 @@ final class TerminalTextView: NSTextView {
         case 36, 76: return "Enter"
         case 48: return "Tab"
         case 53: return "Escape"
-        case 51: return "Backspace"
+        case 51: return "BSpace" // tmux key name; "Backspace" is typed literally
         case 117: return "DC"
         case 126: return "Up"
         case 125: return "Down"
@@ -371,8 +515,50 @@ final class TerminalTextView: NSTextView {
     }
 }
 
-/// A read-only `NSTextView`: real macOS text selection, ⌘C, and scrolling —
-/// which a SwiftUI `Text` in a `ScrollView` cannot give at this size.
+/// Scrolling is hybrid, because the history lives in two different places.
+///
+/// `capture-pane -S -800` returns real scrollback for an ordinary pane, so that
+/// history is already here and scrolls natively — instant, no network. A
+/// full-screen app (Claude Code's TUI, vim, less) draws into the alternate
+/// screen, which has no scrollback: the capture is exactly one viewport, and
+/// the only way back is to ask the remote pane to scroll itself.
+///
+/// So: scroll locally while there is local content to scroll, and hand the
+/// wheel to tmux once there is not — or once the top of the buffer is reached.
+private final class TerminalScrollView: NSScrollView {
+    /// Delta in the web console's convention: negative is "up / older".
+    var onWheel: ((CGFloat) -> Void)?
+
+    override func scrollWheel(with event: NSEvent) {
+        // AppKit's positive `scrollingDeltaY` means scrolling toward the start
+        // of the document — the opposite sign of a DOM wheel event, which is
+        // what the /api/tmux/scroll contract is written against.
+        let raw = event.hasPreciseScrollingDeltas
+            ? event.scrollingDeltaY
+            : event.scrollingDeltaY * 18
+        guard raw != 0, let onWheel else {
+            super.scrollWheel(with: event)
+            return
+        }
+        let dy = -raw
+        let goingUp = dy < 0
+
+        let documentHeight = documentView?.bounds.height ?? 0
+        let viewport = contentView.bounds
+        let hasLocalHistory = documentHeight > viewport.height + 4
+        let atTop = viewport.minY <= 0.5
+        let atBottom = documentHeight - viewport.maxY <= 0.5
+
+        if hasLocalHistory, !(goingUp && atTop), !(!goingUp && atBottom) {
+            super.scrollWheel(with: event)
+            return
+        }
+        onWheel(dy)
+    }
+}
+
+/// A read-only `NSTextView`: real macOS text selection and ⌘C. History browsing
+/// is remote (tmux scroll), not local — see `TerminalScrollView`.
 private struct SelectableTerminalText: NSViewRepresentable {
     let text: String
     let fontSize: Double
@@ -380,13 +566,16 @@ private struct SelectableTerminalText: NSViewRepresentable {
     @Binding var focused: Bool
     var onLiteral: (String) -> Void
     var onKey: (String) -> Void
+    var onWheel: (CGFloat) -> Void
 
-    func makeNSView(context: Context) -> NSScrollView {
-        let scroll = NSScrollView()
+    func makeNSView(context: Context) -> TerminalScrollView {
+        let scroll = TerminalScrollView()
         scroll.drawsBackground = true
         scroll.backgroundColor = NSColor(TerminalTheme.background)
         scroll.hasVerticalScroller = true
-        scroll.autohidesScrollers = false
+        scroll.autohidesScrollers = true
+        scroll.scrollerStyle = .overlay
+        scroll.onWheel = onWheel
 
         let textView = TerminalTextView()
         textView.minSize = NSSize(width: 0, height: 0)
@@ -399,11 +588,15 @@ private struct SelectableTerminalText: NSViewRepresentable {
         textView.autoresizingMask = [.width]
         textView.isEditable = false
         textView.isSelectable = true
-        textView.drawsBackground = true
-        textView.backgroundColor = NSColor(TerminalTheme.background)
+        textView.drawsBackground = false
+        textView.backgroundColor = .clear
         textView.textColor = NSColor(TerminalTheme.text)
-        textView.insertionPointColor = NSColor(LoomColors.accent)
-        textView.textContainerInset = NSSize(width: 10, height: 10)
+        textView.insertionPointColor = NSColor(TerminalTheme.inkAccent)
+        textView.selectedTextAttributes = [
+            .backgroundColor: NSColor(TerminalTheme.selection),
+            .foregroundColor: NSColor(TerminalTheme.text),
+        ]
+        textView.textContainerInset = NSSize(width: 16, height: 14)
         textView.isAutomaticQuoteSubstitutionEnabled = false
         textView.isAutomaticSpellingCorrectionEnabled = false
         // Long agent output lines are easier to read wrapped than clipped.
@@ -419,40 +612,155 @@ private struct SelectableTerminalText: NSViewRepresentable {
         return scroll
     }
 
-    func updateNSView(_ scroll: NSScrollView, context: Context) {
+    func updateNSView(_ scroll: TerminalScrollView, context: Context) {
         guard let textView = scroll.documentView as? TerminalTextView else { return }
-        context.coordinator.followTail = $followTail
+        scroll.onWheel = onWheel
         textView.onLiteral = onLiteral
         textView.onKey = onKey
+        context.coordinator.followTail = $followTail
 
+        let bg = NSColor(TerminalTheme.background)
+        let fg = NSColor(TerminalTheme.text)
+        scroll.backgroundColor = bg
+        textView.backgroundColor = .clear
+        textView.textColor = fg
+        textView.insertionPointColor = NSColor(TerminalTheme.inkAccent)
+        textView.selectedTextAttributes = [
+            .backgroundColor: NSColor(TerminalTheme.selection),
+            .foregroundColor: fg,
+        ]
+
+        // No line spacing and no kerning: a TUI draws boxes out of `│ ─ ╭ ╯`,
+        // and any gap between lines or drift between columns breaks the frame
+        // into dashes. A terminal's grid has to stay a grid.
         let font = NSFont.monospacedSystemFont(ofSize: fontSize, weight: .regular)
-        if textView.string != text || textView.font != font {
-            // Keep the selection anchored across refreshes so a poll landing
-            // mid-drag does not wipe what the user just highlighted.
-            let selected = textView.selectedRange()
-            textView.font = font
-            textView.string = text
-            if selected.location + selected.length <= (text as NSString).length {
-                textView.setSelectedRange(selected)
+        let paragraph = NSMutableParagraphStyle()
+        paragraph.lineSpacing = 0
+        paragraph.paragraphSpacing = 0
+        paragraph.lineBreakMode = .byCharWrapping
+        let attrs: [NSAttributedString.Key: Any] = [
+            .font: font,
+            .foregroundColor: fg,
+            .paragraphStyle: paragraph,
+        ]
+
+        let fontChanged = textView.typingAttributes[.font] as? NSFont != font
+        guard textView.string != text || fontChanged else { return }
+
+        // Anchor the view before swapping the buffer. Output arrives at the
+        // bottom, so holding the distance to the bottom keeps whatever the
+        // reader is looking at exactly where it was — no jump on every poll.
+        let viewport = scroll.contentView.bounds
+        let previousHeight = textView.frame.height
+        let distanceToBottom = max(0, previousHeight - viewport.maxY)
+        let selected = textView.selectedRange()
+
+        textView.typingAttributes = attrs
+        textView.font = font
+        if let storage = textView.textStorage {
+            storage.beginEditing()
+            if fontChanged {
+                storage.setAttributedString(
+                    NSAttributedString(string: text, attributes: attrs)
+                )
+            } else {
+                // A poll usually changes a spinner, a line, or appends at the
+                // end — not 800 lines. Rewriting the whole storage re-lays out
+                // the entire document twice a second; replacing just the span
+                // that actually differs keeps the pane still and cheap.
+                let (range, replacement) = Self.changedSpan(
+                    from: storage.string,
+                    to: text
+                )
+                storage.replaceCharacters(
+                    in: range,
+                    with: NSAttributedString(string: replacement, attributes: attrs)
+                )
             }
-            if followTail {
-                textView.scrollToEndOfDocument(nil)
+            storage.endEditing()
+        }
+        if selected.location + selected.length <= (text as NSString).length {
+            textView.setSelectedRange(selected)
+        }
+
+        // Lay the new text out before moving: until layout runs, the text view
+        // still reports its old height, so "scroll to the end" would land at
+        // the end of the *previous* buffer — near the top of a first capture.
+        if let container = textView.textContainer {
+            textView.layoutManager?.ensureLayout(for: container)
+        }
+
+        // Programmatic scrolling must not be mistaken for the reader scrolling
+        // away, or a single mistimed frame latches tail-following off for good.
+        context.coordinator.suppressFollowUpdates = true
+        if followTail {
+            textView.scrollToEndOfDocument(nil)
+        } else {
+            let newHeight = textView.frame.height
+            let target = max(0, newHeight - distanceToBottom - viewport.height)
+            scroll.contentView.scroll(to: NSPoint(x: 0, y: target))
+            scroll.reflectScrolledClipView(scroll.contentView)
+        }
+        DispatchQueue.main.async {
+            context.coordinator.suppressFollowUpdates = false
+        }
+    }
+
+    /// The span of `old` that has to be rewritten to become `new`: everything
+    /// between the shared head and the shared tail. Boundaries are snapped to
+    /// composed-character sequences so an edit can never land inside a
+    /// surrogate pair or split a character from its combining marks.
+    static func changedSpan(from old: String, to new: String) -> (NSRange, String) {
+        let oldText = old as NSString
+        let newText = new as NSString
+        let shortest = min(oldText.length, newText.length)
+
+        var head = 0
+        while head < shortest, oldText.character(at: head) == newText.character(at: head) {
+            head += 1
+        }
+        if head > 0, head < oldText.length {
+            let sequence = oldText.rangeOfComposedCharacterSequence(at: head)
+            if sequence.location < head { head = sequence.location }
+        }
+
+        var tail = 0
+        while tail < shortest - head,
+              oldText.character(at: oldText.length - 1 - tail)
+                == newText.character(at: newText.length - 1 - tail) {
+            tail += 1
+        }
+        if tail > 0 {
+            let boundary = oldText.length - tail
+            if boundary > 0, boundary < oldText.length {
+                let sequence = oldText.rangeOfComposedCharacterSequence(at: boundary)
+                if sequence.location < boundary {
+                    tail = max(0, oldText.length - (sequence.location + sequence.length))
+                }
             }
         }
+        if head + tail > shortest { tail = max(0, shortest - head) }
+
+        return (
+            NSRange(location: head, length: oldText.length - head - tail),
+            newText.substring(with: NSRange(location: head, length: newText.length - head - tail))
+        )
     }
 
     func makeCoordinator() -> Coordinator { Coordinator(followTail: $followTail) }
 
     final class Coordinator {
         var followTail: Binding<Bool>
+        /// True while the view is being scrolled by code rather than by hand.
+        var suppressFollowUpdates = false
         private var observer: NSObjectProtocol?
 
         init(followTail: Binding<Bool>) {
             self.followTail = followTail
         }
 
-        /// Scrolling up releases the tail-follow; scrolling back to the bottom
-        /// re-arms it, the way any log viewer behaves.
+        /// Scrolling up releases tail-follow; coming back to the bottom re-arms
+        /// it, the way any log viewer behaves.
         func observe(scroll: NSScrollView) {
             scroll.contentView.postsBoundsChangedNotifications = true
             observer = NotificationCenter.default.addObserver(
@@ -460,10 +768,14 @@ private struct SelectableTerminalText: NSViewRepresentable {
                 object: scroll.contentView,
                 queue: .main
             ) { [weak scroll] _ in
+                guard !self.suppressFollowUpdates else { return }
                 guard let scroll, let documentView = scroll.documentView else { return }
                 let visible = scroll.contentView.bounds
-                let distance = documentView.bounds.height - visible.maxY
-                let atBottom = distance < 24
+                // A pane with no local scrollback (a full-screen app) is always
+                // "at the bottom"; tail-follow must stay on there.
+                let scrollable = documentView.bounds.height > visible.height + 4
+                let atBottom = !scrollable
+                    || documentView.bounds.height - visible.maxY < 24
                 if self.followTail.wrappedValue != atBottom {
                     self.followTail.wrappedValue = atBottom
                 }

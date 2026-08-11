@@ -615,6 +615,12 @@ private struct SelectableTerminalText: NSViewRepresentable {
         textView.isAutomaticSpellingCorrectionEnabled = false
         // Long agent output lines are easier to read wrapped than clipped.
         textView.textContainer?.widthTracksTextView = true
+        // Wrapping makes every width change a re-flow, and the pane's 800
+        // captured lines wrap to a document some 12000pt tall. Laying all of
+        // that out on each step of a divider drag costs ~49ms a frame, which
+        // is a frozen window; laid out lazily it is ~0.1ms. The places that
+        // genuinely need the true height ask for it explicitly.
+        textView.layoutManager?.allowsNonContiguousLayout = true
         textView.onLiteral = onLiteral
         textView.onKey = onKey
         textView.onFocusChange = { focused in
@@ -769,6 +775,7 @@ private struct SelectableTerminalText: NSViewRepresentable {
         var suppressFollowUpdates = false
         private var observer: NSObjectProtocol?
         private var reflowObserver: NSObjectProtocol?
+        private var reflowWork: DispatchWorkItem?
 
         init(followTail: Binding<Bool>) {
             self.followTail = followTail
@@ -800,6 +807,11 @@ private struct SelectableTerminalText: NSViewRepresentable {
             // dragging the split, resizing the window — re-flows the text and
             // changes its height, which silently strands a bottom-pinned view
             // partway up. No text changed, so nothing else would notice.
+            //
+            // Re-pinning is deferred rather than done here, and that matters:
+            // finding the end of the document forces the whole thing to lay
+            // out, and a divider drag posts this notification continuously.
+            // Doing the work inline froze the app for the length of the drag.
             guard let textView = scroll.documentView else { return }
             textView.postsFrameChangedNotifications = true
             reflowObserver = NotificationCenter.default.addObserver(
@@ -807,17 +819,33 @@ private struct SelectableTerminalText: NSViewRepresentable {
                 object: textView,
                 queue: .main
             ) { [weak scroll] _ in
-                guard self.followTail.wrappedValue,
-                      !self.suppressFollowUpdates,
-                      let documentView = scroll?.documentView as? NSTextView
-                else { return }
-                self.suppressFollowUpdates = true
-                documentView.scrollToEndOfDocument(nil)
-                DispatchQueue.main.async { self.suppressFollowUpdates = false }
+                if self.reflowWork == nil {
+                    // First change of a burst. Decide here whether we are
+                    // pinned, because the resize itself pushes the view off
+                    // the bottom — asking again later would always say no.
+                    guard self.followTail.wrappedValue, !self.suppressFollowUpdates
+                    else { return }
+                    self.suppressFollowUpdates = true
+                }
+                self.reflowWork?.cancel()
+                let work = DispatchWorkItem { [weak scroll] in
+                    self.reflowWork = nil
+                    if let documentView = scroll?.documentView as? NSTextView,
+                       let container = documentView.textContainer {
+                        // Lazy layout only estimates the height, and the end of
+                        // an estimated document is not the end of the text.
+                        documentView.layoutManager?.ensureLayout(for: container)
+                        documentView.scrollToEndOfDocument(nil)
+                    }
+                    DispatchQueue.main.async { self.suppressFollowUpdates = false }
+                }
+                self.reflowWork = work
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.12, execute: work)
             }
         }
 
         deinit {
+            reflowWork?.cancel()
             let center = NotificationCenter.default
             if let observer { center.removeObserver(observer) }
             if let reflowObserver { center.removeObserver(reflowObserver) }

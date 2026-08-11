@@ -285,6 +285,21 @@ struct LoomAPI {
         return request
     }
 
+    /// Browse the pane's history. The wheel cannot be left to the terminal:
+    /// a full-screen app turns it into arrow keys, which Claude reads as
+    /// "previous prompt" rather than "scroll up". tmux does the scrolling.
+    func scroll(target: String, direction: String, lines: Int) async throws {
+        let _: OkResponse = try await request(
+            "/api/tmux/scroll",
+            method: "POST",
+            body: [
+                "target": target,
+                "dir": direction,
+                "lines": max(1, min(80, lines)),
+            ]
+        )
+    }
+
     /// Keystrokes for an attached stream. This writes to the pty, so the keys a
     /// terminal sends are just their bytes — no tmux key names to get wrong.
     func streamInput(streamId: String, text: String) async throws {

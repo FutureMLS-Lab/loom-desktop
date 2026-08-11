@@ -250,7 +250,8 @@ final class TerminalSession: NSObject, ObservableObject {
         });
         var fit = null;
         try { fit = new FitAddon.FitAddon(); term.loadAddon(fit); } catch (e) {}
-        term.open(document.getElementById('host'));
+        var host = document.getElementById('host');
+        term.open(host);
 
         function post(msg) {
           try { window.webkit.messageHandlers.loom.postMessage(msg); } catch (e) {}
@@ -260,23 +261,85 @@ final class TerminalSession: NSObject, ObservableObject {
         var lastCols = 0, lastRows = 0;
         function doFit() {
           if (!fit) return;
+          // Fitting before the view has a width would pin the real tmux pane
+          // to a couple of dozen columns — for every client, not just this one.
+          if (host.clientWidth < 120) { setTimeout(doFit, 100); return; }
           try { fit.fit(); } catch (e) { return; }
           if (term.cols !== lastCols || term.rows !== lastRows) {
             lastCols = term.cols; lastRows = term.rows;
             post({ type: 'resize', cols: term.cols, rows: term.rows });
           }
         }
+
+        // The wheel must not reach the terminal. On the alternate screen xterm
+        // translates it into arrow keys, and a TUI reads those as history
+        // navigation — scrolling up would walk back through past prompts
+        // instead of showing earlier output. tmux scrolls its own scrollback
+        // instead; coasting back to the bottom leaves copy-mode by itself.
+        var scrollAccum = 0, scrollTimer = null;
+        host.addEventListener('wheel', function (e) {
+          e.preventDefault();
+          e.stopPropagation();
+          scrollAccum += (e.deltaMode === 1 ? e.deltaY * 18 : e.deltaY);
+          if (scrollTimer) return;
+          scrollTimer = setTimeout(function () {
+            var total = scrollAccum;
+            scrollAccum = 0;
+            scrollTimer = null;
+            if (!total) return;
+            post({
+              type: 'scroll',
+              dir: total < 0 ? 'up' : 'down',
+              lines: Math.max(1, Math.min(80, Math.round(Math.abs(total) / 24))),
+            });
+          }, 40);
+        }, { passive: false, capture: true });
         var fitTimer = null;
         window.addEventListener('resize', function () {
           if (fitTimer) clearTimeout(fitTimer);
           fitTimer = setTimeout(doFit, 90);
         });
 
+        // Drop the sequences that turn on mouse reporting, so the app cannot
+        // take the pointer: with it on, xterm forwards clicks and drags to the
+        // app and text can no longer be selected. Only sequences whose
+        // parameters are *all* mouse modes are removed, and nothing is
+        // buffered across chunks, so this cannot corrupt other escapes. One
+        // split across two reads slips through and self-heals on the next
+        // redraw. The trade is that clicks do not reach the app.
+        var MOUSE_MODES = [1000, 1001, 1002, 1003, 1005, 1006, 1015, 1016];
+        function stripMouseModes(u8) {
+          if (!u8 || u8.length < 4) return u8;
+          var hit = false;
+          for (var k = 0; k + 3 < u8.length; k++) {
+            if (u8[k] === 0x1b && u8[k + 1] === 0x5b && u8[k + 2] === 0x3f) { hit = true; break; }
+          }
+          if (!hit) return u8;
+          var n = u8.length, out = new Uint8Array(n), w = 0, i = 0;
+          while (i < n) {
+            if (i + 3 < n && u8[i] === 0x1b && u8[i + 1] === 0x5b && u8[i + 2] === 0x3f) {
+              var j = i + 3, params = '';
+              while (j < n && ((u8[j] >= 0x30 && u8[j] <= 0x39) || u8[j] === 0x3b)) {
+                params += String.fromCharCode(u8[j]); j++;
+              }
+              if (j < n && (u8[j] === 0x68 || u8[j] === 0x6c)) {
+                var nums = params.split(';').filter(Boolean).map(Number);
+                if (nums.length && nums.every(function (x) { return MOUSE_MODES.indexOf(x) >= 0; })) {
+                  i = j + 1;
+                  continue;
+                }
+              }
+            }
+            out[w++] = u8[i++];
+          }
+          return out.subarray(0, w);
+        }
+
         window.__loomWrite = function (b64) {
           var raw = atob(b64);
           var bytes = new Uint8Array(raw.length);
           for (var i = 0; i < raw.length; i++) { bytes[i] = raw.charCodeAt(i); }
-          term.write(bytes);
+          term.write(stripMouseModes(bytes));
         };
         window.__loomReset = function () { try { term.reset(); } catch (e) {} };
         window.__loomFocus = function () { try { term.focus(); } catch (e) {} };
@@ -320,9 +383,21 @@ extension TerminalSession: WKScriptMessageHandler {
                 let cols = (body["cols"] as? Int) ?? self.cols
                 let rows = (body["rows"] as? Int) ?? self.rows
                 self.resize(cols: cols, rows: rows)
+            case "scroll":
+                let dir = (body["dir"] as? String) ?? "up"
+                let lines = (body["lines"] as? Int) ?? 3
+                self.scrollPane(direction: dir, lines: lines)
             default:
                 break
             }
+        }
+    }
+
+    private func scrollPane(direction: String, lines: Int) {
+        let pane = target
+        guard !pane.isEmpty else { return }
+        Task { [api] in
+            try? await api.scroll(target: pane, direction: direction, lines: lines)
         }
     }
 

@@ -45,11 +45,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         NSApp.setActivationPolicy(.regular)
         buildMainMenu()
 
-        // Every mouse-down the app receives is appended to a small log, so
-        // "my click did nothing" reports can be told apart from "the click
-        // never reached the app" without a special debug build.
-        installClickLog()
-
         SettingsWindowController.shared.store = store
 
         panel = PanelWindow(store: store)
@@ -69,17 +64,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             MainWindowController.shared.show(store: store)
         }
 
-        // Dev hook: LOOM_DESKTOP_DEBUG_EVENTS=1 logs every mouse-down the app
-        // receives, to tell "click never arrived" apart from "click arrived
-        // but the control ignored it".
+        // Dev hook: LOOM_DESKTOP_DEBUG_EVENTS=1 traces every mouse-down, which
+        // tells "the click never reached the app" apart from "the click
+        // arrived and the control ignored it". Worth keeping, because a
+        // borderless window silently swallowing clicks is a failure mode this
+        // OS has shipped before.
         if ProcessInfo.processInfo.environment["LOOM_DESKTOP_DEBUG_EVENTS"] == "1" {
-            NSEvent.addLocalMonitorForEvents(matching: [.leftMouseDown]) { event in
-                let win = event.window?.windowNumber ?? -1
-                FileHandle.standardError.write(
-                    "mouseDown window=\(win) loc=\(event.locationInWindow)\n".data(using: .utf8)!
-                )
-                return event
-            }
+            installClickLog()
         }
 
         // Dev hook: LOOM_DESKTOP_SNAPSHOT_DIR=<dir> renders every window's
@@ -132,6 +123,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
+    /// Appends every mouse-down to `~/Library/Logs/LoomDesktop-events.log`.
     private func installClickLog() {
         let logURL = FileManager.default.homeDirectoryForCurrentUser
             .appendingPathComponent("Library/Logs/LoomDesktop-events.log")
@@ -141,10 +133,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
            size > 100_000 {
             try? FileManager.default.removeItem(at: logURL)
         }
+        let stamps = ISO8601DateFormatter()
         NSEvent.addLocalMonitorForEvents(matching: [.leftMouseDown, .rightMouseDown]) { event in
-            let stamp = ISO8601DateFormatter().string(from: Date())
-            let window = event.window.map { type(of: $0) == PanelWindow.self ? "panel" : "window#\($0.windowNumber)" } ?? "none"
-            let line = "\(stamp) \(event.type == .leftMouseDown ? "L" : "R")down \(window) loc=\(event.locationInWindow)\n"
+            let window = event.window
+                .map { type(of: $0) == PanelWindow.self ? "panel" : "window#\($0.windowNumber)" }
+                ?? "none"
+            let side = event.type == .leftMouseDown ? "L" : "R"
+            let line = "\(stamps.string(from: Date())) \(side)down \(window) loc=\(event.locationInWindow)\n"
             if let data = line.data(using: .utf8) {
                 if let handle = try? FileHandle(forWritingTo: logURL) {
                     handle.seekToEndOfFile()

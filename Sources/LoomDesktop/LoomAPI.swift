@@ -146,13 +146,6 @@ struct LoomAPI {
         )
     }
 
-    func forceSend(projectId: String, slug: String) async throws {
-        let _: OkResponse = try await request(
-            scoped("/api/tasks/\(slugPath(slug))/claude/force-send", projectId),
-            method: "POST"
-        )
-    }
-
     func answer(
         projectId: String,
         slug: String,

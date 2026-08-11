@@ -14,12 +14,19 @@ any of them. It speaks the same visual language as the
   (locally and via `/api/activity/ack`) and opens the chat.
 - **Idle** — pane alive, agent waiting, nothing unseen: a quiet gray pill.
 
-Clicking any pill opens a **chat window** — the same conversation the Loom
-web console and the loom-app render (`/api/tasks/<slug>/conversation`):
-user / assistant / tool / question / event rows, structured question cards
-with options and custom answers, a composer that types straight into the
-agent's tmux pane (`/claude/send`), an Esc button to interrupt, and a
-"Start agent" action when the pane is down.
+Clicking a pill opens that task in the **main window** — a sidebar of
+projects and tasks, and four tabs for whichever one is selected:
+
+| Tab | ⌘ | What it is |
+| --- | --- | --- |
+| Chat | ⌘1 | The conversation feed (`/conversation`): user / assistant / tool / question / event rows, question cards with options and custom answers, and a composer that types into the agent's tmux pane |
+| Terminal | ⌘2 | The live pane, with the task's `PLAN.md` rendered underneath — the same pairing the web console's agent tab has |
+| Files | ⌘3 | The task's markdown: a file list, a source editor, and a browser-style preview. `PLAN.md` / `WIKI.md` save back through `/template` |
+| Changes | ⌘4 | Diffs across the task's worktrees, plus push / merge |
+
+Above the tabs are the flow buttons the web console has — Deep Interview,
+Run `/goal`, Write result — and start / stop / resume for the agent session.
+⌘P opens any task by name, ⌘N creates one.
 
 ## How it works
 
@@ -33,12 +40,26 @@ agent's tmux pane (`/claude/send`), an Esc button to interrupt, and a
   (`defaults read LoomDesktop panelWidth`) and cannot be dragged narrower than
   the widest single pill. (Geometry adapted from session-dock.)
 - The **loom** capsule on the left is the fleet menu: browse every registered
-  project/task and open a chat for any of them (active or not), refresh,
-  settings, quit. The dot shows connection state (green/yellow/red).
-- Chat windows are ordinary windows (one per task, reused), polling the
-  conversation feed every 2 s with tail-merges by message id, plus a staggered
-  refresh burst after a send so replies land quickly — the same behavior as
-  the loom-app.
+  project/task and open any of them (active or not), refresh, settings, quit.
+  The dot shows connection state (green/yellow/red). The same menu lives in
+  the menu bar next to the clock, so the panel can be hidden without losing
+  the app.
+- Only the visible task polls. Switching tasks stops the previous session's
+  poller, so browsing forty tasks does not leave forty pollers running; the
+  feed itself tail-merges by message id and bursts after a send so replies
+  land quickly — the same behavior as the loom-app.
+- The terminal renders `tmux capture-pane` into an `NSTextView`. Two details
+  matter and are easy to undo by accident:
+  - **No line spacing, no kerning.** A TUI draws frames out of `│ ─ ╭ ╯`;
+    any gap between lines breaks them into dashes.
+  - **Updates replace only the span that changed.** A poll usually moves a
+    spinner, not 800 lines, and rewriting the whole buffer twice a second
+    re-lays out the document, drops the selection, and burns CPU.
+- Scrolling is hybrid, because history lives in two places: an ordinary pane's
+  scrollback comes down with the capture and scrolls locally, while a
+  full-screen app (Claude Code's TUI, vim, less) draws to the alternate
+  screen, which has no scrollback — there the wheel is forwarded to
+  `/api/tmux/scroll`.
 
 ## Requirements
 
@@ -101,7 +122,13 @@ then the reply arrives and the pill blinks until you click it.
   launch.
 - `LOOM_DESKTOP_SNAPSHOT_DIR=/tmp/snaps` — render every window's content to
   PNGs ~7 s after launch (headless UI check, no screen-recording permission
-  needed).
+  needed). Run the bundled binary, not `.build/release/LoomDesktop`:
+  notifications need a real bundle, and the bare binary aborts on launch.
+- `LOOM_DESKTOP_DEBUG_EVENTS=1` — log every mouse-down to
+  `~/Library/Logs/LoomDesktop-events.log`, to tell "the click never reached
+  the app" apart from "a control ignored it".
+- `LOOM_DESKTOP_TRACE=1` — boot trace to `/tmp/loom-boot.log`, for a launch
+  that produces no window at all.
 
 ## Auto-start at login
 
@@ -113,13 +140,27 @@ copy it to `~/Library/LaunchAgents/com.loom.desktop.plist`, then
 
 | File | What it is |
 | --- | --- |
-| `App.swift` | Accessory-app bootstrap + dev hooks |
+| `App.swift` | App bootstrap, main menu, dev hooks |
 | `TaskStore.swift` | Polls `/api/activity`, builds pill models, local acks |
 | `LoomAPI.swift` / `Models.swift` | Async client + Codable payloads |
 | `PanelWindow.swift` / `WrappingHStack.swift` | session-dock panel geometry (drag-width, wrap, auto-height) |
 | `DockView.swift` | Pills, loom fleet menu, connection/empty states |
 | `LoomRing.swift` | The web console's spinning + blinking rings in SwiftUI |
+| `StatusItem.swift` | Menu-bar icon: show/hide the dock, jump to a task, quit |
+| `MainWindowController.swift` / `ProjectPickerView.swift` | Main window: sidebar + inline task pane |
+| `TaskWindowView.swift` | The task's header, flow buttons, and tab bar |
 | `ChatSession.swift` / `ChatView.swift` | The chat module (feed, question cards, composer) |
-| `ChatWindowManager.swift` | One reusable chat window per task |
+| `SessionCache.swift` | One session per task; only the visible one polls |
+| `TerminalPane.swift` | The live tmux pane: capture, typing, hybrid scrolling |
+| `PlanDigest.swift` | The read-only `PLAN.md` under the terminal |
+| `PlanView.swift` | The Files tab: file list, source editor, preview |
+| `MarkdownPreview.swift` | `marked` in a `WKWebView`, shared by Files and the digest |
+| `DiffView.swift` | The Changes tab: per-file diffs, push / merge |
+| `QuickOpen.swift` / `NewTaskView.swift` | ⌘P open by name, ⌘N create a task |
+| `ComposeDrafts.swift` | Unsent text, kept across tab and task switches |
+| `Notifier.swift` | Finish notifications + Dock badge |
 | `SettingsWindow.swift` | Base URL + bearer token |
+| `Resources/` | App icon and the bundled `marked.min.js` |
+| `scripts/make-app.sh` | Build, sign, install to `/Applications`, register the login item |
 | `scripts/mock-loom.py` | Offline mock of the Loom API for development |
+| `scripts/summon.swift` | Poke a running app to bring its windows to this screen |

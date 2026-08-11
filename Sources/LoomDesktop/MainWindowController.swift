@@ -61,8 +61,7 @@ final class MainWindowController: NSObject, NSWindowDelegate {
             }
             self.window = window
         }
-        NSRunningApplication.current.activate(options: [.activateIgnoringOtherApps])
-        NSApp.activate(ignoringOtherApps: true)
+        NSApp.activate()
         window?.makeKeyAndOrderFront(nil)
         window?.orderFrontRegardless()
     }

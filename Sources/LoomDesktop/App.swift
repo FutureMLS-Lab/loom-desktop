@@ -4,6 +4,7 @@ import AppKit
 final class AppDelegate: NSObject, NSApplicationDelegate {
     let store = TaskStore()
     var panel: PanelWindow!
+    var statusItem: StatusItemController!
 
     static let summonNotification = "com.loom.desktop.summon"
     static let showPanelNotification = "com.loom.desktop.show-panel"
@@ -56,6 +57,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             panel.orderFrontRegardless()
         }
 
+        // Menu-bar icon next to the clock: hide the floating dock without
+        // losing a way back in, plus quick jump / Settings / Quit.
+        statusItem = StatusItemController(store: store, panel: panel)
+
         Notifier.shared.start(store: store)
         store.start()
 
@@ -107,8 +112,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     /// Clicking the Dock icon of a running app: bring everything back to the
-    /// screen the pointer is on. This is the only entry point now that the
-    /// menu-bar item is gone — one Loom, not two.
+    /// screen the pointer is on.
     func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows: Bool) -> Bool {
         summon()
         return true

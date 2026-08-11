@@ -639,33 +639,30 @@ private struct SelectableTerminalText: NSViewRepresentable {
         textView.onKey = onKey
         context.coordinator.followTail = $followTail
 
-        let bg = NSColor(TerminalTheme.background)
-        let fg = NSColor(TerminalTheme.text)
-        scroll.backgroundColor = bg
-        textView.backgroundColor = .clear
-        textView.textColor = fg
-        textView.insertionPointColor = NSColor(TerminalTheme.inkAccent)
-        textView.selectedTextAttributes = [
-            .backgroundColor: NSColor(TerminalTheme.selection),
-            .foregroundColor: fg,
-        ]
+        // Nothing below this line may touch the text storage unless the text
+        // or the font actually changed. `setTextColor:` in particular writes
+        // an attribute across the whole document and re-lays it out, and this
+        // method runs on every SwiftUI update — including the ones that a
+        // click or a tail-follow toggle causes, which made it a loop. The
+        // colours are theme constants and are set once, in makeNSView.
+        // Compared against our own copy rather than `textView.string`, which
+        // bridges the whole document out of the text storage every time.
+        let font = NSFont.monospacedSystemFont(ofSize: fontSize, weight: .regular)
+        let fontChanged = textView.typingAttributes[.font] as? NSFont != font
+        guard context.coordinator.renderedText != text || fontChanged else { return }
 
         // No line spacing and no kerning: a TUI draws boxes out of `│ ─ ╭ ╯`,
         // and any gap between lines or drift between columns breaks the frame
         // into dashes. A terminal's grid has to stay a grid.
-        let font = NSFont.monospacedSystemFont(ofSize: fontSize, weight: .regular)
         let paragraph = NSMutableParagraphStyle()
         paragraph.lineSpacing = 0
         paragraph.paragraphSpacing = 0
         paragraph.lineBreakMode = .byCharWrapping
         let attrs: [NSAttributedString.Key: Any] = [
             .font: font,
-            .foregroundColor: fg,
+            .foregroundColor: NSColor(TerminalTheme.text),
             .paragraphStyle: paragraph,
         ]
-
-        let fontChanged = textView.typingAttributes[.font] as? NSFont != font
-        guard textView.string != text || fontChanged else { return }
 
         // Anchor the view before swapping the buffer. Output arrives at the
         // bottom, so holding the distance to the bottom keeps whatever the
@@ -678,8 +675,12 @@ private struct SelectableTerminalText: NSViewRepresentable {
         textView.typingAttributes = attrs
         textView.font = font
         if let storage = textView.textStorage {
+            let cached = context.coordinator.renderedText
+            // Trust the cache only while it agrees with the storage on length;
+            // a diff applied against a stale copy would corrupt the buffer.
+            let cacheIsSound = (cached as NSString).length == storage.length
             storage.beginEditing()
-            if fontChanged {
+            if fontChanged || !cacheIsSound {
                 storage.setAttributedString(
                     NSAttributedString(string: text, attributes: attrs)
                 )
@@ -688,10 +689,7 @@ private struct SelectableTerminalText: NSViewRepresentable {
                 // end — not 800 lines. Rewriting the whole storage re-lays out
                 // the entire document twice a second; replacing just the span
                 // that actually differs keeps the pane still and cheap.
-                let (range, replacement) = Self.changedSpan(
-                    from: storage.string,
-                    to: text
-                )
+                let (range, replacement) = Self.changedSpan(from: cached, to: text)
                 storage.replaceCharacters(
                     in: range,
                     with: NSAttributedString(string: replacement, attributes: attrs)
@@ -699,6 +697,7 @@ private struct SelectableTerminalText: NSViewRepresentable {
             }
             storage.endEditing()
         }
+        context.coordinator.renderedText = text
         if selected.location + selected.length <= (text as NSString).length {
             textView.setSelectedRange(selected)
         }
@@ -771,6 +770,9 @@ private struct SelectableTerminalText: NSViewRepresentable {
 
     final class Coordinator {
         var followTail: Binding<Bool>
+        /// What the text storage currently holds. Kept here so an update can
+        /// tell "nothing changed" without bridging the document back out.
+        var renderedText = ""
         /// True while the view is being scrolled by code rather than by hand.
         var suppressFollowUpdates = false
         private var observer: NSObjectProtocol?

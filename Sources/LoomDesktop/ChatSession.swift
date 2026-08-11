@@ -35,6 +35,14 @@ final class ChatSession: ObservableObject, Identifiable {
     /// plan view knows to re-read it.
     @Published private(set) var planRevision = 0
 
+    /// Composer text lives on the session (not the view) so switching tabs or
+    /// briefly leaving the task does not wipe what you were typing. Also
+    /// mirrored into `UserDefaults` via `ComposeDrafts`.
+    @Published var chatDraft: String = ""
+    @Published var terminalDraft: String = ""
+    /// Unsaved Files-tab edits, keyed by relative markdown path.
+    @Published var fileDrafts: [String: String] = [:]
+
     nonisolated var id: String { "\(projectId)/\(slug)" }
 
     /// Exposed for the tabbed task window (diff/terminal fetch through it).
@@ -57,6 +65,42 @@ final class ChatSession: ObservableObject, Identifiable {
         self.title = title
         self.projectLabel = projectLabel
         self.api = api
+        let sid = "\(projectId)/\(slug)"
+        self.chatDraft = ComposeDrafts.load(ComposeDrafts.chatKey(sid))
+        self.terminalDraft = ComposeDrafts.load(ComposeDrafts.terminalKey(sid))
+    }
+
+    func persistChatDraft() {
+        ComposeDrafts.save(ComposeDrafts.chatKey(id), chatDraft)
+    }
+
+    func persistTerminalDraft() {
+        ComposeDrafts.save(ComposeDrafts.terminalKey(id), terminalDraft)
+    }
+
+    func loadFileDraft(_ file: String) -> String? {
+        if let memory = fileDrafts[file], !memory.isEmpty { return memory }
+        let disk = ComposeDrafts.load(ComposeDrafts.fileKey(id, file: file))
+        if !disk.isEmpty {
+            fileDrafts[file] = disk
+            return disk
+        }
+        return nil
+    }
+
+    func persistFileDraft(_ file: String, text: String, baseline: String) {
+        if text == baseline {
+            fileDrafts.removeValue(forKey: file)
+            ComposeDrafts.save(ComposeDrafts.fileKey(id, file: file), "")
+        } else {
+            fileDrafts[file] = text
+            ComposeDrafts.save(ComposeDrafts.fileKey(id, file: file), text)
+        }
+    }
+
+    func clearFileDraft(_ file: String) {
+        fileDrafts.removeValue(forKey: file)
+        ComposeDrafts.save(ComposeDrafts.fileKey(id, file: file), "")
     }
 
     func start() {

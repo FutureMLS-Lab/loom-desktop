@@ -5,7 +5,6 @@ import SwiftUI
 /// composer that types straight into the task's agent pane.
 struct ChatView: View {
     @ObservedObject var session: ChatSession
-    @State private var draft = ""
     @State private var stickToLatest = true
 
     private static let bottomAnchor = "chat-bottom"
@@ -18,6 +17,9 @@ struct ChatView: View {
         }
         .frame(minWidth: 420, minHeight: 380)
         .background(LoomColors.bgBase)
+        .onChange(of: session.chatDraft) { _, _ in
+            session.persistChatDraft()
+        }
     }
 
     // MARK: Header
@@ -257,7 +259,11 @@ struct ChatView: View {
 
     private var composer: some View {
         HStack(alignment: .bottom, spacing: 8) {
-            TextField("Message the agent… (⏎ to send, ⌥⏎ for newline)", text: $draft, axis: .vertical)
+            TextField(
+                "Message the agent… (⏎ to send, ⌥⏎ for newline)",
+                text: $session.chatDraft,
+                axis: .vertical
+            )
                 .textFieldStyle(.plain)
                 .font(.system(size: 14))
                 .lineLimit(1...6)
@@ -286,22 +292,26 @@ struct ChatView: View {
                 Image(systemName: "arrow.up.circle.fill")
                     .font(.system(size: 22, weight: .medium))
                     .foregroundStyle(
-                        draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                        session.chatDraft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
                             ? AnyShapeStyle(Color.secondary.opacity(0.5))
                             : AnyShapeStyle(LoomColors.accent)
                     )
             }
             .buttonStyle(.plain)
-            .disabled(draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || session.sending)
+            .disabled(
+                session.chatDraft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                    || session.sending
+            )
             .padding(.bottom, 2)
         }
         .padding(10)
     }
 
     private func sendDraft() {
-        let text = draft
+        let text = session.chatDraft
         guard !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
-        draft = ""
+        session.chatDraft = ""
+        session.persistChatDraft()
         session.send(text)
     }
 }

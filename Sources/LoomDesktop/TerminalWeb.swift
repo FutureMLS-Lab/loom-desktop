@@ -228,7 +228,16 @@ final class TerminalSession: NSObject, ObservableObject {
         let config = WKWebViewConfiguration()
         config.userContentController = controller
         let web = WKWebView(frame: .zero, configuration: config)
-        controller.add(self, name: "loom")
+        // Through a proxy, because a content controller retains its message
+        // handlers: registering `self` here would close a loop back through
+        // the web view this session owns, and the session — with its open
+        // stream — would never be released.
+        controller.add(
+            ScriptMessageProxy { [weak self] message in
+                MainActor.assumeIsolated { self?.handle(message) }
+            },
+            name: "loom"
+        )
         web.navigationDelegate = self
         #if DEBUG
         if #available(macOS 13.3, *) { web.isInspectable = true }
@@ -433,12 +442,24 @@ extension TerminalSession: WKNavigationDelegate {
     }
 }
 
-extension TerminalSession: WKScriptMessageHandler {
-    @MainActor
+/// Forwards script messages without retaining their handler.
+private final class ScriptMessageProxy: NSObject, WKScriptMessageHandler {
+    private let onMessage: (WKScriptMessage) -> Void
+
+    init(_ onMessage: @escaping (WKScriptMessage) -> Void) {
+        self.onMessage = onMessage
+    }
+
     func userContentController(
         _ userContentController: WKUserContentController,
         didReceive message: WKScriptMessage
     ) {
+        onMessage(message)
+    }
+}
+
+extension TerminalSession {
+    func handle(_ message: WKScriptMessage) {
         guard let body = message.body as? [String: Any],
               let type = body["type"] as? String
         else { return }

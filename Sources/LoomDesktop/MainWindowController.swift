@@ -67,6 +67,10 @@ final class MainWindowController: NSObject, NSWindowDelegate {
     }
 
     func windowWillClose(_ notification: Notification) {
-        // Keep the window object for reuse; the app stays alive in the menu bar.
+        // The window object is kept for reuse; the app stays alive in the menu
+        // bar. Its views are not torn down with it, though, so a terminal
+        // would go on holding its attachment — and an attached client keeps
+        // the pane sized to it for everyone else, including the browser.
+        TerminalSession.stopAll()
     }
 }

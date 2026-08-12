@@ -26,7 +26,17 @@ projects and tasks, and four tabs for whichever one is selected:
 
 Above the tabs are the flow buttons the web console has — Deep Interview,
 Run `/goal`, Write result — and start / stop / resume for the agent session.
-⌘P opens any task by name, ⌘N creates one.
+⌘P opens any task by name, ⌘N creates one, ⌘⇧N opens the project's notes
+(`<project>/.RUD/NOTES.md`, the same file the web console edits).
+
+### One thing worth knowing about pane size
+
+tmux sizes a window to the **smallest client attached to it**, and leaves it
+there when that client goes away. So viewing a task once in a small window
+leaves the agent on a small screen afterwards — with nothing attached to
+explain why, since the culprit has already left. The terminal's toolbar shows
+the current columns × rows, and its resize button re-attaches at the size of
+the window you are in now.
 
 ## How it works
 
@@ -151,7 +161,10 @@ copy it to `~/Library/LaunchAgents/com.loom.desktop.plist`, then
 | `TaskWindowView.swift` | The task's header, flow buttons, and tab bar |
 | `ChatSession.swift` / `ChatView.swift` | The chat module (feed, question cards, composer) |
 | `SessionCache.swift` | One session per task; only the visible one polls |
-| `TerminalPane.swift` | The live tmux pane: capture, typing, hybrid scrolling |
+| `TerminalPane.swift` | The Terminal tab: pane on top, plan below, one scrolling page |
+| `TerminalWeb.swift` | xterm in a `WKWebView`, attached to the pane's pty |
+| `ComposerField.swift` | The compose box: ⏎ sends, ⇧⏎ newlines, IME-safe |
+| `NotesView.swift` | The project scratchpad (`.RUD/NOTES.md`), ⌘⇧N |
 | `PlanDigest.swift` | The read-only `PLAN.md` under the terminal |
 | `PlanView.swift` | The Files tab: file list, source editor, preview |
 | `MarkdownPreview.swift` | `marked` in a `WKWebView`, shared by Files and the digest |

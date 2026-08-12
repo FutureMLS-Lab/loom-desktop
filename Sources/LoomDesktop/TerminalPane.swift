@@ -45,6 +45,9 @@ struct TerminalPane: View {
             session.persistTerminalDraft()
         }
         .onChange(of: session.paneTarget) { _, target in terminal.target = target }
+        // Coming back to the tab, or arriving after the window was resized
+        // while another tab was up, has to re-measure: nothing else would.
+        .onChange(of: planExpanded) { _, _ in terminal.refit() }
         .onChange(of: fontSize) { _, size in terminal.fontSize = size }
         .onChange(of: session.terminalDraft) { _, _ in session.persistTerminalDraft() }
     }
@@ -115,6 +118,12 @@ struct TerminalPane: View {
             }
             toolbarIcon("arrow.down.to.line", help: "Jump to the latest output") {
                 terminal.scrollToBottom()
+            }
+            toolbarIcon(
+                "arrow.up.left.and.arrow.down.right",
+                help: "Resize the pane to this window — tmux keeps whatever size the smallest client left it at"
+            ) {
+                terminal.refit()
             }
         }
         .padding(.horizontal, 14)

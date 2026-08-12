@@ -117,6 +117,17 @@ final class TerminalSession: NSObject, ObservableObject {
         call("window.__loomBottom()")
     }
 
+    /// Re-measure and re-attach at this window's size.
+    ///
+    /// Worth having as something you can ask for: tmux keeps a window at the
+    /// size of the smallest client that was ever attached, and does not grow
+    /// back when that client leaves. So opening a task once in a small window
+    /// leaves the agent on a small screen afterwards, with nothing attached to
+    /// explain why.
+    func refit() {
+        call("window.__loomRefit()")
+    }
+
     /// Compose-box text, which is a paste rather than keystrokes.
     func paste(_ text: String, submit: Bool) {
         guard !text.isEmpty, !target.isEmpty else { return }
@@ -421,6 +432,13 @@ final class TerminalSession: NSObject, ObservableObject {
         window.__loomFocus = function () { try { term.focus(); } catch (e) {} };
         window.__loomFontSize = function (n) {
           term.options.fontSize = n;
+          doFit();
+        };
+        // Force a measurement even if the grid works out the same, so the pane
+        // can be re-sized to this window after something else shrank it.
+        window.__loomRefit = function () {
+          lastCols = 0;
+          lastRows = 0;
           doFit();
         };
         window.__loomSelection = function () { return term.getSelection() || ''; };

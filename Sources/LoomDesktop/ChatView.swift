@@ -6,6 +6,8 @@ import SwiftUI
 struct ChatView: View {
     @ObservedObject var session: ChatSession
     @State private var stickToLatest = true
+    @State private var composerHeight = ComposerField.minHeight
+    @State private var composerRevision = 0
 
     private static let bottomAnchor = "chat-bottom"
 
@@ -259,22 +261,26 @@ struct ChatView: View {
 
     private var composer: some View {
         HStack(alignment: .bottom, spacing: 8) {
-            TextField(
-                "Message the agent… (⏎ to send, ⌥⏎ for newline)",
+            // The same field as the terminal's, for the same reasons: a plain
+            // TextField cannot tell Shift+Enter from Enter — so the old hint
+            // here promised a newline it could not insert — and it cannot see
+            // that an input method is mid-composition, so accepting Chinese
+            // candidates with Enter would send the half-written message.
+            ComposerField(
                 text: $session.chatDraft,
-                axis: .vertical
+                measuredHeight: $composerHeight,
+                contentRevision: composerRevision,
+                placeholder: "Message the agent… ⏎ send, ⇧⏎ newline",
+                onSubmit: sendDraft
             )
-                .textFieldStyle(.plain)
-                .font(.system(size: 14))
-                .lineLimit(1...6)
-                .padding(.horizontal, 10)
-                .padding(.vertical, 7)
-                .background(LoomColors.bgElev1, in: Rectangle())
-                .overlay(
-                    Rectangle()
-                        .strokeBorder(LoomColors.borderStrong, lineWidth: 1)
-                )
-                .onSubmit(sendDraft)
+            .frame(height: composerHeight)
+            .padding(.horizontal, 10)
+            .padding(.vertical, 7)
+            .background(LoomColors.bgElev1, in: Rectangle())
+            .overlay(
+                Rectangle()
+                    .strokeBorder(LoomColors.borderStrong, lineWidth: 1)
+            )
 
             Button {
                 session.interrupt()
@@ -311,6 +317,7 @@ struct ChatView: View {
         let text = session.chatDraft
         guard !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
         session.chatDraft = ""
+        composerRevision += 1
         session.persistChatDraft()
         session.send(text)
     }

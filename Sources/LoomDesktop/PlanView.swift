@@ -418,7 +418,7 @@ struct PlanView: View {
 
 /// Editable `NSTextView` for markdown source. Avoids SwiftUI `Text` /
 /// `AttributedString(markdown:)` which stalls the main thread on big plans.
-private struct PlainTextEditor: NSViewRepresentable {
+struct PlainTextEditor: NSViewRepresentable {
     @Binding var text: String
     var documentID: String
     /// Parent bumps this when the binding was replaced externally (load / switch).

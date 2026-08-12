@@ -153,6 +153,10 @@ final class TerminalSession: NSObject, ObservableObject {
     /// frame of output — which is felt most while scrolling, since that is
     /// exactly when the app repaints everything.
     private func attach() {
+        // One stream at a time, always. Two would both feed the same terminal,
+        // so every byte the agent wrote would be rendered twice — typing and
+        // backspace would each appear to happen more than once.
+        guard streamTask == nil else { return }
         guard let request = api.streamRequest(target: target, cols: cols, rows: rows) else { return }
         let delegate = PtyStreamDelegate(
             onResponse: { [weak self] http in

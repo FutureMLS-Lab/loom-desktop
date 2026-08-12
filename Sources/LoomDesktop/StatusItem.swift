@@ -82,6 +82,10 @@ final class StatusItemController: NSObject, NSMenuDelegate {
         let main = NSMenuItem(title: "Open Loom (Projects)", action: #selector(openMain), keyEquivalent: "o")
         main.target = self
         menu.addItem(main)
+        let notes = NSMenuItem(title: "Project Notes…", action: #selector(openNotes), keyEquivalent: "n")
+        notes.keyEquivalentModifierMask = [.command, .shift]
+        notes.target = self
+        menu.addItem(notes)
         let panelToggle = NSMenuItem(
             title: (panel?.isPanelHidden ?? false) ? "Show Dock Panel" : "Hide Dock Panel",
             action: #selector(togglePanel),
@@ -138,6 +142,10 @@ final class StatusItemController: NSObject, NSMenuDelegate {
 
     @objc private func openMain() {
         MainWindowController.shared.show(store: store)
+    }
+
+    @objc private func openNotes() {
+        NotesWindowController.shared.show(store: store)
     }
 
     @objc private func refreshNow() { store.refreshNow() }

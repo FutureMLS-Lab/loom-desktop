@@ -193,6 +193,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         )
         showMain.target = self
         windowMenu.addItem(showMain)
+        let notes = NSMenuItem(
+            title: "Project Notes", action: #selector(openNotes), keyEquivalent: "n"
+        )
+        notes.keyEquivalentModifierMask = [.command, .shift]
+        notes.target = self
+        windowMenu.addItem(notes)
         windowMenu.addItem(.separator())
         windowMenu.addItem(withTitle: "Close", action: #selector(NSWindow.performClose(_:)), keyEquivalent: "w")
         windowMenu.addItem(withTitle: "Minimize", action: #selector(NSWindow.performMiniaturize(_:)), keyEquivalent: "m")
@@ -204,6 +210,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     @objc private func openMainWindow() {
         MainWindowController.shared.show(store: store)
+    }
+
+    @objc private func openNotes() {
+        NotesWindowController.shared.show(store: store)
     }
 }
 

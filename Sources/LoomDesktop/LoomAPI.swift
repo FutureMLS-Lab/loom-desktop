@@ -109,6 +109,24 @@ struct LoomAPI {
         )
     }
 
+    // MARK: Project notes
+
+    /// `<project>/.RUD/NOTES.md` — one scratchpad per project, shared with the
+    /// web console, which reads and writes the same file.
+    func notes(projectId: String) async throws -> String {
+        struct Notes: Decodable { var content: String? }
+        let out: Notes = try await request(scoped("/api/notes", projectId))
+        return out.content ?? ""
+    }
+
+    func saveNotes(projectId: String, content: String) async throws {
+        let _: OkResponse = try await request(
+            scoped("/api/notes", projectId),
+            method: "PUT",
+            body: ["content": content]
+        )
+    }
+
     // MARK: Per-task
 
     func taskDetail(projectId: String, slug: String) async throws -> TaskDetail {

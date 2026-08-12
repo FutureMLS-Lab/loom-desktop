@@ -61,7 +61,11 @@ struct ComposerField: NSViewRepresentable {
         context.coordinator.parent = self
         guard let textView = scroll.documentView as? ComposerTextView else { return }
         textView.placeholder = placeholder
-        if textView.string != text {
+        // Never write into the field while it is being typed in. The binding
+        // round-trips through published state, so a stale value arriving mid
+        // keystroke would fight what was just typed.
+        let isTyping = textView.window?.firstResponder === textView
+        if !isTyping, textView.string != text {
             textView.string = text
             context.coordinator.reportHeight()
         }

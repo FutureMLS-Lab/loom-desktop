@@ -95,6 +95,8 @@ final class TerminalSession: NSObject, ObservableObject {
     /// constraining the pane's size for everyone else until it is reaped.
     private static let live = NSHashTable<TerminalSession>.weakObjects()
 
+    static var liveSessions: [TerminalSession] { live.allObjects }
+
     static func stopAll() {
         for session in live.allObjects { session.stop() }
     }
@@ -461,6 +463,7 @@ final class TerminalSession: NSObject, ObservableObject {
           for (var i = 0; i < raw.length; i++) { bytes[i] = raw.charCodeAt(i); }
           term.write(stripMouseModes(bytes));
         };
+        window.__loomTerm = term;
         window.__loomReset = function () { try { term.reset(); } catch (e) {} };
         window.__loomFocus = function () { try { term.focus(); } catch (e) {} };
         window.__loomFontSize = function (n) {
@@ -643,4 +646,33 @@ struct TerminalWebView: NSViewRepresentable {
 
     func makeNSView(context: Context) -> WKWebView { session.webView }
     func updateNSView(_ webView: WKWebView, context: Context) {}
+}
+
+extension TerminalSession {
+    /// Dev hook: print what the terminal is actually showing.
+    ///
+    /// A screenshot cannot answer this. xterm draws into a canvas, and a
+    /// canvas comes back blank from `WKWebView.takeSnapshot`, so in a captured
+    /// window the pane is an empty rectangle whether it is working or not.
+    @MainActor func dumpVisibleText() {
+        webView.evaluateJavaScript(Self.dumpScript) { value, _ in
+            NSLog("loom terminal [\(self.target)]: \(value as? String ?? "unavailable")")
+        }
+    }
+
+    private static let dumpScript = """
+    (function () {
+      var t = window.__loomTerm;
+      if (!t) { return 'no terminal'; }
+      var buffer = t.buffer.active;
+      var lines = [];
+      for (var i = 0; i < buffer.length; i++) {
+        var line = buffer.getLine(i);
+        if (!line) { continue; }
+        var text = line.translateToString(true).replace(/\\s+$/, '');
+        if (text) { lines.push(text); }
+      }
+      return t.cols + 'x' + t.rows + ', ' + lines.length + ' non-empty rows\\n' + lines.join('\\n');
+    })()
+    """
 }

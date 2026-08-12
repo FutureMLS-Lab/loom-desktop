@@ -73,20 +73,23 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             installClickLog()
         }
 
+        // Dev hook: LOOM_DESKTOP_DUMP_TERM=1 prints what each terminal is
+        // showing, which a snapshot cannot capture.
+        if ProcessInfo.processInfo.environment["LOOM_DESKTOP_DUMP_TERM"] != nil {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 9) {
+                for session in TerminalSession.liveSessions {
+                    session.dumpVisibleText()
+                }
+            }
+        }
+
         // Dev hook: LOOM_DESKTOP_SNAPSHOT_DIR=<dir> renders every window's
         // content to PNGs there a few seconds after launch, so UI states can
         // be inspected headlessly (no screen-recording permission needed).
         if let dir = ProcessInfo.processInfo.environment["LOOM_DESKTOP_SNAPSHOT_DIR"] {
             DispatchQueue.main.asyncAfter(deadline: .now() + 7) {
                 for (i, window) in NSApp.windows.enumerated() where window.isVisible {
-                    guard let view = window.contentView,
-                          let rep = view.bitmapImageRepForCachingDisplay(in: view.bounds)
-                    else { continue }
-                    view.cacheDisplay(in: view.bounds, to: rep)
-                    if let data = rep.representation(using: .png, properties: [:]) {
-                        let name = "window-\(i)-\(Int(view.bounds.width))x\(Int(view.bounds.height)).png"
-                        try? data.write(to: URL(fileURLWithPath: dir).appendingPathComponent(name))
-                    }
+                    Snapshotter.capture(window: window, index: i, into: dir)
                 }
             }
         }

@@ -300,6 +300,21 @@ struct LoomAPI {
         )
     }
 
+    /// Paste text into the pane, optionally pressing Enter afterwards.
+    ///
+    /// Not the same as writing the text and a `\r` to the stream: an agent
+    /// reads bracketed paste asynchronously, and an Enter arriving in the same
+    /// pty read as the paste-end marker gets absorbed — the text appears at the
+    /// prompt and simply sits there. The server pastes, waits, then sends Enter
+    /// as its own read.
+    func sendText(target: String, text: String, submit: Bool) async throws {
+        let _: OkResponse = try await request(
+            "/api/tmux/send-text",
+            method: "POST",
+            body: ["target": target, "text": text, "submit": submit]
+        )
+    }
+
     /// Keystrokes for an attached stream. This writes to the pty, so the keys a
     /// terminal sends are just their bytes — no tmux key names to get wrong.
     func streamInput(streamId: String, text: String) async throws {

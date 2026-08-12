@@ -13,7 +13,7 @@ struct TerminalPane: View {
 
     @AppStorage("terminalFontSize") private var fontSize: Double = 14
     @AppStorage("terminalPlanExpanded") private var planExpanded = true
-    @FocusState private var composerFocused: Bool
+    @State private var composerHeight = ComposerField.minHeight
     @State private var sending = false
 
     var body: some View {
@@ -40,7 +40,6 @@ struct TerminalPane: View {
         .onAppear {
             terminal.target = session.paneTarget
             terminal.fontSize = fontSize
-            DispatchQueue.main.async { composerFocused = true }
         }
         .onDisappear {
             terminal.stop()
@@ -179,18 +178,16 @@ struct TerminalPane: View {
             }
 
             HStack(alignment: .bottom, spacing: 8) {
-                // An input method needs a real text field to compose in; the
+                // An input method needs a real text view to compose in; the
                 // terminal only ever receives the committed string.
-                TextField(
-                    "输入文字发送到终端 · type here, ⏎ to send",
+                ComposerField(
                     text: $session.terminalDraft,
-                    axis: .vertical
+                    measuredHeight: $composerHeight,
+                    placeholder: "输入文字发送到终端 · ⏎ 发送，⇧⏎ 换行",
+                    focusOnAppear: true,
+                    onSubmit: { sendDraft(submit: true) }
                 )
-                .textFieldStyle(.plain)
-                .focused($composerFocused)
-                .font(.system(size: 14.5))
-                .lineLimit(1...5)
-                .foregroundColor(TerminalTheme.text)
+                .frame(height: composerHeight)
                 .padding(.horizontal, 12)
                 .padding(.vertical, 9)
                 .background(TerminalTheme.inputBackground, in: RoundedRectangle(cornerRadius: 10))
@@ -198,7 +195,6 @@ struct TerminalPane: View {
                     RoundedRectangle(cornerRadius: 10)
                         .strokeBorder(TerminalTheme.keycapBorder.opacity(0.85), lineWidth: 1)
                 )
-                .onSubmit { sendDraft(submit: true) }
 
                 Button { sendDraft(submit: false) } label: {
                     Text("Paste")
@@ -243,10 +239,10 @@ struct TerminalPane: View {
 
     private func sendDraft(submit: Bool) {
         let payload = session.terminalDraft
-        guard !payload.isEmpty else { return }
+        guard !payload.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
         session.terminalDraft = ""
         session.persistTerminalDraft()
-        terminal.send(submit ? payload + "\r" : payload)
+        terminal.paste(payload, submit: submit)
     }
 }
 

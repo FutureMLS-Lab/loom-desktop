@@ -121,6 +121,15 @@ final class TerminalSession: NSObject, ObservableObject {
         call("window.__loomBottom()")
     }
 
+    /// Compose-box text, which is a paste rather than keystrokes.
+    func paste(_ text: String, submit: Bool) {
+        guard !text.isEmpty, !target.isEmpty else { return }
+        let pane = target
+        Task { [api] in
+            try? await api.sendText(target: pane, text: text, submit: submit)
+        }
+    }
+
     func copySelection() {
         guard ready else { return }
         webView.evaluateJavaScript("window.__loomSelection()") { value, _ in

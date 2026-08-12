@@ -14,6 +14,7 @@ struct TerminalPane: View {
     @AppStorage("terminalFontSize") private var fontSize: Double = 14
     @AppStorage("terminalPlanExpanded") private var planExpanded = true
     @State private var composerHeight = ComposerField.minHeight
+    @State private var composerRevision = 0
 
     var body: some View {
         // One scrolling page, the way the web console's agent tab reads: the
@@ -191,6 +192,7 @@ struct TerminalPane: View {
                 ComposerField(
                     text: $session.terminalDraft,
                     measuredHeight: $composerHeight,
+                    contentRevision: composerRevision,
                     placeholder: "输入文字发送到终端 · ⏎ 发送，⇧⏎ 换行",
                     focusOnAppear: true,
                     onSubmit: { sendDraft(submit: true) }
@@ -248,6 +250,7 @@ struct TerminalPane: View {
         let payload = session.terminalDraft
         guard !payload.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
         session.terminalDraft = ""
+        composerRevision += 1
         session.persistTerminalDraft()
         terminal.paste(payload, submit: submit)
     }

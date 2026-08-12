@@ -16,6 +16,10 @@ import SwiftUI
 struct ComposerField: NSViewRepresentable {
     @Binding var text: String
     @Binding var measuredHeight: CGFloat
+    /// Bumped by the owner when it means to replace the contents — after a
+    /// send, say. Without it there is no way to tell a deliberate clear from
+    /// a stale value arriving mid-keystroke, and one of the two has to lose.
+    var contentRevision: Int
     var placeholder: String
     var fontSize: CGFloat = 14.5
     var focusOnAppear = false
@@ -61,9 +65,23 @@ struct ComposerField: NSViewRepresentable {
         context.coordinator.parent = self
         guard let textView = scroll.documentView as? ComposerTextView else { return }
         textView.placeholder = placeholder
-        // Never write into the field while it is being typed in. The binding
-        // round-trips through published state, so a stale value arriving mid
-        // keystroke would fight what was just typed.
+
+        // An intentional replacement always applies, even with the caret in
+        // the field — that is how the box empties after sending.
+        if context.coordinator.contentRevision != contentRevision {
+            context.coordinator.contentRevision = contentRevision
+            if textView.string != text {
+                textView.string = text
+                textView.setSelectedRange(NSRange(location: (text as NSString).length, length: 0))
+                textView.needsDisplay = true
+                context.coordinator.reportHeight()
+            }
+            return
+        }
+
+        // Otherwise leave the field alone while it is being typed in: the
+        // binding round-trips through published state, so a value arriving
+        // late would fight what was just typed.
         let isTyping = textView.window?.firstResponder === textView
         if !isTyping, textView.string != text {
             textView.string = text
@@ -74,8 +92,12 @@ struct ComposerField: NSViewRepresentable {
     final class Coordinator: NSObject, NSTextViewDelegate {
         var parent: ComposerField
         weak var textView: ComposerTextView?
+        var contentRevision: Int
 
-        init(_ parent: ComposerField) { self.parent = parent }
+        init(_ parent: ComposerField) {
+            self.parent = parent
+            self.contentRevision = parent.contentRevision
+        }
 
         func textDidChange(_ notification: Notification) {
             guard let textView else { return }

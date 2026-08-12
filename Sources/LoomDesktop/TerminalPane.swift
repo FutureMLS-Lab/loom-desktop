@@ -9,7 +9,7 @@ import SwiftUI
 /// this window rather than reflowed out of someone else's column count.
 struct TerminalPane: View {
     @ObservedObject var session: ChatSession
-    @StateObject private var terminal = TerminalSession()
+    @ObservedObject private var terminal = TerminalSession.shared
 
     @AppStorage("terminalFontSize") private var fontSize: Double = 14
     @AppStorage("terminalPlanExpanded") private var planExpanded = true
@@ -38,14 +38,17 @@ struct TerminalPane: View {
             }
         }
         .onAppear {
-            terminal.target = session.paneTarget
+            terminal.adopt(owner: session.id, target: session.paneTarget)
             terminal.fontSize = fontSize
         }
         .onDisappear {
-            terminal.stop()
+            terminal.release(owner: session.id)
             session.persistTerminalDraft()
         }
-        .onChange(of: session.paneTarget) { _, target in terminal.target = target }
+        .onChange(of: session.paneTarget) { _, target in
+            guard terminal.owner == session.id else { return }
+            terminal.target = target
+        }
         // Coming back to the tab, or arriving after the window was resized
         // while another tab was up, has to re-measure: nothing else would.
         .onChange(of: planExpanded) { _, _ in terminal.refit() }

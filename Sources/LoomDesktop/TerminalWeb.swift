@@ -16,6 +16,15 @@ import WebKit
 /// go back as the bytes a terminal actually sends.
 @MainActor
 final class TerminalSession: NSObject, ObservableObject {
+    /// One terminal for the app, reused as you move between tasks and tabs.
+    ///
+    /// Building it is not cheap — measured at 270ms to create the web view and
+    /// parse xterm — and only one terminal is ever on screen. Rebuilding it per
+    /// task meant paying that on every switch, which is precisely the stutter
+    /// you feel when moving around. Switching now only changes `target`, which
+    /// costs a reattach and no page load.
+    static let shared = TerminalSession()
+
     @Published private(set) var connected = false
     @Published private(set) var error = ""
     /// The size this client asked tmux for. Worth showing, because the session
@@ -28,6 +37,30 @@ final class TerminalSession: NSObject, ObservableObject {
     /// Bumped by the pane to re-attach after a Start/Stop.
     var target = "" {
         didSet { if target != oldValue { restart() } }
+    }
+
+    /// Which task's pane is currently showing this terminal.
+    private(set) var owner = ""
+
+    /// Take over the terminal for a task. Switching tasks reuses the same web
+    /// view, so this replaces `target` rather than building anything.
+    func adopt(owner: String, target: String) {
+        self.owner = owner
+        if self.target == target {
+            // Same pane as before, coming back after a detach.
+            if ready, streamTask == nil { restart() }
+        } else {
+            self.target = target
+        }
+    }
+
+    /// Give it up, but only if this task is still the one holding it. SwiftUI
+    /// brings the next view on screen before retiring the last, so an
+    /// unconditional stop here would kill the stream the new task just began.
+    func release(owner: String) {
+        guard self.owner == owner else { return }
+        self.owner = ""
+        stop()
     }
 
     var fontSize: Double = 13 {

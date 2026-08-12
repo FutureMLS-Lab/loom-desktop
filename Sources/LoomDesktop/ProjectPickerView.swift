@@ -119,7 +119,7 @@ struct ProjectPickerView: View {
                         )
                     }
                     if filteredProjects.isEmpty {
-                        Text(store.projects.isEmpty ? "No projects yet" : "No matches")
+                        Text(emptyListMessage)
                             .font(.system(size: 13))
                             .foregroundColor(.secondary)
                             .frame(maxWidth: .infinity)
@@ -179,6 +179,18 @@ struct ProjectPickerView: View {
         return all.filter {
             ($0.title ?? "").lowercased().contains(needle)
                 || $0.slug.lowercased().contains(needle)
+        }
+    }
+
+    /// An empty list has three quite different causes, and saying "No projects
+    /// yet" for all of them tells someone whose gateway is down that their
+    /// work is gone.
+    private var emptyListMessage: String {
+        guard store.projects.isEmpty else { return "No matches" }
+        switch store.connection {
+        case .offline: return "Can't reach Loom"
+        case .connecting: return "Connecting…"
+        case .online: return "No projects yet"
         }
     }
 

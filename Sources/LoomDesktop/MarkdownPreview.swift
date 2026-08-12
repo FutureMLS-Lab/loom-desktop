@@ -294,10 +294,13 @@ struct MarkdownPreview: NSViewRepresentable {
               // Measure after layout settles, or the first reading is of a
               // half-built document.
               requestAnimationFrame(function () {
-                var h = Math.max(
-                  document.documentElement.scrollHeight,
-                  document.body ? document.body.scrollHeight : 0
-                );
+                // The content's own box, not the document's: scrollHeight is
+                // floored at the viewport, so once the view had been sized to
+                // a long plan it could never report a shorter one again.
+                var wrap = document.getElementById('wrap');
+                var h = wrap
+                  ? Math.ceil(wrap.getBoundingClientRect().height)
+                  : document.documentElement.scrollHeight;
                 try { window.webkit.messageHandlers.preview.postMessage(h); } catch (e) {}
               });
             }

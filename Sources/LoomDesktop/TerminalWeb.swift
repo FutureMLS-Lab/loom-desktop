@@ -480,7 +480,11 @@ extension TerminalSession: WKScriptMessageHandler {
         paneSize = "\(cols)×\(rows)"
         reattach?.cancel()
         reattach = Task { [weak self] in
-            try? await Task.sleep(nanoseconds: 250_000_000)
+            // Each attachment is a `tmux attach` process on the server, and
+            // one that fails to be torn down sticks around holding the pane's
+            // size. Worth waiting out a resize rather than spawning one per
+            // step of it.
+            try? await Task.sleep(nanoseconds: 600_000_000)
             guard !Task.isCancelled, let self else { return }
             self.stop()
             self.attach()

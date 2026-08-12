@@ -223,6 +223,14 @@ final class TerminalSession: NSObject, ObservableObject {
             },
             onComplete: { [weak self] failure in
                 guard let self else { return }
+                // Let go of the finished stream. `attach()` refuses to start a
+                // second one while this is set, so leaving it behind made the
+                // reconnect below a no-op: one drop and the terminal stayed
+                // dead until the tab was reopened. It also strands the
+                // session, which holds its delegate until invalidated.
+                self.streamTask = nil
+                self.streamSession?.finishTasksAndInvalidate()
+                self.streamSession = nil
                 self.connected = false
                 let cancelled = (failure as NSError?)?.code == NSURLErrorCancelled
                 if let failure, !cancelled {

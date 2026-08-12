@@ -3,8 +3,9 @@
 #
 #   scripts/make-app.sh [install-dir]     # default /Applications
 #
-# The bundle is a menu-bar utility (LSUIElement): open it from
-# /Applications / Spotlight / Launchpad; quit it from the loom menu-bar icon.
+# Open it from /Applications / Spotlight / Launchpad; quit it from the loom
+# menu-bar icon. The bundle is a normal foreground app, not an LSUIElement
+# accessory — see the .regular activation policy in App.swift.
 set -euo pipefail
 cd "$(dirname "$0")/.."
 

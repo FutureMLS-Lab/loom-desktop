@@ -99,7 +99,12 @@ login item (`~/Library/LaunchAgents/com.loom.desktop.plist`), and starts it.
 - **Hide the panel** without quitting: *Hide Dock Panel* in either menu; the
   menu-bar icon stays and *Show Dock Panel* brings it back.
 
-The app is a menu-bar utility (`LSUIElement`): no Dock icon, no ⌘⇥ entry.
+The app runs as an ordinary foreground application — Dock icon (badged with
+the number of finished tasks you have not looked at), ⌘⇥ entry, menu bar —
+alongside its menu-bar icon and floating panel. It is deliberately not an
+`LSUIElement` accessory: `App.swift` forces `.regular`, because a process
+that is not a registered foreground application draws its windows fine but
+never receives clicks, resizes, or focus.
 
 ## Build & run from source
 
@@ -130,15 +135,30 @@ then the reply arrives and the pill blinks until you click it.
 
 - `LOOM_DESKTOP_OPEN_CHAT="<projectId>/<slug>"` — open that task's chat on
   launch.
+- `LOOM_DESKTOP_WINDOW=940x640` — open the main window at that content size,
+  to check cramped layouts. Without it the window clamps to its default, so
+  a script cannot make it small.
+- `LOOM_DESKTOP_OPEN_WINDOWS=notes,settings` — open windows that otherwise
+  need a menu click, so a snapshot can include them.
 - `LOOM_DESKTOP_SNAPSHOT_DIR=/tmp/snaps` — render every window's content to
   PNGs ~7 s after launch (headless UI check, no screen-recording permission
   needed). Run the bundled binary, not `.build/release/LoomDesktop`:
   notifications need a real bundle, and the bare binary aborts on launch.
+  **Read the result with care**: web views are captured through their own
+  `takeSnapshot`, which returns DOM content but not canvas pixels, so the
+  terminal is a blank rectangle here however healthy it is.
+- `LOOM_DESKTOP_DUMP_TERM=1` — print what each terminal is actually showing,
+  which the snapshot above cannot tell you.
 - `LOOM_DESKTOP_DEBUG_EVENTS=1` — log every mouse-down to
   `~/Library/Logs/LoomDesktop-events.log`, to tell "the click never reached
   the app" apart from "a control ignored it".
 - `LOOM_DESKTOP_TRACE=1` — boot trace to `/tmp/loom-boot.log`, for a launch
-  that produces no window at all.
+  that produces no window at all. `LOOM_DESKTOP_TRACE_LAYOUT=1` adds the
+  panel's measure/resize decisions to the same file.
+
+The app cannot be brought to the front from a script — neither AppleScript
+nor `open -a` will activate it — so anything that depends on activation or
+window focus has to be checked by hand.
 
 ## Auto-start at login
 
@@ -173,7 +193,8 @@ copy it to `~/Library/LaunchAgents/com.loom.desktop.plist`, then
 | `ComposeDrafts.swift` | Unsent text, kept across tab and task switches |
 | `Notifier.swift` | Finish notifications + Dock badge |
 | `SettingsWindow.swift` | Base URL + bearer token |
-| `Resources/` | App icon and the bundled `marked.min.js` |
+| `Snapshotter.swift` | Window → PNG for the headless UI check, web views included |
+| `Resources/` | App icon, and the bundled `marked`, `xterm`, and fit addon |
 | `scripts/make-app.sh` | Build, sign, install to `/Applications`, register the login item |
 | `scripts/mock-loom.py` | Offline mock of the Loom API for development |
 | `scripts/summon.swift` | Poke a running app to bring its windows to this screen |

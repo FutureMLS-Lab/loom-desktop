@@ -112,7 +112,10 @@ struct NotesView: View {
                 documentID: "notes/\(currentProject?.id ?? "")",
                 contentRevision: editorRevision,
                 editable: true,
-                fontSize: 13.5
+                fontSize: 13.5,
+                placeholder: loading
+                    ? "Loading…"
+                    : "Notes for \(currentProject?.name ?? "this project") — saved to NOTES.md, shared with the web console."
             )
         }
     }

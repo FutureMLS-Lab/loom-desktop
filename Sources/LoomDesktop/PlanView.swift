@@ -459,6 +459,24 @@ struct PlanView: View {
 
 /// Editable `NSTextView` for markdown source. Avoids SwiftUI `Text` /
 /// `AttributedString(markdown:)` which stalls the main thread on big plans.
+final class PlaceholderTextView: NSTextView {
+    var placeholder = "" {
+        didSet { if placeholder != oldValue { needsDisplay = true } }
+    }
+
+    override func draw(_ dirtyRect: NSRect) {
+        super.draw(dirtyRect)
+        guard string.isEmpty, !placeholder.isEmpty else { return }
+        placeholder.draw(
+            at: NSPoint(x: textContainerInset.width + 5, y: textContainerInset.height),
+            withAttributes: [
+                .font: font ?? .systemFont(ofSize: 13.5),
+                .foregroundColor: NSColor.tertiaryLabelColor,
+            ]
+        )
+    }
+}
+
 struct PlainTextEditor: NSViewRepresentable {
     @Binding var text: String
     var documentID: String
@@ -466,6 +484,9 @@ struct PlainTextEditor: NSViewRepresentable {
     var contentRevision: Int
     var editable: Bool
     var fontSize: Double
+    /// Shown when the file is empty, so a new one does not read as a failure
+    /// to load.
+    var placeholder: String = ""
 
     func makeCoordinator() -> Coordinator { Coordinator(text: $text) }
 
@@ -478,7 +499,8 @@ struct PlainTextEditor: NSViewRepresentable {
         scroll.drawsBackground = true
         scroll.backgroundColor = NSColor(LoomColors.bgElev1)
 
-        let textView = NSTextView()
+        let textView = PlaceholderTextView()
+        textView.placeholder = placeholder
         textView.minSize = .zero
         textView.maxSize = NSSize(
             width: CGFloat.greatestFiniteMagnitude,
@@ -516,6 +538,7 @@ struct PlainTextEditor: NSViewRepresentable {
     func updateNSView(_ scroll: NSScrollView, context: Context) {
         guard let textView = scroll.documentView as? NSTextView else { return }
         context.coordinator.text = $text
+        (textView as? PlaceholderTextView)?.placeholder = placeholder
         textView.isEditable = editable
         textView.isSelectable = true
         let font = NSFont.monospacedSystemFont(ofSize: fontSize, weight: .regular)

@@ -73,6 +73,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             installClickLog()
         }
 
+        // Dev hook: LOOM_DESKTOP_OPEN_WINDOWS=notes,settings opens the windows
+        // that otherwise only a menu click can reach, so the snapshot below
+        // can see them.
+        if let which = ProcessInfo.processInfo.environment["LOOM_DESKTOP_OPEN_WINDOWS"] {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 3) { [store] in
+                if which.contains("notes") { NotesWindowController.shared.show(store: store) }
+                if which.contains("settings") { SettingsWindowController.shared.show() }
+            }
+        }
+
         // Dev hook: LOOM_DESKTOP_DUMP_TERM=1 prints what each terminal is
         // showing, which a snapshot cannot capture.
         if ProcessInfo.processInfo.environment["LOOM_DESKTOP_DUMP_TERM"] != nil {

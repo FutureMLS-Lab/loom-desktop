@@ -8,9 +8,6 @@ import SwiftUI
 /// Editing still belongs to the Files tab; this is the glance, not the desk.
 struct PlanDigest: View {
     @ObservedObject var session: ChatSession
-    /// Laid out as part of a scrolling page: the preview grows to fit the
-    /// document instead of scrolling inside a box of its own.
-    var pageMode = false
 
     @AppStorage("terminalPlanExpanded") private var expanded = true
     @AppStorage("taskTab") private var taskTabRaw = TaskPane.Tab.conversation.rawValue
@@ -137,21 +134,15 @@ struct PlanDigest: View {
     @ViewBuilder
     private var body_: some View {
         if let content = files[selected], !content.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-            if pageMode {
-                MarkdownPreview(
-                    markdown: content,
-                    documentID: "\(session.id)/\(selected)",
-                    compact: true,
-                    measuredHeight: $contentHeight
-                )
-                .frame(height: contentHeight)
-            } else {
-                MarkdownPreview(
-                    markdown: content,
-                    documentID: "\(session.id)/\(selected)",
-                    compact: true
-                )
-            }
+            // Sized to the document: this sits in a scrolling page, and a box
+            // with its own scrollbar inside one is what makes reading awkward.
+            MarkdownPreview(
+                markdown: content,
+                documentID: "\(session.id)/\(selected)",
+                compact: true,
+                measuredHeight: $contentHeight
+            )
+            .frame(height: contentHeight)
         } else if loading {
             centered("Reading the plan…")
         } else if !error.isEmpty {
@@ -167,8 +158,8 @@ struct PlanDigest: View {
             .foregroundColor(.secondary)
             .multilineTextAlignment(.center)
             .padding(.horizontal, 30)
-            .padding(.vertical, pageMode ? 34 : 0)
-            .frame(maxWidth: .infinity, maxHeight: pageMode ? nil : .infinity)
+            .padding(.vertical, 34)
+            .frame(maxWidth: .infinity)
             .background(LoomColors.bgElev1)
     }
 

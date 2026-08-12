@@ -14,7 +14,6 @@ struct TerminalPane: View {
     @AppStorage("terminalFontSize") private var fontSize: Double = 14
     @AppStorage("terminalPlanExpanded") private var planExpanded = true
     @State private var composerHeight = ComposerField.minHeight
-    @State private var sending = false
 
     var body: some View {
         // One scrolling page, the way the web console's agent tab reads: the
@@ -27,13 +26,13 @@ struct TerminalPane: View {
                     VStack(spacing: 0) {
                         terminalCard
                             .frame(height: max(340, geometry.size.height * 0.72))
-                        PlanDigest(session: session, pageMode: true)
+                        PlanDigest(session: session)
                     }
                 }
             } else {
                 VStack(spacing: 0) {
                     terminalCard
-                    PlanDigest(session: session, pageMode: true)
+                    PlanDigest(session: session)
                 }
             }
         }
@@ -210,7 +209,7 @@ struct TerminalPane: View {
                 }
                 .buttonStyle(.plain)
                 .help("Send the text without pressing Enter")
-                .disabled(session.terminalDraft.isEmpty || sending)
+                .disabled(session.terminalDraft.isEmpty)
 
                 Button { sendDraft(submit: true) } label: {
                     Image(systemName: "arrow.up.circle.fill")
@@ -225,7 +224,6 @@ struct TerminalPane: View {
                 .help("Send and press Enter")
                 .disabled(
                     session.terminalDraft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-                        || sending
                 )
             }
         }

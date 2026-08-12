@@ -113,10 +113,6 @@ final class TerminalSession: NSObject, ObservableObject {
         attach()
     }
 
-    func focusTerminal() {
-        call("window.__loomFocus()")
-    }
-
     func scrollToBottom() {
         call("window.__loomBottom()")
     }

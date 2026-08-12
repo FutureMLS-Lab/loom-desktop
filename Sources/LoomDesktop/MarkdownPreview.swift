@@ -2,6 +2,19 @@ import AppKit
 import SwiftUI
 import WebKit
 
+/// A web view that can hand the wheel to whatever is scrolling around it.
+final class PassThroughWebView: WKWebView {
+    var forwardsScrollWheel = false
+
+    override func scrollWheel(with event: NSEvent) {
+        if forwardsScrollWheel {
+            nextResponder?.scrollWheel(with: event)
+        } else {
+            super.scrollWheel(with: event)
+        }
+    }
+}
+
 /// Browser-style Markdown preview: `marked` → HTML inside a WKWebView, with
 /// article typography. Used by the Files tab so large PLAN.md files stay
 /// readable without the old SwiftUI markdown path that froze the UI.
@@ -22,7 +35,12 @@ struct MarkdownPreview: NSViewRepresentable {
         let config = WKWebViewConfiguration()
         config.suppressesIncrementalRendering = false
         config.userContentController = controller
-        let web = WKWebView(frame: .zero, configuration: config)
+        let web = PassThroughWebView(frame: .zero, configuration: config)
+        // Sized to its content, this view has nothing of its own to scroll, so
+        // the wheel belongs to the page around it. A web view swallows wheel
+        // events regardless, which left the plan a dead zone: the page scrolled
+        // everywhere except over the thing you were reading.
+        web.forwardsScrollWheel = measuredHeight != nil
         controller.add(context.coordinator, name: "preview")
         #if DEBUG
         if #available(macOS 13.3, *) {
@@ -43,6 +61,7 @@ struct MarkdownPreview: NSViewRepresentable {
     func updateNSView(_ webView: WKWebView, context: Context) {
         context.coordinator.webView = webView
         context.coordinator.measuredHeight = measuredHeight
+        (webView as? PassThroughWebView)?.forwardsScrollWheel = measuredHeight != nil
         let docChanged = context.coordinator.documentID != documentID
         if docChanged {
             context.coordinator.documentID = documentID

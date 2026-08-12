@@ -58,6 +58,17 @@ final class ChatSession: ObservableObject, Identifiable {
     private static let maxLimit = 500
     /// Staggered re-reads that catch an agent reply landing right after a send.
     private static let burstDelaysMs: [UInt64] = [0, 250, 500, 1000]
+    /// Consecutive failed reads, used to back away from a server that is not
+    /// answering rather than keep a full-rate poll pointed at it.
+    private var failureStreak = 0
+    private static let maxBackoff: TimeInterval = 60
+
+    private var pollDelay: TimeInterval {
+        if failureStreak > 0 {
+            return min(Self.idleInterval * pow(2, Double(min(failureStreak, 4))), Self.maxBackoff)
+        }
+        return working ? Self.workingInterval : Self.idleInterval
+    }
 
     init(projectId: String, slug: String, title: String, projectLabel: String, api: LoomAPI) {
         self.projectId = projectId
@@ -109,9 +120,7 @@ final class ChatSession: ObservableObject, Identifiable {
             await self?.loadDetail()
             await self?.load(full: true)
             while !Task.isCancelled {
-                let interval = (self?.working ?? false)
-                    ? Self.workingInterval
-                    : Self.idleInterval
+                let interval = self?.pollDelay ?? Self.idleInterval
                 try? await Task.sleep(nanoseconds: UInt64(interval * 1_000_000_000))
                 await self?.load(full: false)
             }
@@ -141,7 +150,9 @@ final class ChatSession: ObservableObject, Identifiable {
             )
             apply(feed, updateOnly: !full)
             error = ""
+            failureStreak = 0
         } catch {
+            failureStreak += 1
             // Only surface errors while there is nothing on screen; a dropped
             // poll on a live feed is not worth a banner.
             if messages.isEmpty { self.error = error.localizedDescription }

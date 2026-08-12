@@ -75,13 +75,28 @@ final class TaskStore: ObservableObject {
 
     static let activityInterval: TimeInterval = 4
     static let labelsInterval: TimeInterval = 30
+    /// How far apart to space attempts once the server stops answering.
+    private static let maxBackoff: TimeInterval = 60
+    private var failureStreak = 0
+
+    /// Polling a server that is down does not help it come back. Each attempt
+    /// also ties up a connection for the length of its timeout, so a client
+    /// that keeps its cadence through an outage is adding load to something
+    /// already struggling — and with several clients doing it, keeping it
+    /// down. Attempts spread out until it answers, then snap back.
+    private var nextDelay: TimeInterval {
+        guard failureStreak > 0 else { return Self.activityInterval }
+        let backoff = Self.activityInterval * pow(2, Double(min(failureStreak, 5)))
+        return min(backoff, Self.maxBackoff)
+    }
 
     func start() {
         guard pollTask == nil else { return }
         pollTask = Task { [weak self] in
             while !Task.isCancelled {
                 await self?.tick()
-                try? await Task.sleep(nanoseconds: UInt64(Self.activityInterval * 1_000_000_000))
+                let delay = self?.nextDelay ?? Self.activityInterval
+                try? await Task.sleep(nanoseconds: UInt64(delay * 1_000_000_000))
             }
         }
     }
@@ -91,9 +106,12 @@ final class TaskStore: ObservableObject {
         pollTask = nil
     }
 
-    /// Force a full refresh (settings changed, user asked).
+    /// Force a full refresh (settings changed, user asked). Asking by hand
+    /// also clears the backoff — the wait exists to spare a struggling server,
+    /// not to make someone who is watching it wait a minute.
     func refreshNow() {
         labelsFetchedAt = .distantPast
+        failureStreak = 0
         Task { await tick() }
     }
 
@@ -152,8 +170,10 @@ final class TaskStore: ObservableObject {
             }
             pills = next
             connection = .online
+            failureStreak = 0
             Notifier.shared.reconcile(pills: next)
         } catch {
+            failureStreak += 1
             connection = .offline(error.localizedDescription)
         }
     }

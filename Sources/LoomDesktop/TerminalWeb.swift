@@ -51,6 +51,8 @@ final class TerminalSession: NSObject, ObservableObject {
     private var reattach: Task<Void, Never>?
     private var pendingScroll = 0
     private var scrollInFlight = false
+    private var reconnect: Task<Void, Never>?
+    private var reconnectStreak = 0
 
     private let api = LoomAPI()
 
@@ -95,6 +97,8 @@ final class TerminalSession: NSObject, ObservableObject {
         streamSession = nil
         reattach?.cancel()
         reattach = nil
+        reconnect?.cancel()
+        reconnect = nil
         flushTimer?.invalidate()
         flushTimer = nil
         pending.removeAll(keepingCapacity: false)
@@ -156,6 +160,7 @@ final class TerminalSession: NSObject, ObservableObject {
                 self.streamID = http.value(forHTTPHeaderField: "X-Loom-Terminal-Stream") ?? ""
                 self.connected = true
                 self.error = ""
+                self.reconnectStreak = 0
                 self.startFlushing()
             },
             onChunk: { [weak self] data in
@@ -164,9 +169,15 @@ final class TerminalSession: NSObject, ObservableObject {
             onComplete: { [weak self] failure in
                 guard let self else { return }
                 self.connected = false
-                if let failure, (failure as NSError).code != NSURLErrorCancelled {
+                let cancelled = (failure as NSError?)?.code == NSURLErrorCancelled
+                if let failure, !cancelled {
                     self.error = failure.localizedDescription
                 }
+                // A stream that ends on its own — the server restarted, the
+                // network dropped, the pane died — used to leave a dead
+                // terminal until the tab was reopened. Reconnect, backing off
+                // so an outage is waited out rather than hammered.
+                if !cancelled { self.scheduleReconnect() }
             }
         )
         let session = URLSession(
@@ -441,6 +452,22 @@ extension TerminalSession: WKScriptMessageHandler {
     }
 
     /// Signed pending scroll, negative for older output.
+    /// Wait longer each time, to a minute. Attaching costs the server a pty
+    /// and a `tmux attach`, so retrying hard at a server that is struggling is
+    /// the worst thing a client can do.
+    private func scheduleReconnect() {
+        guard !target.isEmpty, reconnect == nil else { return }
+        reconnectStreak += 1
+        let delay = min(pow(2.0, Double(min(reconnectStreak, 5))), 60)
+        reconnect = Task { [weak self] in
+            try? await Task.sleep(nanoseconds: UInt64(delay * 1_000_000_000))
+            guard !Task.isCancelled, let self else { return }
+            self.reconnect = nil
+            guard self.ready, !self.target.isEmpty, !self.connected else { return }
+            self.attach()
+        }
+    }
+
     private func scrollPane(direction: String, lines: Int) {
         pendingScroll += direction == "up" ? -lines : lines
         pumpScroll()

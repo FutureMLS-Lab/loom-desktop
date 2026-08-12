@@ -131,6 +131,9 @@ private struct LoomMenuButton: View {
                 }
             }
             Divider()
+            if store.unseenCount > 0 {
+                Button("Mark all \(store.unseenCount) as seen") { store.markAllSeen() }
+            }
             Button("Refresh now") { store.refreshNow() }
             Button("Settings…") { SettingsWindowController.shared.show() }
             Divider()

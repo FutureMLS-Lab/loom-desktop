@@ -64,6 +64,10 @@ struct PillRing: NSViewRepresentable {
 }
 
 final class PillRingView: NSView {
+    /// Slower than the web's 1.1s, so a row of them pulses together rather
+    /// than flickering.
+    static let blinkCycle: CFTimeInterval = 1.6
+
     private let gradient = CAGradientLayer()
     private let ring = CAShapeLayer()
     private var mode: PillRing.Mode
@@ -169,15 +173,19 @@ final class PillRingView: NSView {
             spin.repeatCount = .infinity
             gradient.add(spin, forKey: "spin")
         case .finished:
+            // A gentler swing than the web's 1→0.12 strobe, and slower. One
+            // pill flashing hard reads as "look here"; a dozen of them reads
+            // as a fault, and the dock often has a dozen. Still unmistakably
+            // moving, just not shouting.
             let blink = CABasicAnimation(keyPath: "opacity")
             blink.fromValue = 1.0
-            blink.toValue = 0.12
-            blink.duration = 1.1 / 2
+            blink.toValue = 0.4
+            blink.duration = Self.blinkCycle / 2
             blink.autoreverses = true
             blink.repeatCount = .infinity
             blink.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
             let now = gradient.convertTime(CACurrentMediaTime(), from: nil)
-            blink.beginTime = now - now.truncatingRemainder(dividingBy: 1.1)
+            blink.beginTime = now - now.truncatingRemainder(dividingBy: Self.blinkCycle)
             gradient.add(blink, forKey: "blink")
         }
     }
@@ -187,9 +195,9 @@ final class PillRingView: NSView {
 /// Same reasoning as the ring: a layer animation instead of SwiftUI state.
 struct PulsingFill: NSViewRepresentable {
     let color: NSColor
-    var from: Float = 0.45
+    var from: Float = 0.6
     var to: Float = 0.85
-    var halfCycle: CFTimeInterval = 0.55
+    var halfCycle: CFTimeInterval = 0.8
 
     func makeNSView(context: Context) -> PulsingFillView {
         PulsingFillView(color: color, from: from, to: to, halfCycle: halfCycle)

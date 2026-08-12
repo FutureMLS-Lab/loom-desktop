@@ -93,6 +93,15 @@ final class StatusItemController: NSObject, NSMenuDelegate {
         )
         panelToggle.target = self
         menu.addItem(panelToggle)
+        if store.unseenCount > 0 {
+            let seen = NSMenuItem(
+                title: "Mark All \(store.unseenCount) as Seen",
+                action: #selector(markAllSeen),
+                keyEquivalent: ""
+            )
+            seen.target = self
+            menu.addItem(seen)
+        }
         let refresh = NSMenuItem(title: "Refresh Now", action: #selector(refreshNow), keyEquivalent: "r")
         refresh.target = self
         menu.addItem(refresh)
@@ -148,6 +157,7 @@ final class StatusItemController: NSObject, NSMenuDelegate {
         NotesWindowController.shared.show(store: store)
     }
 
+    @objc private func markAllSeen() { store.markAllSeen() }
     @objc private func refreshNow() { store.refreshNow() }
     @objc private func openSettings() { SettingsWindowController.shared.show() }
     @objc private func quit() { NSApp.terminate(nil) }

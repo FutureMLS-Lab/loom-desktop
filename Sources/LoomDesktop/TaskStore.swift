@@ -226,6 +226,20 @@ final class TaskStore: ObservableObject {
         markSeen(pill.id)
     }
 
+    /// How many tasks are waiting to be looked at.
+    var unseenCount: Int {
+        pills.filter { $0.state == .finished }.count
+    }
+
+    /// Clear the whole backlog. A dozen finishes accumulated over a day is a
+    /// dozen things blinking, which stops reading as "these want you" and
+    /// starts reading as noise.
+    func markAllSeen() {
+        for pill in pills where pill.state == .finished {
+            markSeen(pill.id)
+        }
+    }
+
     private func markSeen(_ key: String) {
         guard let slash = key.firstIndex(of: "/") else { return }
         // Already seen: nothing to stop blinking, and no need to tell the

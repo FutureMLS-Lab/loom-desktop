@@ -10,13 +10,20 @@ struct MarkdownPreview: NSViewRepresentable {
     let documentID: String
     /// Smaller type and tighter margins, for the digest under the terminal.
     var compact = false
+    /// Report the rendered document's height instead of scrolling internally,
+    /// so the plan can lay out as part of a page rather than as a box with its
+    /// own scrollbar inside another scroll view.
+    var measuredHeight: Binding<CGFloat>?
 
     func makeCoordinator() -> Coordinator { Coordinator() }
 
     func makeNSView(context: Context) -> WKWebView {
+        let controller = WKUserContentController()
         let config = WKWebViewConfiguration()
         config.suppressesIncrementalRendering = false
+        config.userContentController = controller
         let web = WKWebView(frame: .zero, configuration: config)
+        controller.add(context.coordinator, name: "preview")
         #if DEBUG
         if #available(macOS 13.3, *) {
             web.isInspectable = true
@@ -28,11 +35,14 @@ struct MarkdownPreview: NSViewRepresentable {
         context.coordinator.pendingMarkdown = markdown
         context.coordinator.documentID = documentID
         context.coordinator.compact = compact
+        context.coordinator.measuredHeight = measuredHeight
+        context.coordinator.autosize = measuredHeight != nil
         return web
     }
 
     func updateNSView(_ webView: WKWebView, context: Context) {
         context.coordinator.webView = webView
+        context.coordinator.measuredHeight = measuredHeight
         let docChanged = context.coordinator.documentID != documentID
         if docChanged {
             context.coordinator.documentID = documentID
@@ -44,12 +54,32 @@ struct MarkdownPreview: NSViewRepresentable {
         context.coordinator.scheduleRender(markdown, force: docChanged)
     }
 
-    final class Coordinator: NSObject, WKNavigationDelegate {
+    final class Coordinator: NSObject, WKNavigationDelegate, WKScriptMessageHandler {
         weak var webView: WKWebView?
         var documentID = ""
         var pendingMarkdown = ""
         var ready = false
         var compact = false
+        var autosize = false
+        var measuredHeight: Binding<CGFloat>?
+
+        func userContentController(
+            _ userContentController: WKUserContentController,
+            didReceive message: WKScriptMessage
+        ) {
+            // A measurement taken mid-layout can come back implausibly small;
+            // keeping the previous height is better than clipping the document
+            // to something nothing can scroll past.
+            guard let height = message.body as? Double, height > 40 else { return }
+            DispatchQueue.main.async {
+                let rounded = CGFloat(height.rounded(.up))
+                // Ignore sub-pixel churn, which would otherwise relayout the
+                // page on every render.
+                if abs((self.measuredHeight?.wrappedValue ?? 0) - rounded) > 1 {
+                    self.measuredHeight?.wrappedValue = rounded
+                }
+            }
+        }
         private var workItem: DispatchWorkItem?
         private var lastRendered = ""
         /// Which document the page is currently showing, so a re-render for the
@@ -58,6 +88,9 @@ struct MarkdownPreview: NSViewRepresentable {
 
         func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
             ready = true
+            if autosize {
+                webView.evaluateJavaScript("window.__loomAutosize(true);", completionHandler: nil)
+            }
             applyCompact()
             render(pendingMarkdown, immediate: true)
         }
@@ -212,6 +245,10 @@ struct MarkdownPreview: NSViewRepresentable {
           body.compact blockquote, body.compact pre { margin: 0.6em 0; }
           body.compact pre { padding: 10px 12px; }
           body.compact #empty { padding: 34px 20px; font-size: 13px; }
+          /* Laid out as part of a page: no scrollbar of its own, and no
+             bottom padding reserved for one. */
+          body.autosize { overflow: hidden; }
+          body.autosize #wrap { padding-bottom: 18px; }
         </style>
         </head>
         <body>
@@ -225,7 +262,27 @@ struct MarkdownPreview: NSViewRepresentable {
             }
             window.__loomSetCompact = function(on) {
               document.body.classList.toggle('compact', !!on);
+              reportHeight();
             };
+            var autosize = false;
+            window.__loomAutosize = function (on) {
+              autosize = !!on;
+              document.body.classList.toggle('autosize', autosize);
+              reportHeight();
+            };
+            function reportHeight() {
+              if (!autosize) return;
+              // Measure after layout settles, or the first reading is of a
+              // half-built document.
+              requestAnimationFrame(function () {
+                var h = Math.max(
+                  document.documentElement.scrollHeight,
+                  document.body ? document.body.scrollHeight : 0
+                );
+                try { window.webkit.messageHandlers.preview.postMessage(h); } catch (e) {}
+              });
+            }
+            window.addEventListener('resize', reportHeight);
             window.__loomRender = function(md, resetScroll) {
               var root = document.getElementById('content');
               if (!md || !String(md).trim()) {
@@ -247,6 +304,7 @@ struct MarkdownPreview: NSViewRepresentable {
                 root.innerHTML = '<pre>' + escapeHtml(md) + '</pre>';
               }
               window.scrollTo(0, keepY);
+              reportHeight();
             };
           </script>
         </body>

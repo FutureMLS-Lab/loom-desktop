@@ -17,18 +17,23 @@ struct TerminalPane: View {
     @State private var sending = false
 
     var body: some View {
-        Group {
+        // One scrolling page, the way the web console's agent tab reads: the
+        // pane at a fixed height, the plan running on underneath it. A split
+        // with a draggable divider meant two things to scroll and a size to
+        // manage; this just scrolls.
+        GeometryReader { geometry in
             if planExpanded {
-                VSplitView {
-                    terminalCard
-                        .frame(minHeight: 360)
-                    PlanDigest(session: session)
-                        .frame(minHeight: 110, idealHeight: 180, maxHeight: 360)
+                ScrollView {
+                    VStack(spacing: 0) {
+                        terminalCard
+                            .frame(height: max(340, geometry.size.height * 0.72))
+                        PlanDigest(session: session, pageMode: true)
+                    }
                 }
             } else {
                 VStack(spacing: 0) {
                     terminalCard
-                    PlanDigest(session: session)
+                    PlanDigest(session: session, pageMode: true)
                 }
             }
         }

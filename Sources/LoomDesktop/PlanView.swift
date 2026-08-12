@@ -32,6 +32,14 @@ struct PlanView: View {
             case .split: return "Split"
             }
         }
+        /// For the narrow header, where the words do not fit.
+        var symbol: String {
+            switch self {
+            case .edit: return "pencil"
+            case .preview: return "eye"
+            case .split: return "rectangle.split.2x1"
+            }
+        }
     }
 
     private var viewMode: ViewMode {
@@ -180,13 +188,45 @@ struct PlanView: View {
 
     // MARK: Editor
 
+    private func modePicker(compact: Bool) -> some View {
+        Picker("View", selection: $viewModeRaw) {
+            ForEach(ViewMode.allCases) { mode in
+                if compact {
+                    Image(systemName: mode.symbol).tag(mode.rawValue)
+                } else {
+                    Text(mode.label).tag(mode.rawValue)
+                }
+            }
+        }
+        .pickerStyle(.segmented)
+        .fixedSize()
+        .help("Edit source, browser preview, or both")
+    }
+
+    private var sourceEditor: some View {
+        PlainTextEditor(
+            text: $draft,
+            documentID: selected,
+            contentRevision: editorRevision,
+            editable: canEdit,
+            fontSize: 13.5
+        )
+    }
+
+    private var renderedPreview: some View {
+        MarkdownPreview(markdown: draft, documentID: selected)
+    }
+
     private var editorPane: some View {
         VStack(spacing: 0) {
             HStack(spacing: 10) {
+                // Ahead of the controls in the queue for space: squeezed by
+                // them, the name of the file you are editing collapsed to "…".
                 Text(current?.name ?? "")
                     .font(.system(size: 13, weight: .semibold, design: .monospaced))
                     .lineLimit(1)
                     .truncationMode(.middle)
+                    .layoutPriority(1)
                 if dirty {
                     Text("Edited")
                         .font(.system(size: 11, weight: .medium))
@@ -208,14 +248,13 @@ struct PlanView: View {
                         .lineLimit(1)
                 }
 
-                Picker("View", selection: $viewModeRaw) {
-                    ForEach(ViewMode.allCases) { mode in
-                        Text(mode.label).tag(mode.rawValue)
-                    }
+                // Words when they fit, icons when they do not: at the window's
+                // minimum width this pane is barely 300pt, and the labelled
+                // picker pushed Save off the edge.
+                ViewThatFits(in: .horizontal) {
+                    modePicker(compact: false)
+                    modePicker(compact: true)
                 }
-                .pickerStyle(.segmented)
-                .frame(maxWidth: 220)
-                .help("Edit source, browser preview, or both")
 
                 Button {
                     Task { await load(keepSelection: true) }
@@ -248,27 +287,29 @@ struct PlanView: View {
 
             switch viewMode {
             case .edit:
-                PlainTextEditor(
-                    text: $draft,
-                    documentID: selected,
-                    contentRevision: editorRevision,
-                    editable: canEdit,
-                    fontSize: 13.5
-                )
+                sourceEditor
             case .preview:
-                MarkdownPreview(markdown: draft, documentID: selected)
+                renderedPreview
             case .split:
-                HSplitView {
-                    PlainTextEditor(
-                        text: $draft,
-                        documentID: selected,
-                        contentRevision: editorRevision,
-                        editable: canEdit,
-                        fontSize: 13.5
-                    )
-                    .frame(minWidth: 240)
-                    MarkdownPreview(markdown: draft, documentID: selected)
-                        .frame(minWidth: 280)
+                // Two readable columns need width this pane does not always
+                // have. Narrow, they used to shoulder each other off the
+                // right edge, leaving the preview outside the window, so
+                // below that width they stack. Measured rather than left to
+                // `ViewThatFits`, which an `HSplitView` will always tell it
+                // fits.
+                GeometryReader { geo in
+                    if geo.size.width >= 560 {
+                        HSplitView {
+                            sourceEditor.frame(minWidth: 240)
+                            renderedPreview.frame(minWidth: 280)
+                        }
+                    } else {
+                        VStack(spacing: 0) {
+                            sourceEditor
+                            Divider()
+                            renderedPreview
+                        }
+                    }
                 }
             }
         }

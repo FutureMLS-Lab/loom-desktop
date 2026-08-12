@@ -54,6 +54,21 @@ final class TerminalSession: NSObject, ObservableObject {
 
     private let api = LoomAPI()
 
+    /// Every live session, so quitting can close its stream. The server ends
+    /// the `tmux attach` when the HTTP connection closes; if the app is killed
+    /// outright that close can be missed, and the orphaned client keeps
+    /// constraining the pane's size for everyone else until it is reaped.
+    private static let live = NSHashTable<TerminalSession>.weakObjects()
+
+    static func stopAll() {
+        for session in live.allObjects { session.stop() }
+    }
+
+    override init() {
+        super.init()
+        Self.live.add(self)
+    }
+
     /// A stream stays open for as long as the pane is on screen, so it cannot
     /// use the short timeouts the request/response API wants.
     private static var streamConfiguration: URLSessionConfiguration {
@@ -280,9 +295,15 @@ final class TerminalSession: NSObject, ObservableObject {
         var lastCols = 0, lastRows = 0;
         function doFit() {
           if (!fit) return;
-          // Fitting before the view has a width would pin the real tmux pane
-          // to a couple of dozen columns — for every client, not just this one.
-          if (host.clientWidth < 120) { setTimeout(doFit, 100); return; }
+          // Never report a size measured mid-layout. tmux sizes the window to
+          // its smallest client, so a fleeting "20 rows" while this view is
+          // still settling squeezes the pane for everyone attached — and the
+          // agent reflows its screen to match, which outlasts the client that
+          // caused it.
+          if (host.clientWidth < 120 || host.clientHeight < 120) {
+            setTimeout(doFit, 100);
+            return;
+          }
           try { fit.fit(); } catch (e) { return; }
           if (term.cols !== lastCols || term.rows !== lastRows) {
             lastCols = term.cols; lastRows = term.rows;

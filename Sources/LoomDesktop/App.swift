@@ -111,6 +111,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     func applicationWillTerminate(_ notification: Notification) {
         store.stop()
+        // Close terminal streams before going away. The server drops its
+        // `tmux attach` when the connection closes, and an orphaned one holds
+        // the pane down to its own size for every other client.
+        TerminalSession.stopAll()
     }
 
     /// "Relaunch me" — show the panel and the main window wherever the user

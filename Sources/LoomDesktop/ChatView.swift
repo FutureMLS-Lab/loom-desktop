@@ -8,6 +8,7 @@ struct ChatView: View {
     @State private var stickToLatest = true
     @State private var composerHeight = ComposerField.minHeight
     @State private var composerRevision = 0
+    @State private var expandedRuns: Set<String> = []
 
     private static let bottomAnchor = "chat-bottom"
 
@@ -111,9 +112,25 @@ struct ChatView: View {
                         if session.messages.isEmpty {
                             emptyState
                         } else {
-                            ForEach(session.messages) { message in
-                                MessageRow(message: message, session: session)
-                                    .id(message.id)
+                            ForEach(FeedItem.group(session.messages)) { item in
+                                switch item {
+                                case .message(let message):
+                                    MessageRow(message: message, session: session)
+                                        .id(message.id)
+                                case .run(let tools):
+                                    ToolRunRow(
+                                        tools: tools,
+                                        expanded: expandedRuns.contains(item.id),
+                                        toggle: {
+                                            if expandedRuns.contains(item.id) {
+                                                expandedRuns.remove(item.id)
+                                            } else {
+                                                expandedRuns.insert(item.id)
+                                            }
+                                        }
+                                    )
+                                    .id(item.id)
+                                }
                             }
                         }
 
@@ -327,6 +344,107 @@ private struct ScrollBottomPreference: PreferenceKey {
     static var defaultValue: CGFloat = 0
     static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
         value = nextValue()
+    }
+}
+
+// MARK: - Feed grouping
+
+/// A run of tool calls that all finished is scaffolding, not conversation.
+/// Left as individual cards they crowd out what the agent actually said — a
+/// dozen identical "Done" boxes between two paragraphs. Runs are folded into
+/// one line you can open; anything still running, or that failed, stays a
+/// card of its own, because those are the ones worth seeing.
+private enum FeedItem: Identifiable {
+    case message(ConversationMessage)
+    case run([ConversationMessage])
+
+    /// Below this many in a row, folding hides more than it helps.
+    private static let foldFrom = 3
+
+    var id: String {
+        switch self {
+        case .message(let message): return message.id
+        case .run(let tools): return "run-\(tools.first?.id ?? "")"
+        }
+    }
+
+    static func group(_ messages: [ConversationMessage]) -> [FeedItem] {
+        var items: [FeedItem] = []
+        var run: [ConversationMessage] = []
+
+        func flush() {
+            if run.count >= foldFrom {
+                items.append(.run(run))
+            } else {
+                items.append(contentsOf: run.map { .message($0) })
+            }
+            run.removeAll()
+        }
+
+        for message in messages {
+            if message.kind == "tool", message.tool?.status == "completed" {
+                run.append(message)
+            } else {
+                flush()
+                items.append(.message(message))
+            }
+        }
+        flush()
+        return items
+    }
+}
+
+private struct ToolRunRow: View {
+    let tools: [ConversationMessage]
+    let expanded: Bool
+    let toggle: () -> Void
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Button(action: toggle) {
+                HStack(spacing: 7) {
+                    Image(systemName: expanded ? "chevron.down" : "chevron.right")
+                        .font(.system(size: 9, weight: .bold))
+                    Image(systemName: "checkmark.circle")
+                        .font(.system(size: 11))
+                    Text("\(tools.count) steps")
+                        .font(.system(size: 12, weight: .medium))
+                    Text(summary)
+                        .font(.system(size: 11.5))
+                        .foregroundColor(.secondary)
+                        .lineLimit(1)
+                        .truncationMode(.tail)
+                    Spacer(minLength: 0)
+                }
+                .foregroundColor(.secondary)
+                .padding(.horizontal, 10)
+                .padding(.vertical, 6)
+                .background(Color.primary.opacity(0.035), in: Rectangle())
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+
+            if expanded {
+                ForEach(tools) { message in
+                    if let tool = message.tool {
+                        ToolCard(tool: tool)
+                    }
+                }
+            }
+        }
+    }
+
+    /// "Shell ×4, ApplyPatch, TodoWrite" — in the order they ran.
+    private var summary: String {
+        var order: [String] = []
+        var counts: [String: Int] = [:]
+        for name in tools.compactMap({ $0.tool?.name }) {
+            if counts[name] == nil { order.append(name) }
+            counts[name, default: 0] += 1
+        }
+        return order
+            .map { counts[$0]! > 1 ? "\($0) ×\(counts[$0]!)" : $0 }
+            .joined(separator: ", ")
     }
 }
 

@@ -98,60 +98,80 @@ struct TaskPane: View {
                 agentMenu
             }
 
-            HStack(spacing: 3) {
-                ForEach(Tab.allCases) { item in
-                    Button {
-                        tab = item
-                    } label: {
-                        Label(item.label, systemImage: item.symbol)
-                            .font(.system(size: 13, weight: .medium))
-                            .padding(.horizontal, 12)
-                            .padding(.vertical, 6)
-                            .background(
-                                tab == item ? LoomColors.accentSoft : Color.clear,
-                                in: Rectangle()
-                            )
-                            .overlay(
-                                Rectangle().strokeBorder(
-                                    tab == item ? LoomColors.accent.opacity(0.30) : .clear,
-                                    lineWidth: 1
-                                )
-                            )
-                            .foregroundColor(tab == item ? LoomColors.accent : .secondary)
-                            .contentShape(Rectangle())
-                    }
-                    .buttonStyle(.plain)
-                    .keyboardShortcut(item.shortcut, modifiers: .command)
-                }
-
-                Spacer()
-
-                // The web console's flow toolbar: interview → /goal → write
-                // result. Disabled until there is a pane to paste into.
-                // Quieter than the tabs on purpose: these are things you do
-                // occasionally, the tabs are where you live.
-                ForEach(ChatSession.FlowStep.allCases) { step in
-                    Button {
-                        session.run(step)
-                    } label: {
-                        Label(step.label, systemImage: step.symbol)
-                            .font(.system(size: 11.5))
-                            .padding(.horizontal, 9)
-                            .padding(.vertical, 4)
-                            .overlay(Rectangle().strokeBorder(LoomColors.border, lineWidth: 1))
-                            .foregroundColor(.secondary)
-                            .contentShape(Rectangle())
-                    }
-                    .buttonStyle(.plain)
-                    .help(step.help)
-                    .disabled(session.paneTarget.isEmpty || session.sending)
-                }
+            // Narrow the window and this row used to break its own words —
+            // "Cha/t", "Term/inal". The tabs are where you live, so they keep
+            // their labels; the flow steps, which you reach for occasionally,
+            // give theirs up first and fall back to their tooltips.
+            ViewThatFits(in: .horizontal) {
+                tabRow(compactActions: false)
+                tabRow(compactActions: true)
             }
         }
         .padding(.horizontal, 18)
         .padding(.top, 11)
         .padding(.bottom, 8)
         .background(LoomColors.bgBase)
+    }
+
+    private func tabRow(compactActions: Bool) -> some View {
+        HStack(spacing: 3) {
+            ForEach(Tab.allCases) { item in
+                Button {
+                    tab = item
+                } label: {
+                    Label(item.label, systemImage: item.symbol)
+                        .font(.system(size: 13, weight: .medium))
+                        .fixedSize()
+                        .padding(.horizontal, 12)
+                        .padding(.vertical, 6)
+                        .background(
+                            tab == item ? LoomColors.accentSoft : Color.clear,
+                            in: Rectangle()
+                        )
+                        .overlay(
+                            Rectangle().strokeBorder(
+                                tab == item ? LoomColors.accent.opacity(0.30) : .clear,
+                                lineWidth: 1
+                            )
+                        )
+                        .foregroundColor(tab == item ? LoomColors.accent : .secondary)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .keyboardShortcut(item.shortcut, modifiers: .command)
+            }
+
+            Spacer(minLength: 12)
+
+            // The web console's flow toolbar: interview → /goal → write
+            // result. Disabled until there is a pane to paste into.
+            // Quieter than the tabs on purpose: these are things you do
+            // occasionally, the tabs are where you live.
+            ForEach(ChatSession.FlowStep.allCases) { step in
+                Button {
+                    session.run(step)
+                } label: {
+                    Group {
+                        if compactActions {
+                            Image(systemName: step.symbol)
+                        } else {
+                            Label(step.label, systemImage: step.symbol)
+                        }
+                    }
+                    .font(.system(size: 11.5))
+                    .fixedSize()
+                    .frame(minWidth: compactActions ? 16 : nil)
+                    .padding(.horizontal, 9)
+                    .padding(.vertical, 4)
+                    .overlay(Rectangle().strokeBorder(LoomColors.border, lineWidth: 1))
+                    .foregroundColor(.secondary)
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .help(step.help)
+                .disabled(session.paneTarget.isEmpty || session.sending)
+            }
+        }
     }
 
     /// Start/stop the pane, and reopen a past session. Resuming works even

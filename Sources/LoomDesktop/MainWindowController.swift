@@ -47,10 +47,19 @@ final class MainWindowController: NSObject, NSWindowDelegate {
                 // From the intended content size, never from `window.frame`:
                 // frame includes the title bar, so feeding it back through
                 // setContentSize grew the window by 28pt on every launch.
-                let size = NSSize(
+                var size = NSSize(
                     width: min(Self.defaultSize.width, visible.width - 80),
                     height: min(Self.defaultSize.height, visible.height - 80)
                 )
+                // Dev hook: LOOM_DESKTOP_WINDOW=900x620 opens at that content
+                // size, so cramped layouts can be checked without a person
+                // dragging a corner.
+                if let spec = ProcessInfo.processInfo.environment["LOOM_DESKTOP_WINDOW"] {
+                    let parts = spec.lowercased().split(separator: "x").compactMap { Double($0) }
+                    if parts.count == 2 {
+                        size = NSSize(width: parts[0], height: parts[1])
+                    }
+                }
                 window.setContentSize(size)
                 window.setFrameOrigin(NSPoint(
                     x: visible.midX - size.width / 2,

@@ -72,22 +72,27 @@ struct TaskPane: View {
 
     // MARK: Header
 
+    // Chrome earns its height. The header and the terminal's own toolbar
+    // together took 160pt of an 860pt window before a line of output was
+    // visible; the title does not need to be poster-sized to be the title.
     private var header: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            HStack(alignment: .top, spacing: 12) {
-                VStack(alignment: .leading, spacing: 3) {
-                    Text(session.title)
-                        .font(.system(size: 21, weight: .semibold))
-                        .fixedSize(horizontal: false, vertical: true)
-                    HStack(spacing: 6) {
-                        Text(session.projectLabel)
-                        Text("·")
-                        Text(session.slug)
-                            .font(.system(size: 13, design: .monospaced))
-                    }
-                    .font(.system(size: 13))
-                    .foregroundColor(.secondary)
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(alignment: .firstTextBaseline, spacing: 10) {
+                Text(session.title)
+                    .font(.system(size: 17, weight: .semibold))
+                    .lineLimit(1)
+                    .truncationMode(.tail)
+                HStack(spacing: 5) {
+                    Text(session.projectLabel)
+                    Text("·")
+                    Text(session.slug)
+                        .font(.system(size: 12, design: .monospaced))
                 }
+                .font(.system(size: 12))
+                .foregroundColor(.secondary)
+                .lineLimit(1)
+                .truncationMode(.middle)
+
                 Spacer(minLength: 8)
                 statusChip
                 agentMenu
@@ -123,15 +128,16 @@ struct TaskPane: View {
 
                 // The web console's flow toolbar: interview → /goal → write
                 // result. Disabled until there is a pane to paste into.
+                // Quieter than the tabs on purpose: these are things you do
+                // occasionally, the tabs are where you live.
                 ForEach(ChatSession.FlowStep.allCases) { step in
                     Button {
                         session.run(step)
                     } label: {
                         Label(step.label, systemImage: step.symbol)
-                            .font(.system(size: 12, weight: .medium))
-                            .padding(.horizontal, 10)
-                            .padding(.vertical, 5)
-                            .background(Color.primary.opacity(0.05), in: Rectangle())
+                            .font(.system(size: 11.5))
+                            .padding(.horizontal, 9)
+                            .padding(.vertical, 4)
                             .overlay(Rectangle().strokeBorder(LoomColors.border, lineWidth: 1))
                             .foregroundColor(.secondary)
                             .contentShape(Rectangle())
@@ -142,9 +148,9 @@ struct TaskPane: View {
                 }
             }
         }
-        .padding(.horizontal, 20)
-        .padding(.top, 16)
-        .padding(.bottom, 10)
+        .padding(.horizontal, 18)
+        .padding(.top, 11)
+        .padding(.bottom, 8)
         .background(LoomColors.bgBase)
     }
 

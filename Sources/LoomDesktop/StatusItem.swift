@@ -121,7 +121,6 @@ final class StatusItemController: NSObject, NSMenuDelegate {
         guard let id = sender.representedObject as? String,
               let pill = store.pills.first(where: { $0.id == id })
         else { return }
-        store.acknowledge(pill)
         store.select(projectId: pill.projectId, slug: pill.slug)
         MainWindowController.shared.show(store: store)
     }

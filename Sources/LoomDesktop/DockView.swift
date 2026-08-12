@@ -64,7 +64,7 @@ struct DockView: View {
                         pill: pill,
                         showProject: store.showsProjectPrefix,
                         action: {
-                            store.acknowledge(pill)
+                            // Selecting marks it seen.
                             store.select(projectId: pill.projectId, slug: pill.slug)
                             MainWindowController.shared.show(store: store)
                         },

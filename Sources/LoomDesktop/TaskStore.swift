@@ -52,7 +52,18 @@ final class TaskStore: ObservableObject {
     /// "projectId/slug" of the task shown in the main window. Shared state so
     /// a dock pill and the sidebar drive the same single view rather than
     /// spawning windows.
-    @Published var selection: String?
+    ///
+    /// Opening a task counts as having seen it, so the blink stops here rather
+    /// than at each call site. There are six ways in — a dock pill, a sidebar
+    /// row, the fleet menu, the menu-bar item, ⌘P, a notification — and only
+    /// two of them used to acknowledge, so opening a finished task from the
+    /// sidebar left it flashing for something you were already looking at.
+    @Published var selection: String? {
+        didSet {
+            guard let selection, selection != oldValue else { return }
+            markSeen(selection)
+        }
+    }
 
     let api = LoomAPI()
 
@@ -192,12 +203,21 @@ final class TaskStore: ObservableObject {
     /// Clicking a blinking pill means "I've seen it": stop the blink locally
     /// and tell the server so other clients stop blinking too.
     func acknowledge(_ pill: TaskPill) {
-        acked.insert(pill.id)
-        if let idx = pills.firstIndex(where: { $0.id == pill.id }),
+        markSeen(pill.id)
+    }
+
+    private func markSeen(_ key: String) {
+        guard let slash = key.firstIndex(of: "/") else { return }
+        // Already seen: nothing to stop blinking, and no need to tell the
+        // server twice. The ack is dropped again if the task starts working.
+        guard acked.insert(key).inserted else { return }
+        if let idx = pills.firstIndex(where: { $0.id == key }),
            pills[idx].state == .finished {
             pills[idx].state = .idle
         }
-        Task { try? await api.ackActivity(projectId: pill.projectId, slug: pill.slug) }
+        let projectId = String(key[..<slash])
+        let slug = String(key[key.index(after: slash)...])
+        Task { try? await api.ackActivity(projectId: projectId, slug: slug) }
     }
 
     /// More than one project on the dock → prefix pills with the project so

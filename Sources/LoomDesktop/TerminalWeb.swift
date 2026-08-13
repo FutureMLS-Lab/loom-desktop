@@ -84,6 +84,11 @@ final class TerminalSession: NSObject, ObservableObject {
     private var reattach: Task<Void, Never>?
     private var pendingScroll = 0
     private var scrollInFlight = false
+    private var inputQueue = ""
+    private var inputInFlight = false
+    /// The pane the wheel last pushed into tmux's copy-mode, tracked per pane
+    /// so returning to a different task does not scroll the wrong one.
+    private var scrolledBackPane = ""
     private var reconnect: Task<Void, Never>?
     private var reconnectStreak = 0
 
@@ -137,6 +142,8 @@ final class TerminalSession: NSObject, ObservableObject {
         flushTimer?.invalidate()
         flushTimer = nil
         pending.removeAll(keepingCapacity: false)
+        // Keys typed at a stream that is going away belong to nothing.
+        inputQueue.removeAll()
         streamID = ""
         connected = false
     }
@@ -146,6 +153,9 @@ final class TerminalSession: NSObject, ObservableObject {
         guard ready, !target.isEmpty else { return }
         call("window.__loomReset()")
         attach()
+        // Coming back to a pane left in copy-mode: show the agent where it
+        // is now, not where the wheel left it.
+        Task { [weak self] in await self?.returnToPrompt() }
     }
 
     func scrollToBottom() {
@@ -167,6 +177,9 @@ final class TerminalSession: NSObject, ObservableObject {
     func paste(_ text: String, submit: Bool) {
         guard !text.isEmpty, !target.isEmpty else { return }
         let pane = target
+        // `send-text` leaves copy-mode server-side, so the pane is at the
+        // prompt again whether or not the wheel had moved it.
+        if scrolledBackPane == pane { scrolledBackPane = "" }
         Task { [api] in
             try? await api.sendText(target: pane, text: text, submit: submit)
         }
@@ -185,12 +198,45 @@ final class TerminalSession: NSObject, ObservableObject {
     /// get wrong — `\u{7F}` really is backspace.
     func send(_ text: String) {
         guard !text.isEmpty else { return }
+        inputQueue += text
+        pumpInput()
+    }
+
+    /// One request at a time, in order, like the wheel below.
+    ///
+    /// Every keystroke used to be its own request to a gateway a further
+    /// 150ms away, with nothing holding them in sequence: type quickly and
+    /// the characters could arrive shuffled. Queueing also means a burst
+    /// crosses in one request instead of one per key.
+    private func pumpInput() {
+        guard !inputInFlight, !inputQueue.isEmpty, !streamID.isEmpty else { return }
+        let chunk = inputQueue
+        let id = streamID
+        inputQueue = ""
+        inputInFlight = true
         Task { [weak self] in
             guard let self else { return }
-            let id = self.streamID
-            guard !id.isEmpty else { return }
-            try? await self.api.streamInput(streamId: id, text: text)
+            await self.returnToPrompt()
+            try? await self.api.streamInput(streamId: id, text: chunk)
+            self.inputInFlight = false
+            self.pumpInput()
         }
+    }
+
+    /// Bring the pane back to the live prompt, out of tmux's copy-mode.
+    ///
+    /// The wheel scrolls by putting the pane into copy-mode, and it stays
+    /// there: tmux then takes keys as copy-mode commands instead of passing
+    /// them to the agent, so after scrolling up the caret never returns to
+    /// the prompt — and leaving the tab and coming back does not clear it,
+    /// because the mode belongs to the pane, not to us. The server enters
+    /// copy-mode with `copy-mode -e`, which exits on reaching the bottom, so
+    /// scrolling down past it is the way out.
+    private func returnToPrompt() async {
+        guard scrolledBackPane == target, !target.isEmpty else { return }
+        scrolledBackPane = ""
+        pendingScroll = 0
+        try? await api.scroll(target: target, direction: "down", lines: 80)
     }
 
     /// Delivered in chunks by a delegate rather than pulled a byte at a time
@@ -562,6 +608,7 @@ extension TerminalSession {
 
     private func scrollPane(direction: String, lines: Int) {
         pendingScroll += direction == "up" ? -lines : lines
+        if direction == "up" { scrolledBackPane = target }
         pumpScroll()
     }
 

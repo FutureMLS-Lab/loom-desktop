@@ -397,7 +397,11 @@ final class TerminalSession: NSObject, ObservableObject {
           fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace',
           fontSize: \(Int(fontSize)),
           lineHeight: 1.15,
-          cursorBlink: true,
+          // Steady, not blinking. This pane is mostly watched rather than
+          // typed into — the compose box below is where you write — and an
+          // idle agent parks a block cursor on whatever it last drew, so a
+          // blink turns a still screen into something flashing at you.
+          cursorBlink: false,
           cursorInactiveStyle: 'outline',
           macOptionIsMeta: true,
           scrollback: 8000,

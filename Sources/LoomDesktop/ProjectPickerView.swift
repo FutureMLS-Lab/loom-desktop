@@ -278,7 +278,7 @@ private struct ProjectCard: View {
                         if counts.finished > 0 {
                             Label("\(counts.finished)", systemImage: "exclamationmark.circle.fill")
                                 .font(.system(size: 10, weight: .semibold))
-                                .foregroundColor(LoomColors.amber)
+                                .foregroundColor(LoomColors.attention)
                         }
                         if counts.working > 0 {
                             Label("\(counts.working)", systemImage: "arrow.triangle.2.circlepath")
@@ -348,11 +348,11 @@ private struct SidebarTaskRow: View {
             .padding(.vertical, 10)
             .background(rowBackground, in: Rectangle())
             .overlay(alignment: .leading) {
-                // A standing amber edge on a task that finished unseen, so it
+                // A standing edge on a task that finished unseen, so it
                 // is findable in a long list even between blinks.
                 if state == .finished {
                     Rectangle()
-                        .fill(LoomColors.amber)
+                        .fill(LoomColors.attention)
                         .frame(width: 3)
                 }
             }
@@ -379,7 +379,7 @@ private struct SidebarTaskRow: View {
 
     private var rowBackground: Color {
         if selected { return LoomColors.accentSoft }
-        if state == .finished { return LoomColors.amber.opacity(0.10) }
+        if state == .finished { return LoomColors.attention.opacity(0.10) }
         return hovering ? Color.white : Color.white.opacity(0.72)
     }
 

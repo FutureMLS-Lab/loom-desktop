@@ -280,13 +280,14 @@ private struct TerminalKey {
 /// surfaces the card sits in, matching the rest of the app.
 enum TerminalTheme {
     /// Matches xterm's background, so the card has no seam while it loads.
-    static let screen = Color(red: 0x21 / 255, green: 0x1D / 255, blue: 0x1A / 255)
-    static let chrome = Color(red: 0xF4 / 255, green: 0xE8 / 255, blue: 0xC6 / 255)
-    static let keycap = Color(red: 0xFD / 255, green: 0xF6 / 255, blue: 0xDF / 255)
-    static let keycapBorder = Color(red: 0xD4 / 255, green: 0xC1 / 255, blue: 0x8B / 255)
-    static let inputBackground = Color(red: 0xFF / 255, green: 0xFC / 255, blue: 0xF2 / 255)
-    static let text = Color(red: 0x2C / 255, green: 0x27 / 255, blue: 0x1C / 255)
-    static let dimText = Color(red: 0x7B / 255, green: 0x6E / 255, blue: 0x51 / 255)
-    static let rule = Color(red: 0xE4 / 255, green: 0xD6 / 255, blue: 0xAC / 255)
-    static let inkAccent = Color(red: 0xA8 / 255, green: 0x52 / 255, blue: 0x18 / 255)
+    /// Keep in step with the same colours in `TerminalWeb`'s page.
+    static let screen = Color(red: 0x1E / 255, green: 0x23 / 255, blue: 0x20 / 255)
+    static let chrome = Color(red: 0xD8 / 255, green: 0xE2 / 255, blue: 0xD7 / 255)
+    static let keycap = Color(red: 0xEF / 255, green: 0xF4 / 255, blue: 0xEE / 255)
+    static let keycapBorder = Color(red: 0xB4 / 255, green: 0xC4 / 255, blue: 0xB3 / 255)
+    static let inputBackground = Color(red: 0xF6 / 255, green: 0xFA / 255, blue: 0xF5 / 255)
+    static let text = Color(red: 0x25 / 255, green: 0x2B / 255, blue: 0x26 / 255)
+    static let dimText = Color(red: 0x63 / 255, green: 0x73 / 255, blue: 0x65 / 255)
+    static let rule = Color(red: 0xC4 / 255, green: 0xD2 / 255, blue: 0xC3 / 255)
+    static let inkAccent = Color(red: 0x3C / 255, green: 0x7A / 255, blue: 0x5C / 255)
 }

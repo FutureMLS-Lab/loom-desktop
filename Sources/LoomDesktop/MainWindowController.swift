@@ -8,6 +8,10 @@ final class MainWindowController: NSObject, NSWindowDelegate {
     static let shared = MainWindowController()
 
     private var window: NSWindow?
+
+    /// Whether the task on screen is actually on screen — the window is kept
+    /// around after it closes, so its existence says nothing.
+    var isVisible: Bool { window?.isVisible == true }
     var store: TaskStore?
 
     /// Content size, sized like the web console in a browser window.

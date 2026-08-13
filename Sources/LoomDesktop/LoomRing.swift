@@ -35,7 +35,15 @@ enum LoomColors {
     static let border = hex(0xE8E4DA)
     /// `--border-strong`
     static let borderStrong = hex(0xD6D1C3)
+    /// Warnings that want acting on: unsaved text, a dropped pane, no gateway.
     static let amber = hex(0xF59E0B)
+    /// A finished task waiting to be looked at.
+    ///
+    /// Its own colour rather than the warning amber: a dozen of these can be
+    /// on screen at once and nothing is wrong with any of them, so they are
+    /// asked to be noticeable without being alarming. Muted enough not to be
+    /// mistaken for the vivid green of a task that is running.
+    static let attention = hex(0x6F8C74)
     static let red = hex(0xEF4444)
 }
 
@@ -384,7 +392,7 @@ struct LoomBlinkDot: View {
         BlinkingSymbol(
             symbol: "exclamationmark.circle.fill",
             pointSize: size,
-            color: NSColor(LoomColors.amber)
+            color: NSColor(LoomColors.attention)
         )
         .frame(width: size * 1.2, height: size * 1.2)
     }

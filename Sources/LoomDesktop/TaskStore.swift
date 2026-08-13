@@ -169,9 +169,20 @@ final class TaskStore: ObservableObject {
                 return left.id < right.id
             }
             pills = next
+            // The task already open in front of you is not one you need to be
+            // called back to. Acknowledging only when the selection *changes*
+            // missed the case that matters most: a task that finishes again
+            // while you are watching it went on blinking, and was still
+            // blinking after you moved to another task, because nothing ever
+            // marked that finish as seen.
+            if let selection,
+               MainWindowController.shared.isVisible,
+               next.first(where: { $0.id == selection })?.state == .finished {
+                markSeen(selection)
+            }
             connection = .online
             failureStreak = 0
-            Notifier.shared.reconcile(pills: next)
+            Notifier.shared.reconcile(pills: pills)
         } catch {
             failureStreak += 1
             connection = .offline(error.localizedDescription)

@@ -517,42 +517,12 @@ private struct AssistantRow: View {
         HStack(alignment: .top, spacing: 10) {
             LoomSpinningRingStatic()
                 .frame(width: 4)
-            Text(MarkdownCache.attributed(text))
-                .font(.system(size: 14))
-                .lineSpacing(2)
-                .textSelection(.enabled)
+            MarkdownBody(text: text)
                 .frame(maxWidth: .infinity, alignment: .leading)
         }
         .padding(.vertical, 2)
         .padding(.trailing, 40)
         .fixedSize(horizontal: false, vertical: true)
-    }
-}
-
-/// Parsed markdown, kept between renders. Building an `AttributedString` is
-/// not cheap, and doing it inside `body` re-parsed every visible message on
-/// every poll, scroll, and window resize.
-private enum MarkdownCache {
-    private static var storage: [String: AttributedString] = [:]
-    private static var order: [String] = []
-    private static let capacity = 400
-
-    static func attributed(_ raw: String) -> AttributedString {
-        if let cached = storage[raw] { return cached }
-        let parsed = (try? AttributedString(
-            markdown: raw,
-            options: .init(
-                allowsExtendedAttributes: false,
-                interpretedSyntax: .inlineOnlyPreservingWhitespace
-            )
-        )) ?? AttributedString(raw)
-        storage[raw] = parsed
-        order.append(raw)
-        if order.count > capacity {
-            let evicted = order.removeFirst()
-            storage.removeValue(forKey: evicted)
-        }
-        return parsed
     }
 }
 

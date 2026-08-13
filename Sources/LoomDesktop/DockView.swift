@@ -206,7 +206,7 @@ private struct DockStatus: View {
             }
             if finished > 0 {
                 Label("\(finished)", systemImage: "exclamationmark.circle.fill")
-                    .foregroundColor(LoomColors.amber)
+                    .foregroundColor(LoomColors.attention)
             }
             if working > 0 {
                 Label("\(working)", systemImage: "arrow.triangle.2.circlepath")

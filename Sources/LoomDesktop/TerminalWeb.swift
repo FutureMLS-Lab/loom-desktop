@@ -367,25 +367,26 @@ final class TerminalSession: NSObject, ObservableObject {
 
     /// The web console's terminal, verbatim: same theme, same font stack, same
     /// scrollback. Claude's TUI assumes a dark terminal, so bright text needs
-    /// a dark ground to stay readable — hence warm charcoal rather than the
-    /// parchment the rest of the app uses.
+    /// a dark ground to stay readable — hence a dark ground rather than the
+    /// parchment the rest of the app uses. Keep these colours in step with
+    /// `TerminalTheme`, which paints the card around this page.
     private static func page(fontSize: Double) -> String {
         """
         <!doctype html>
         <html><head><meta charset="utf-8"/>
         <style>\(asset("xterm", "css"))</style>
         <style>
-          html, body { margin: 0; padding: 0; height: 100%; background: #211d1a; overflow: hidden; }
-          #host { position: absolute; inset: 0; padding: 8px 10px; background: #211d1a; }
+          html, body { margin: 0; padding: 0; height: 100%; background: #1e2320; overflow: hidden; }
+          #host { position: absolute; inset: 0; padding: 8px 10px; background: #1e2320; }
           #host .xterm { height: 100%; padding: 0; }
           #host .xterm-viewport { background-color: transparent !important; }
           #host .xterm-viewport::-webkit-scrollbar { width: 10px; }
           #host .xterm-viewport::-webkit-scrollbar-thumb {
-            background: rgba(120, 90, 40, 0.28); border-radius: 6px;
+            background: rgba(120, 150, 128, 0.28); border-radius: 6px;
           }
           .composition-view {
-            background: #fffaf0; color: #4a4036;
-            border: 1px solid #d9a441; border-radius: 4px; padding: 0 3px; z-index: 10;
+            background: #f2f8f1; color: #3a4a3c;
+            border: 1px solid #6f9a7d; border-radius: 4px; padding: 0 3px; z-index: 10;
           }
         </style>
         </head><body><div id="host"></div>
@@ -401,9 +402,9 @@ final class TerminalSession: NSObject, ObservableObject {
           macOptionIsMeta: true,
           scrollback: 8000,
           theme: {
-            background: '#211d1a', foreground: '#e7ddcf',
-            cursor: '#f59e0b', cursorAccent: '#211d1a',
-            selectionBackground: 'rgba(245,158,11,0.30)',
+            background: '#1e2320', foreground: '#dfe6dd',
+            cursor: '#8fc3a2', cursorAccent: '#1e2320',
+            selectionBackground: 'rgba(143,195,162,0.30)',
             black: '#2b2620', red: '#e06c5a', green: '#9ec46a', yellow: '#e0af68',
             blue: '#7aa2f7', magenta: '#c79bf0', cyan: '#79c7c7', white: '#d8cfc2',
             brightBlack: '#7a6f60', brightRed: '#f08a7a', brightGreen: '#b6d98a',

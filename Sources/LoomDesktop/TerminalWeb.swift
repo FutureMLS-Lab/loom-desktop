@@ -158,8 +158,14 @@ final class TerminalSession: NSObject, ObservableObject {
         Task { [weak self] in await self?.returnToPrompt() }
     }
 
+    /// Back to the live screen, from however far back the wheel went.
+    ///
+    /// Both halves are needed: the page's own viewport, and the pane's
+    /// copy-mode, which is what the wheel actually moves and which nothing
+    /// else here would clear while you are only reading.
     func scrollToBottom() {
         call("window.__loomBottom()")
+        Task { [weak self] in await self?.returnToPrompt(force: true) }
     }
 
     /// Re-measure and re-attach at this window's size.
@@ -232,8 +238,8 @@ final class TerminalSession: NSObject, ObservableObject {
     /// because the mode belongs to the pane, not to us. The server enters
     /// copy-mode with `copy-mode -e`, which exits on reaching the bottom, so
     /// scrolling down past it is the way out.
-    private func returnToPrompt() async {
-        guard scrolledBackPane == target, !target.isEmpty else { return }
+    private func returnToPrompt(force: Bool = false) async {
+        guard force || scrolledBackPane == target, !target.isEmpty else { return }
         scrolledBackPane = ""
         pendingScroll = 0
         try? await api.scroll(target: target, direction: "down", lines: 80)
@@ -458,7 +464,16 @@ final class TerminalSession: NSObject, ObservableObject {
         // fires a dozen overlapping requests arrives out of order and judders.
         var scrollAccum = 0, scrollFrame = null;
         host.addEventListener('wheel', function (e) {
-          if (term.buffer.active.type !== 'alternate') return;
+          // Both screens go through tmux, not just full-screen ones.
+          //
+          // Scrolling the local buffer looks like the cheaper answer, but it
+          // only holds what has arrived since this client attached — usually
+          // nothing — so the wheel appeared to do nothing at all, the bottom
+          // line sitting there as if pinned. Worse, an agent mid-answer
+          // rewrites the screen in place, which drags the view back down as
+          // fast as you scroll it. tmux has the real history and freezes the
+          // view while you read it, and scrolling back to the bottom leaves
+          // that state on its own.
           e.preventDefault();
           e.stopPropagation();
           scrollAccum += (e.deltaMode === 1 ? e.deltaY * 18 : e.deltaY);

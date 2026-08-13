@@ -173,6 +173,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// Accessory apps get no menu bar of their own, but a main menu is still
     /// what routes the standard key equivalents — without it there is no ⌘Q,
     /// no ⌘W, and (worst of all) no ⌘C/⌘V in the chat composer.
+    private var findEntries: [(String, String, NSEvent.ModifierFlags, NSTextFinder.Action)] {
+        [
+            ("Find…", "f", [.command], .showFindInterface),
+            ("Find and Replace…", "f", [.command, .option], .showReplaceInterface),
+            ("Find Next", "g", [.command], .nextMatch),
+            ("Find Previous", "g", [.command, .shift], .previousMatch),
+            ("Use Selection for Find", "e", [.command], .setSearchString),
+        ]
+    }
+
     private func buildMainMenu() {
         let main = NSMenu()
 
@@ -196,6 +206,24 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         editMenu.addItem(withTitle: "Copy", action: #selector(NSText.copy(_:)), keyEquivalent: "c")
         editMenu.addItem(withTitle: "Paste", action: #selector(NSText.paste(_:)), keyEquivalent: "v")
         editMenu.addItem(withTitle: "Select All", action: #selector(NSText.selectAll(_:)), keyEquivalent: "a")
+        editMenu.addItem(.separator())
+        // AppKit's find bar is already in every text view; it is reached
+        // through the responder chain by tag, and without these items ⌘F
+        // resolves to nothing at all.
+        let findItem = NSMenuItem(title: "Find", action: nil, keyEquivalent: "")
+        let findMenu = NSMenu(title: "Find")
+        for (title, key, mask, action) in findEntries {
+            let item = NSMenuItem(
+                title: title,
+                action: #selector(NSResponder.performTextFinderAction(_:)),
+                keyEquivalent: key
+            )
+            item.keyEquivalentModifierMask = mask
+            item.tag = action.rawValue
+            findMenu.addItem(item)
+        }
+        findItem.submenu = findMenu
+        editMenu.addItem(findItem)
         editItem.submenu = editMenu
 
         let windowItem = NSMenuItem()

@@ -522,6 +522,10 @@ struct PlainTextEditor: NSViewRepresentable {
         textView.textContainerInset = NSSize(width: 14, height: 14)
         textView.isRichText = false
         textView.allowsUndo = true
+        // ⌘F. The bar drops in above the text and searches as you type; the
+        // Edit ▸ Find menu is what routes the shortcut here.
+        textView.usesFindBar = true
+        textView.isIncrementalSearchingEnabled = true
         textView.isAutomaticQuoteSubstitutionEnabled = false
         textView.isAutomaticDashSubstitutionEnabled = false
         textView.isAutomaticTextReplacementEnabled = false

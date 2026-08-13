@@ -451,15 +451,11 @@ final class TerminalSession: NSObject, ObservableObject {
           }
         }
 
-        // Scrolling is local whenever it can be. On the normal screen the
-        // history is right here in xterm's buffer, so the wheel is left alone
-        // and moves instantly.
-        //
-        // A full-screen app is the exception: its history lives in the app,
-        // not in any buffer we hold, and xterm would translate the wheel into
-        // arrow keys — which a TUI reads as "previous prompt" rather than
-        // "scroll up". There the wheel is intercepted and tmux does the
-        // scrolling, which costs a round trip. Deltas are batched per frame,
+        // tmux does the scrolling, for both kinds of screen. Left to xterm,
+        // the wheel either moves a buffer holding nothing from before this
+        // client attached, or — on a full-screen pane — turns into arrow keys,
+        // which a TUI reads as "previous prompt" rather than "scroll up".
+        // That costs a round trip, so deltas are batched per frame,
         // and Swift keeps only one request in flight, because a flick that
         // fires a dozen overlapping requests arrives out of order and judders.
         var scrollAccum = 0, scrollFrame = null;

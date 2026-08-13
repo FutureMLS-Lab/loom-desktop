@@ -19,6 +19,7 @@ struct PlanDigest: View {
     @State private var error = ""
     @State private var poller: Task<Void, Never>?
     @State private var contentHeight: CGFloat = 240
+    @State private var findRequest = 0
 
     /// The plan changes on the timescale of an agent turn, not a keystroke.
     private static let refreshInterval: TimeInterval = 20
@@ -104,6 +105,19 @@ struct PlanDigest: View {
                     .truncationMode(.middle)
             }
 
+            // A button as well as ⌘F: reading this panel, your focus is
+            // almost always still in the pane above it, and the shortcut goes
+            // wherever focus is.
+            Button {
+                findRequest += 1
+            } label: {
+                Image(systemName: "magnifyingglass")
+                    .font(.system(size: 11, weight: .medium))
+                    .foregroundColor(.secondary)
+            }
+            .buttonStyle(.plain)
+            .help("Find in this document")
+
             Button {
                 Task { await load() }
             } label: {
@@ -140,7 +154,8 @@ struct PlanDigest: View {
                 markdown: content,
                 documentID: "\(session.id)/\(selected)",
                 compact: true,
-                measuredHeight: $contentHeight
+                measuredHeight: $contentHeight,
+                findRequest: findRequest
             )
             .frame(height: contentHeight)
         } else if loading {

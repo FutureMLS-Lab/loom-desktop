@@ -13,6 +13,31 @@ final class PassThroughWebView: WKWebView {
             super.scrollWheel(with: event)
         }
     }
+
+    /// ⌘F and friends, answered by the find bar inside the page.
+    ///
+    /// The same Edit ▸ Find menu drives this and the source editor; whichever
+    /// of them holds focus is the one the responder chain reaches.
+    override func performTextFinderAction(_ sender: Any?) {
+        let tag = (sender as? NSMenuItem)?.tag ?? NSTextFinder.Action.showFindInterface.rawValue
+        switch NSTextFinder.Action(rawValue: tag) {
+        case .showFindInterface, .showReplaceInterface:
+            showFind()
+        case .nextMatch:
+            evaluateJavaScript("window.__loomFindStep(1);", completionHandler: nil)
+        case .previousMatch:
+            evaluateJavaScript("window.__loomFindStep(-1);", completionHandler: nil)
+        case .hideFindInterface:
+            evaluateJavaScript("window.__loomFindHide();", completionHandler: nil)
+        default:
+            break
+        }
+    }
+
+    func showFind() {
+        window?.makeFirstResponder(self)
+        evaluateJavaScript("window.__loomFindShow();", completionHandler: nil)
+    }
 }
 
 /// Browser-style Markdown preview: `marked` → HTML inside a WKWebView, with
@@ -27,6 +52,10 @@ struct MarkdownPreview: NSViewRepresentable {
     /// so the plan can lay out as part of a page rather than as a box with its
     /// own scrollbar inside another scroll view.
     var measuredHeight: Binding<CGFloat>?
+    /// Bumped by the owner to open the find bar — for the digest under the
+    /// terminal, where focus is usually in the pane rather than in here, so
+    /// ⌘F alone would never reach this view.
+    var findRequest = 0
 
     func makeCoordinator() -> Coordinator { Coordinator() }
 
@@ -70,12 +99,17 @@ struct MarkdownPreview: NSViewRepresentable {
             context.coordinator.compact = compact
             context.coordinator.applyCompact()
         }
+        if context.coordinator.findRequest != findRequest {
+            context.coordinator.findRequest = findRequest
+            (webView as? PassThroughWebView)?.showFind()
+        }
         context.coordinator.scheduleRender(markdown, force: docChanged)
     }
 
     final class Coordinator: NSObject, WKNavigationDelegate, WKScriptMessageHandler {
         weak var webView: WKWebView?
         var documentID = ""
+        var findRequest = 0
         var pendingMarkdown = ""
         var ready = false
         var compact = false
@@ -268,9 +302,41 @@ struct MarkdownPreview: NSViewRepresentable {
              bottom padding reserved for one. */
           body.autosize { overflow: hidden; }
           body.autosize #wrap { padding-bottom: 18px; }
+          /* Find. Sits over the text rather than above it, so showing it
+             never reflows the document you are reading. */
+          #find {
+            position: fixed; top: 8px; right: 14px; display: none;
+            align-items: center; gap: 6px; z-index: 20;
+            background: #fffdf7; border: 1px solid var(--rule);
+            border-radius: 7px; padding: 4px 6px;
+            box-shadow: 0 4px 14px rgba(31, 26, 20, 0.13);
+            font: 12px -apple-system, BlinkMacSystemFont, sans-serif;
+          }
+          #find.on { display: flex; }
+          #find input {
+            border: 0; outline: 0; background: transparent; width: 150px;
+            font: 12px -apple-system, BlinkMacSystemFont, sans-serif;
+            color: var(--ink);
+          }
+          #find button {
+            border: 0; background: transparent; cursor: pointer;
+            color: var(--muted); padding: 1px 4px; border-radius: 4px;
+            font: 12px -apple-system, BlinkMacSystemFont, sans-serif;
+          }
+          #find button:hover { background: var(--code-bg); color: var(--ink); }
+          #findCount { color: var(--muted); min-width: 34px; text-align: right; }
+          mark.loom-hit { background: #fde68a; color: inherit; padding: 0; }
+          mark.loom-hit.current { background: #f59e0b; color: #1f1a14; }
         </style>
         </head>
         <body>
+          <div id="find">
+            <input id="findInput" type="text" placeholder="Find" spellcheck="false"/>
+            <span id="findCount"></span>
+            <button id="findPrev" title="Previous (⇧⌘G)">‹</button>
+            <button id="findNext" title="Next (⌘G)">›</button>
+            <button id="findDone" title="Done (esc)">Done</button>
+          </div>
           <div id="wrap"><div id="content"><div id="empty">Nothing to preview</div></div></div>
           \(markedTag)
           <script>
@@ -305,8 +371,101 @@ struct MarkdownPreview: NSViewRepresentable {
               });
             }
             window.addEventListener('resize', reportHeight);
+
+            // Find. `WKWebView.find` would highlight but gives no count and no
+            // field to type into, so the whole thing lives in the page: wrap
+            // matches in <mark>, step through them, and put the document back
+            // exactly as it was on the way out.
+            var findHits = [], findAt = -1, findClean = null;
+            function findClear() {
+              var root = document.getElementById('content');
+              if (findClean !== null && root) { root.innerHTML = findClean; }
+              findClean = null; findHits = []; findAt = -1;
+            }
+            function findRun(query) {
+              var root = document.getElementById('content');
+              if (!root) return;
+              if (findClean === null) { findClean = root.innerHTML; }
+              else { root.innerHTML = findClean; }
+              findHits = []; findAt = -1;
+              var needle = String(query || '').toLowerCase();
+              if (!needle) { findPaint(); return; }
+              var walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT, null);
+              var targets = [], node;
+              while ((node = walker.nextNode())) {
+                if (node.nodeValue.toLowerCase().indexOf(needle) !== -1) { targets.push(node); }
+              }
+              targets.forEach(function (text) {
+                var parts = text.nodeValue.split(new RegExp('(' + needle.replace(/[.*+?^${}()|[\\]\\\\]/g, '\\\\$&') + ')', 'ig'));
+                var frag = document.createDocumentFragment();
+                parts.forEach(function (part) {
+                  if (part.toLowerCase() === needle) {
+                    var m = document.createElement('mark');
+                    m.className = 'loom-hit';
+                    m.textContent = part;
+                    frag.appendChild(m);
+                  } else if (part) {
+                    frag.appendChild(document.createTextNode(part));
+                  }
+                });
+                text.parentNode.replaceChild(frag, text);
+              });
+              findHits = Array.prototype.slice.call(root.querySelectorAll('mark.loom-hit'));
+              if (findHits.length) { findAt = 0; }
+              findPaint(true);
+            }
+            function findPaint(scroll) {
+              findHits.forEach(function (hit, i) {
+                hit.classList.toggle('current', i === findAt);
+              });
+              var count = document.getElementById('findCount');
+              if (count) {
+                count.textContent = findHits.length ? (findAt + 1) + '/' + findHits.length : '0';
+              }
+              if (scroll && findAt >= 0 && findHits[findAt]) {
+                findHits[findAt].scrollIntoView({ block: 'center' });
+              }
+            }
+            window.__loomFindStep = function (delta) {
+              if (!findHits.length) return;
+              findAt = (findAt + delta + findHits.length) % findHits.length;
+              findPaint(true);
+            };
+            window.__loomFindShow = function () {
+              var bar = document.getElementById('find');
+              var input = document.getElementById('findInput');
+              if (!bar || !input) return;
+              bar.classList.add('on');
+              input.focus();
+              input.select();
+              if (input.value) { findRun(input.value); }
+            };
+            window.__loomFindHide = function () {
+              var bar = document.getElementById('find');
+              if (bar) { bar.classList.remove('on'); }
+              findClear();
+            };
+            document.addEventListener('DOMContentLoaded', function () {
+              var input = document.getElementById('findInput');
+              input.addEventListener('input', function () { findRun(input.value); });
+              input.addEventListener('keydown', function (e) {
+                if (e.key === 'Enter') {
+                  e.preventDefault();
+                  window.__loomFindStep(e.shiftKey ? -1 : 1);
+                } else if (e.key === 'Escape') {
+                  e.preventDefault();
+                  window.__loomFindHide();
+                }
+              });
+              document.getElementById('findNext').onclick = function () { window.__loomFindStep(1); };
+              document.getElementById('findPrev').onclick = function () { window.__loomFindStep(-1); };
+              document.getElementById('findDone').onclick = function () { window.__loomFindHide(); };
+            });
             window.__loomRender = function(md, resetScroll) {
               var root = document.getElementById('content');
+              // The find snapshot describes the document being replaced; kept,
+              // it would put the old text back the next time find closed.
+              findClean = null; findHits = []; findAt = -1;
               if (!md || !String(md).trim()) {
                 root.innerHTML = '<div id="empty">Nothing to preview</div>';
                 return;

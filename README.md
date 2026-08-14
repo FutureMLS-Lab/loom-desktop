@@ -175,7 +175,8 @@ copy it to `~/Library/LaunchAgents/com.loom.desktop.plist`, then
 | `LoomAPI.swift` / `Models.swift` | Async client + Codable payloads |
 | `PanelWindow.swift` / `WrappingHStack.swift` | session-dock panel geometry (drag-width, wrap, auto-height) |
 | `DockView.swift` | Pills, loom fleet menu, connection/empty states |
-| `LoomRing.swift` | The web console's spinning + blinking rings in SwiftUI |
+| `LoomColors.swift` | The web console's palette, shared by every view |
+| `LoomRing.swift` | The web console's spinning + blinking rings, in Core Animation |
 | `StatusItem.swift` | Menu-bar icon: show/hide the dock, jump to a task, quit |
 | `MainWindowController.swift` / `ProjectPickerView.swift` | Main window: sidebar + inline task pane |
 | `TaskWindowView.swift` | The task's header, flow buttons, and tab bar |
@@ -187,6 +188,8 @@ copy it to `~/Library/LaunchAgents/com.loom.desktop.plist`, then
 | `NotesView.swift` | The project scratchpad (`.RUD/NOTES.md`), ⌘⇧N |
 | `PlanDigest.swift` | The read-only `PLAN.md` under the terminal |
 | `PlanView.swift` | The Files tab: file list, source editor, preview |
+| `PlainTextEditor.swift` | The markdown source editor, shared by Files and Notes |
+| `MarkdownBlocks.swift` | Agent turns as blocks: tables, lists, code |
 | `MarkdownPreview.swift` | `marked` in a `WKWebView`, shared by Files and the digest |
 | `DiffView.swift` | The Changes tab: per-file diffs, push / merge |
 | `QuickOpen.swift` / `NewTaskView.swift` | ⌘P open by name, ⌘N create a task |

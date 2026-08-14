@@ -1,9 +1,9 @@
 import SwiftUI
 
 /// A task, shown inline in the main window: header, tab bar, and the selected
-/// tab's content. Same three sections as the loom-app — Chat (structured
-/// conversation), Terminal (live pane via the gateway's terminal page), and
-/// Changes (diffs across the task's worktrees).
+/// tab's content. Chat (the structured conversation), Terminal (the live
+/// pane), Files (the task's markdown, editable), and Changes (diffs across
+/// the task's worktrees).
 struct TaskPane: View {
     @ObservedObject var session: ChatSession
     /// Remembered across tasks and launches: whoever lives in the terminal

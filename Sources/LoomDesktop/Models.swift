@@ -162,7 +162,6 @@ struct DiffFile: Decodable, Identifiable {
     var additions: Int?
     var deletions: Int?
     var worktree: String?
-    var worktreePath: String?
 
     var id: String { "\(worktree ?? "")/\(path)" }
 }

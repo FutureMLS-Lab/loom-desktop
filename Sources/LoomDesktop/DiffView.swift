@@ -170,7 +170,6 @@ struct ChangesView: View {
                 for file in worktree.files ?? [] {
                     var f = file
                     f.worktree = worktree.branch ?? (worktree.path as NSString?)?.lastPathComponent
-                    f.worktreePath = worktree.path
                     collected.append(f)
                 }
             }

@@ -1,4 +1,3 @@
-import Foundation
 import Combine
 
 /// Keeps one `ChatSession` per task for the inline task pane. Only the visible
@@ -52,14 +51,5 @@ final class SessionCache: ObservableObject {
             sessions.removeValue(forKey: oldest)
         }
         return session
-    }
-
-    /// Nothing selected: stop the last poller rather than leaving it running
-    /// against a task nobody is looking at.
-    func deactivate() {
-        if let activeKey, let session = sessions[activeKey] {
-            session.stop()
-        }
-        activeKey = nil
     }
 }

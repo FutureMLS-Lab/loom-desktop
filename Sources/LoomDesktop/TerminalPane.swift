@@ -1,4 +1,3 @@
-import AppKit
 import SwiftUI
 
 /// The Terminal tab: the agent's pane above, the task's plan below — the same

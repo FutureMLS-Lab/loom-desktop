@@ -18,7 +18,11 @@ struct PlanDigest: View {
     @State private var loading = true
     @State private var error = ""
     @State private var poller: Task<Void, Never>?
-    @State private var contentHeight: CGFloat = 240
+    /// Seeded from the last document measured, not from a guess. The pane is
+    /// rebuilt whenever you change task, and starting at a fixed 240 collapsed
+    /// the digest on every switch before it sprang back to full height — a
+    /// jolt through everything below it, several times a minute.
+    @State private var contentHeight: CGFloat = DigestHeightMemory.last
     @State private var findRequest = 0
 
     /// The plan changes on the timescale of an agent turn, not a keystroke.
@@ -158,6 +162,9 @@ struct PlanDigest: View {
                 findRequest: findRequest
             )
             .frame(height: contentHeight)
+            .onChange(of: contentHeight) { _, height in
+                DigestHeightMemory.last = height
+            }
         } else if loading {
             centered("Reading the plan…")
         } else if !error.isEmpty {
@@ -228,4 +235,10 @@ struct PlanDigest: View {
         }
         loading = false
     }
+}
+
+/// The last digest height measured, so switching task does not start from a
+/// number that is wrong for every document.
+enum DigestHeightMemory {
+    static var last: CGFloat = 240
 }

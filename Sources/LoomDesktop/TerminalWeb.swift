@@ -73,7 +73,7 @@ final class TerminalSession: NSObject, ObservableObject {
     private(set) lazy var webView: WKWebView = makeWebView()
     private var streamTask: URLSessionDataTask?
     private var streamSession: URLSession?
-    private var streamID = ""
+    private(set) var streamID = ""
     private var cols = 80
     private var rows = 24
     private var ready = false
@@ -102,8 +102,15 @@ final class TerminalSession: NSObject, ObservableObject {
 
     static var liveSessions: [TerminalSession] { live.allObjects }
 
+    /// Quitting. The close has to go out before the process does, so it is
+    /// sent and waited on rather than handed to a task that will not survive.
     static func stopAll() {
-        for session in live.allObjects { session.stop() }
+        let api = LoomAPI()
+        for session in live.allObjects {
+            let id = session.streamID
+            session.stop()
+            if !id.isEmpty { api.closeStreamNow(streamId: id) }
+        }
     }
 
     override init() {
@@ -131,6 +138,13 @@ final class TerminalSession: NSObject, ObservableObject {
     // MARK: Lifecycle
 
     func stop() {
+        // Tell the server first: cancelling the request only closes our leg of
+        // it, and the gateway keeps its own open, so without this the attach
+        // behind this stream survives — one left behind per terminal opened.
+        if !streamID.isEmpty {
+            let id = streamID
+            Task { [api] in try? await api.closeStream(streamId: id) }
+        }
         streamTask?.cancel()
         streamTask = nil
         streamSession?.invalidateAndCancel()

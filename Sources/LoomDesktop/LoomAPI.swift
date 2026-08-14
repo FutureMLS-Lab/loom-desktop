@@ -335,6 +335,36 @@ struct LoomAPI {
 
     /// Keystrokes for an attached stream. This writes to the pty, so the keys a
     /// terminal sends are just their bytes — no tmux key names to get wrong.
+    /// End a stream deliberately, rather than trusting the disconnect to be
+    /// noticed. The gateway holds its upstream leg open after we go away, so
+    /// the server never sees the close and its `tmux attach` — a real client,
+    /// pinning the pane's size — outlives every terminal ever opened.
+    func closeStream(streamId: String) async throws {
+        let _: OkResponse = try await request(
+            "/api/tmux/stream-close",
+            method: "POST",
+            body: ["stream_id": streamId]
+        )
+    }
+
+    /// The same close, but blocking, for the moment the app is quitting —
+    /// where an async task would be cut off before its request left.
+    func closeStreamNow(streamId: String, timeout: TimeInterval = 2) {
+        guard let url = URL(string: LoomSettings.baseURL + "/api/tmux/stream-close") else { return }
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.timeoutInterval = timeout
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        let token = LoomSettings.token
+        if !token.isEmpty {
+            request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+        }
+        request.httpBody = try? JSONSerialization.data(withJSONObject: ["stream_id": streamId])
+        let done = DispatchSemaphore(value: 0)
+        URLSession.shared.dataTask(with: request) { _, _, _ in done.signal() }.resume()
+        _ = done.wait(timeout: .now() + timeout)
+    }
+
     func streamInput(streamId: String, text: String) async throws {
         let _: OkResponse = try await request(
             "/api/tmux/stream-input",

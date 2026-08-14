@@ -271,6 +271,59 @@ final class TaskStore: ObservableObject {
         Set(pills.map(\.projectId)).count > 1
     }
 
+    /// Drag a task above another in the same project.
+    ///
+    /// Applied here first and sent afterwards: the list is the thing being
+    /// dragged, and waiting a round trip to see it move makes the drag feel
+    /// like it failed. The next poll carries the server's own order, which
+    /// is the same one unless the write failed.
+    func moveTask(projectId: String, slug: String, above target: String) {
+        guard slug != target, var metas = tasksByProject[projectId] else { return }
+        guard let from = metas.firstIndex(where: { $0.slug == slug }) else { return }
+        let moved = metas.remove(at: from)
+        let to = metas.firstIndex(where: { $0.slug == target }) ?? metas.count
+        metas.insert(moved, at: to)
+        tasksByProject[projectId] = metas
+        let slugs = metas.map(\.slug)
+        Task { [api] in try? await api.reorderTasks(projectId: projectId, slugs: slugs) }
+        reorderPills()
+    }
+
+    func moveProject(_ id: String, above target: String) {
+        guard id != target, let from = projects.firstIndex(where: { $0.id == id }) else { return }
+        var next = projects
+        let moved = next.remove(at: from)
+        let to = next.firstIndex(where: { $0.id == target }) ?? next.count
+        next.insert(moved, at: to)
+        projects = next
+        let ids = next.map(\.id)
+        Task { [api] in try? await api.reorderProjects(ids: ids) }
+        reorderPills()
+    }
+
+    /// Keep the dock in step with a sidebar drag, rather than waiting for the
+    /// next poll to rebuild it.
+    private func reorderPills() {
+        let projectRank = Dictionary(
+            uniqueKeysWithValues: projects.enumerated().map { ($0.element.id, $0.offset) }
+        )
+        var taskRank: [String: Int] = [:]
+        for (projectId, metas) in tasksByProject {
+            for (index, meta) in metas.enumerated() {
+                taskRank["\(projectId)/\(meta.slug)"] = index
+            }
+        }
+        pills.sort { left, right in
+            let lp = projectRank[left.projectId] ?? Int.max
+            let rp = projectRank[right.projectId] ?? Int.max
+            if lp != rp { return lp < rp }
+            let lt = taskRank[left.id] ?? Int.max
+            let rt = taskRank[right.id] ?? Int.max
+            if lt != rt { return lt < rt }
+            return left.id < right.id
+        }
+    }
+
     func select(projectId: String, slug: String) {
         selection = "\(projectId)/\(slug)"
     }

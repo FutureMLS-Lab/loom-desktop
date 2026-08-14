@@ -8,6 +8,7 @@ import SwiftUI
 struct ProjectPickerView: View {
     @ObservedObject var store: TaskStore
     @StateObject private var sessions = SessionCache()
+    @State private var projectDropTarget: String?
     @State private var collapsed: Set<String> = []
     @State private var search = ""
 
@@ -115,8 +116,30 @@ struct ProjectPickerView: View {
                                 }
                             },
                             onSelect: { slug in store.select(projectId: project.id, slug: slug) },
-                            onOpen: { meta in store.select(projectId: project.id, slug: meta.slug) }
+                            onOpen: { meta in store.select(projectId: project.id, slug: meta.slug) },
+                            onMoveTask: { slug, target in
+                                store.moveTask(projectId: project.id, slug: slug, above: target)
+                            }
                         )
+                        .draggable(DragPayload.project(id: project.id).text)
+                        .dropDestination(for: String.self) { items, _ in
+                            guard let payload = items.compactMap(DragPayload.init).first,
+                                  case let .project(id) = payload
+                            else { return false }
+                            store.moveProject(id, above: project.id)
+                            return true
+                        } isTargeted: { over in
+                            projectDropTarget = over
+                                ? project.id
+                                : (projectDropTarget == project.id ? nil : projectDropTarget)
+                        }
+                        .overlay(alignment: .top) {
+                            if projectDropTarget == project.id {
+                                Rectangle()
+                                    .fill(LoomColors.accent)
+                                    .frame(height: 2)
+                            }
+                        }
                     }
                     if filteredProjects.isEmpty {
                         Text(emptyListMessage)
@@ -256,6 +279,9 @@ private struct ProjectCard: View {
     let onToggle: () -> Void
     let onSelect: (String) -> Void
     let onOpen: (LoomTaskMeta) -> Void
+    let onMoveTask: (String, String) -> Void
+
+    @State private var dropTarget: String?
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
@@ -301,6 +327,24 @@ private struct ProjectCard: View {
                             onSelect: { onSelect(meta.slug) },
                             onOpen: { onOpen(meta) }
                         )
+                        .draggable(DragPayload.task(project: project.id, slug: meta.slug).text)
+                        .dropDestination(for: String.self) { items, _ in
+                            guard let payload = items.compactMap(DragPayload.init).first,
+                                  case let .task(fromProject, slug) = payload,
+                                  fromProject == project.id
+                            else { return false }
+                            onMoveTask(slug, meta.slug)
+                            return true
+                        } isTargeted: { over in
+                            dropTarget = over ? meta.slug : (dropTarget == meta.slug ? nil : dropTarget)
+                        }
+                        .overlay(alignment: .top) {
+                            if dropTarget == meta.slug {
+                                Rectangle()
+                                    .fill(LoomColors.accent)
+                                    .frame(height: 2)
+                            }
+                        }
                     }
                     if tasks.isEmpty {
                         Text("No tasks")
@@ -555,4 +599,33 @@ struct LoomWatermark: View {
         guard let output = context.makeImage() else { return nil }
         return NSImage(cgImage: output, size: NSSize(width: width, height: height))
     }()
+}
+
+/// What a sidebar drag carries. Tasks and projects are dragged in the same
+/// list, so each says which it is and a drop ignores the other kind.
+private enum DragPayload {
+    case task(project: String, slug: String)
+    case project(id: String)
+
+    var text: String {
+        switch self {
+        case let .task(project, slug): return "loom-task:\(project)/\(slug)"
+        case let .project(id): return "loom-project:\(id)"
+        }
+    }
+
+    init?(_ text: String) {
+        if text.hasPrefix("loom-task:") {
+            let body = String(text.dropFirst("loom-task:".count))
+            guard let slash = body.firstIndex(of: "/") else { return nil }
+            self = .task(
+                project: String(body[..<slash]),
+                slug: String(body[body.index(after: slash)...])
+            )
+        } else if text.hasPrefix("loom-project:") {
+            self = .project(id: String(text.dropFirst("loom-project:".count)))
+        } else {
+            return nil
+        }
+    }
 }

@@ -101,6 +101,24 @@ struct LoomAPI {
         try await request("/api/activity")
     }
 
+    /// The order tasks are listed in, which Loom stores and every client
+    /// reads back — drag one in the app and the browser agrees.
+    func reorderTasks(projectId: String, slugs: [String]) async throws {
+        let _: OkResponse = try await request(
+            scoped("/api/tasks/reorder", projectId),
+            method: "POST",
+            body: ["slugs": slugs]
+        )
+    }
+
+    func reorderProjects(ids: [String]) async throws {
+        let _: OkResponse = try await request(
+            "/api/projects/reorder",
+            method: "POST",
+            body: ["ids": ids]
+        )
+    }
+
     func ackActivity(projectId: String, slug: String) async throws {
         let _: OkResponse = try await request(
             scoped("/api/activity/ack", projectId),

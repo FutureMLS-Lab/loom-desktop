@@ -86,6 +86,15 @@ final class TerminalSession: NSObject, ObservableObject {
     private var scrollInFlight = false
     private var inputQueue = ""
     private var inputInFlight = false
+    /// Which attachment a callback belongs to.
+    ///
+    /// Cancelling a `URLSession` task is not instant: chunks already in flight
+    /// still arrive, and a completion still fires. After switching task that
+    /// meant the previous pane's last bytes being painted into the terminal
+    /// just reset for the new one — two agents' screens at once — and its
+    /// completion clearing the bookkeeping for the attachment that had
+    /// replaced it, which let a second one start alongside.
+    private var streamGeneration = 0
     /// The pane the wheel last pushed into tmux's copy-mode, tracked per pane
     /// so returning to a different task does not scroll the wrong one.
     private var scrolledBackPane = ""
@@ -145,6 +154,7 @@ final class TerminalSession: NSObject, ObservableObject {
             let id = streamID
             Task { [api] in try? await api.closeStream(streamId: id) }
         }
+        streamGeneration &+= 1
         streamTask?.cancel()
         streamTask = nil
         streamSession?.invalidateAndCancel()
@@ -270,25 +280,34 @@ final class TerminalSession: NSObject, ObservableObject {
         // backspace would each appear to happen more than once.
         guard streamTask == nil else { return }
         guard let request = api.streamRequest(target: target, cols: cols, rows: rows) else { return }
+        streamGeneration &+= 1
+        let generation = streamGeneration
         let delegate = PtyStreamDelegate(
             onResponse: { [weak self] http in
-                guard let self else { return }
+                guard let self, generation == self.streamGeneration else { return }
                 guard http.statusCode == 200 else {
                     self.error = "Pane unavailable (\(http.statusCode))"
                     self.connected = false
                     return
                 }
                 self.streamID = http.value(forHTTPHeaderField: "X-Loom-Terminal-Stream") ?? ""
+                // Clear the screen here, not before attaching. Anything the
+                // previous pane managed to deliver in between is wiped by
+                // this, and tmux's opening redraw lands on an empty screen —
+                // without it a switch could leave a line of the last agent's
+                // footer under the new one's.
+                self.call("window.__loomReset()")
                 self.connected = true
                 self.error = ""
                 self.reconnectStreak = 0
                 self.startFlushing()
             },
             onChunk: { [weak self] data in
-                self?.pending.append(data)
+                guard let self, generation == self.streamGeneration else { return }
+                self.pending.append(data)
             },
             onComplete: { [weak self] failure in
-                guard let self else { return }
+                guard let self, generation == self.streamGeneration else { return }
                 // Let go of the finished stream. `attach()` refuses to start a
                 // second one while this is set, so leaving it behind made the
                 // reconnect below a no-op: one drop and the terminal stayed

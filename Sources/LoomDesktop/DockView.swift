@@ -19,14 +19,23 @@ struct DockView: View {
     /// spinning and blinking for a dock showing three.
     @State private var fitCount = 0
 
+    /// Only what is asking for something: running, or finished and unseen.
+    ///
+    /// An idle task is not news, and a dock of thirty grey pills buries the
+    /// two that are. The rest are a click away in the loom menu and the main
+    /// window, both of which still list everything.
+    private var activePills: [TaskPill] {
+        store.pills.filter { $0.state != .idle }
+    }
+
     /// One more than fits, so a widened panel can discover the extra room;
     /// the probe converges upward a pill at a time.
     private var shownPills: [TaskPill] {
-        expanded ? store.pills : Array(store.pills.prefix(fitCount + 1))
+        expanded ? activePills : Array(activePills.prefix(fitCount + 1))
     }
 
     private var overflow: Int {
-        max(0, store.pills.count - shownPills.count)
+        max(0, activePills.count - shownPills.count)
     }
 
     /// loom menu, counts, expand, hide.
@@ -49,7 +58,7 @@ struct DockView: View {
             // collapses the panel to just this strip.
             LoomMenuButton(store: store)
             DockStatus(store: store)
-            if !store.pills.isEmpty {
+            if !activePills.isEmpty {
                 ExpandButton(
                     expanded: expanded,
                     hidden: overflow,
@@ -58,7 +67,7 @@ struct DockView: View {
             }
             HideButton(action: onHidePanel)
 
-            if !store.pills.isEmpty {
+            if !activePills.isEmpty {
                 ForEach(shownPills) { pill in
                     TaskPillView(
                         pill: pill,

@@ -105,8 +105,36 @@ struct ConversationSubagent: Decodable, Equatable, Identifiable {
     var session_id: String
     var agent_type: String?
     var title: String?
+    var status: String? // working | completed | error | canceled | idle
 
     var id: String { session_id }
+}
+
+/// A message the main agent sent to a subagent that has not yet appeared in
+/// the subagent's transcript — still queued, the child was mid-turn.
+struct SubagentQueuedMessage: Decodable, Equatable {
+    var text: String
+    var created_at: Double?
+}
+
+/// One subagent session in the feed's session-level list — the sidebar's
+/// per-task subagent rows. Same server object the per-step link points at,
+/// keyed by the sidechain session id.
+struct SessionSubagent: Decodable, Equatable, Identifiable {
+    var id: String
+    var agent_type: String?
+    var title: String?
+    var status: String?
+    var mtime: Double?
+    var queued: Int?
+    var queued_messages: [SubagentQueuedMessage]?
+
+    /// The per-step link shape, for opening the trajectory sheet.
+    var asConversationSubagent: ConversationSubagent {
+        ConversationSubagent(
+            session_id: id, agent_type: agent_type, title: title, status: status
+        )
+    }
 }
 
 struct ConversationTool: Decodable, Equatable {
@@ -162,6 +190,7 @@ struct ConversationFeed: Decodable, Equatable {
     var messages: [ConversationMessage]?
     var total: Int?
     var has_more: Bool?
+    var subagents: [SessionSubagent]?
 }
 
 // MARK: - Diff (the Changes tab)

@@ -14,6 +14,12 @@ final class ChatSession: ObservableObject, Identifiable {
     @Published var title: String
 
     @Published private(set) var messages: [ConversationMessage] = []
+    /// The current session's spawned subagents, freshest first, with live
+    /// working/finished status — drives the sidebar's per-task subagent list.
+    @Published private(set) var subagents: [SessionSubagent] = []
+    /// Set from anywhere (a Task step's button, a sidebar row) to open the
+    /// subagent trajectory sheet; the task pane presents and clears it.
+    @Published var subagentDrill: ConversationSubagent?
     @Published private(set) var available = true
     @Published private(set) var online = false
     @Published private(set) var working = false
@@ -166,6 +172,7 @@ final class ChatSession: ObservableObject, Identifiable {
         working = feed.working ?? false
         agent = feed.agent ?? agent
         total = feed.total ?? total
+        subagents = feed.subagents ?? []
 
         let incoming = feed.messages ?? []
 

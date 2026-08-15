@@ -9,7 +9,6 @@ struct ChatView: View {
     @State private var composerHeight = ComposerField.minHeight
     @State private var composerRevision = 0
     @State private var expandedRuns: Set<String> = []
-    @State private var subagentDrill: ConversationSubagent?
 
     private static let bottomAnchor = "chat-bottom"
 
@@ -23,9 +22,6 @@ struct ChatView: View {
         .background(LoomColors.bgBase)
         .onChange(of: session.chatDraft) { _, _ in
             session.persistChatDraft()
-        }
-        .sheet(item: $subagentDrill) { subagent in
-            SubagentTrajectoryView(session: session, subagent: subagent)
         }
     }
 
@@ -122,7 +118,7 @@ struct ChatView: View {
                                     MessageRow(
                                         message: message,
                                         session: session,
-                                        openSubagent: { subagentDrill = $0 }
+                                        openSubagent: { session.subagentDrill = $0 }
                                     )
                                     .id(message.id)
                                 case .run(let tools):
@@ -136,7 +132,7 @@ struct ChatView: View {
                                                 expandedRuns.insert(item.id)
                                             }
                                         },
-                                        openSubagent: { subagentDrill = $0 }
+                                        openSubagent: { session.subagentDrill = $0 }
                                     )
                                     .id(item.id)
                                 }
@@ -619,8 +615,12 @@ private struct ToolCard: View {
                     HStack(spacing: 5) {
                         Image(systemName: "arrow.triangle.branch")
                             .font(.system(size: 10, weight: .semibold))
-                        Text("View \(subagentLabel(subagent)) trajectory")
-                            .font(.system(size: 11.5, weight: .medium))
+                        Text(
+                            subagent.status == "working"
+                                ? "View \(subagentLabel(subagent)) trajectory · working"
+                                : "View \(subagentLabel(subagent)) trajectory"
+                        )
+                        .font(.system(size: 11.5, weight: .medium))
                         Image(systemName: "chevron.right")
                             .font(.system(size: 9, weight: .semibold))
                     }
@@ -662,12 +662,18 @@ private struct ToolCard: View {
     }
 }
 
-/// The transcript of one spawned subagent, opened from the Task step that
-/// launched it. Read-only: questions inside a sidechain were the subagent's
-/// to answer, so they render as plain rows rather than live question cards.
-private struct SubagentTrajectoryView: View {
-    let session: ChatSession
+/// The transcript of one spawned subagent, rendered with the same rows as
+/// the main chat — markdown turns, tool cards with arguments and results,
+/// and the inputs the main agent sent it. Opened as a sheet from the Task
+/// step that launched the subagent, or as the full detail pane from the
+/// sidebar's subagent list (`onBack` set). Read-only: questions inside a
+/// sidechain were the subagent's to answer, so they render as plain rows
+/// rather than live question cards.
+struct SubagentTrajectoryView: View {
+    @ObservedObject var session: ChatSession
     let subagent: ConversationSubagent
+    /// Sidebar-pane mode: a back-to-main-agent button instead of Done.
+    var onBack: (() -> Void)? = nil
     @Environment(\.dismiss) private var dismiss
     @State private var messages: [ConversationMessage] = []
     @State private var loading = true
@@ -685,8 +691,26 @@ private struct SubagentTrajectoryView: View {
         .task(id: subagent.session_id) { await poll() }
     }
 
+    /// The live sidebar entry for this subagent, when the parent session's
+    /// poll still lists it — carries fresher status and queued sends than
+    /// the snapshot the view was opened with.
+    private var liveInfo: SessionSubagent? {
+        session.subagents.first { $0.id == subagent.session_id }
+    }
+
     private var header: some View {
         HStack(spacing: 10) {
+            if let onBack {
+                Button {
+                    onBack()
+                } label: {
+                    Label("Main agent", systemImage: "chevron.left")
+                        .font(.system(size: 12, weight: .medium))
+                }
+                .buttonStyle(.plain)
+                .foregroundColor(LoomColors.accent)
+                .keyboardShortcut(.cancelAction)
+            }
             Image(systemName: "arrow.triangle.branch")
                 .font(.system(size: 13, weight: .semibold))
                 .foregroundColor(LoomColors.accent)
@@ -700,11 +724,45 @@ private struct SubagentTrajectoryView: View {
                     .lineLimit(1)
             }
             Spacer()
-            Button("Done") { dismiss() }
-                .keyboardShortcut(.cancelAction)
+            statusChip
+            if onBack == nil {
+                Button("Done") { dismiss() }
+                    .keyboardShortcut(.cancelAction)
+            }
         }
         .padding(.horizontal, 14)
         .padding(.vertical, 10)
+    }
+
+    @ViewBuilder
+    private var statusChip: some View {
+        let status = liveInfo?.status ?? subagent.status ?? ""
+        switch status {
+        case "working":
+            HStack(spacing: 6) {
+                LoomSpinnerDot(size: 12)
+                Text("Working")
+                    .font(.system(size: 12, weight: .medium))
+                    .foregroundColor(LoomColors.accent)
+            }
+            .padding(.horizontal, 8)
+            .padding(.vertical, 3)
+            .background(LoomColors.accent.opacity(0.10), in: Rectangle())
+        case "error":
+            Text("Error")
+                .font(.system(size: 12, weight: .medium))
+                .foregroundColor(LoomColors.red)
+        case "completed":
+            Label("Done", systemImage: "checkmark.circle")
+                .font(.system(size: 12, weight: .medium))
+                .foregroundColor(LoomColors.green)
+        case "canceled", "idle":
+            Text(status == "canceled" ? "Stopped" : "Idle")
+                .font(.system(size: 12, weight: .medium))
+                .foregroundColor(.secondary)
+        default:
+            EmptyView()
+        }
     }
 
     private var title: String {
@@ -758,6 +816,32 @@ private struct SubagentTrajectoryView: View {
                             )
                         }
                     }
+                }
+                if let queued = liveInfo?.queued_messages, !queued.isEmpty {
+                    VStack(alignment: .leading, spacing: 6) {
+                        Label(
+                            "Queued from the main agent — not yet seen by the subagent",
+                            systemImage: "envelope.badge"
+                        )
+                        .font(.system(size: 11, weight: .semibold))
+                        .foregroundColor(LoomColors.amber)
+                        ForEach(Array(queued.enumerated()), id: \.offset) { _, item in
+                            Text(item.text)
+                                .font(.system(size: 12.5))
+                                .textSelection(.enabled)
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                                .padding(9)
+                                .background(LoomColors.amber.opacity(0.10), in: Rectangle())
+                                .overlay(
+                                    Rectangle()
+                                        .strokeBorder(
+                                            LoomColors.amber.opacity(0.45),
+                                            lineWidth: 1
+                                        )
+                                )
+                        }
+                    }
+                    .padding(.top, 6)
                 }
             }
             .padding(12)

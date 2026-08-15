@@ -19,6 +19,9 @@ struct ProjectPickerView: View {
 
     @State private var quickOpen = false
     @State private var newTask = false
+    /// A subagent opened from the sidebar takes over the detail pane, chat
+    /// style; cleared by its back button or by selecting anything else.
+    @State private var subagentDetail: ConversationSubagent?
 
     var body: some View {
         HStack(spacing: 0) {
@@ -30,6 +33,7 @@ struct ProjectPickerView: View {
         .background(LoomColors.bgBase)
         .frame(minWidth: 940, minHeight: 640)
         .onAppear { store.refreshNow() }
+        .onChange(of: store.selection) { _, _ in subagentDetail = nil }
         .background(
             // Invisible shortcut hosts: a button is the simplest way to
             // register one that works wherever focus happens to be.
@@ -115,10 +119,22 @@ struct ProjectPickerView: View {
                                     }
                                 }
                             },
-                            onSelect: { slug in store.select(projectId: project.id, slug: slug) },
+                            onSelect: { slug in
+                                subagentDetail = nil
+                                store.select(projectId: project.id, slug: slug)
+                            },
                             onOpen: { meta in store.select(projectId: project.id, slug: meta.slug) },
                             onMoveTask: { slug, target in
                                 store.moveTask(projectId: project.id, slug: slug, above: target)
+                            },
+                            chatFor: { slug in
+                                selection == "\(project.id)/\(slug)"
+                                    ? sessions.peek(projectId: project.id, slug: slug)
+                                    : nil
+                            },
+                            selectedSubagentId: subagentDetail?.session_id,
+                            onOpenSubagent: { sub in
+                                subagentDetail = sub.asConversationSubagent
                             }
                         )
                         .draggable(DragPayload.project(id: project.id).text)
@@ -235,15 +251,24 @@ struct ProjectPickerView: View {
         default:
             if let selection, let (project, meta) = store.meta(forSelection: selection) {
                 // The task opens right here — no second window to manage.
-                TaskPane(
-                    session: sessions.session(
-                        projectId: project.id,
-                        slug: meta.slug,
-                        title: meta.title ?? meta.slug,
-                        projectLabel: project.label
-                    )
+                let chat = sessions.session(
+                    projectId: project.id,
+                    slug: meta.slug,
+                    title: meta.title ?? meta.slug,
+                    projectLabel: project.label
                 )
-                .id(selection)
+                if let subagentDetail {
+                    // A sidebar subagent takes the whole pane, chat style.
+                    SubagentTrajectoryView(
+                        session: chat,
+                        subagent: subagentDetail,
+                        onBack: { self.subagentDetail = nil }
+                    )
+                    .id("\(selection)/subagent/\(subagentDetail.session_id)")
+                } else {
+                    TaskPane(session: chat)
+                        .id(selection)
+                }
             } else if projects.isEmpty {
                 EmptyDetail(
                     symbol: "square.grid.2x2",
@@ -280,6 +305,11 @@ private struct ProjectCard: View {
     let onSelect: (String) -> Void
     let onOpen: (LoomTaskMeta) -> Void
     let onMoveTask: (String, String) -> Void
+    /// The selected task's live chat session (nil for every other row) —
+    /// its poll already carries the subagent list shown under the row.
+    let chatFor: (String) -> ChatSession?
+    let selectedSubagentId: String?
+    let onOpenSubagent: (SessionSubagent) -> Void
 
     @State private var dropTarget: String?
 
@@ -320,29 +350,38 @@ private struct ProjectCard: View {
             if !collapsed {
                 VStack(spacing: 4) {
                     ForEach(tasks, id: \.slug) { meta in
-                        SidebarTaskRow(
-                            meta: meta,
-                            state: stateFor(meta.slug),
-                            selected: selection == "\(project.id)/\(meta.slug)",
-                            onSelect: { onSelect(meta.slug) },
-                            onOpen: { onOpen(meta) }
-                        )
-                        .draggable(DragPayload.task(project: project.id, slug: meta.slug).text)
-                        .dropDestination(for: String.self) { items, _ in
-                            guard let payload = items.compactMap(DragPayload.init).first,
-                                  case let .task(fromProject, slug) = payload,
-                                  fromProject == project.id
-                            else { return false }
-                            onMoveTask(slug, meta.slug)
-                            return true
-                        } isTargeted: { over in
-                            dropTarget = over ? meta.slug : (dropTarget == meta.slug ? nil : dropTarget)
-                        }
-                        .overlay(alignment: .top) {
-                            if dropTarget == meta.slug {
-                                Rectangle()
-                                    .fill(LoomColors.accent)
-                                    .frame(height: 2)
+                        VStack(spacing: 3) {
+                            SidebarTaskRow(
+                                meta: meta,
+                                state: stateFor(meta.slug),
+                                selected: selection == "\(project.id)/\(meta.slug)",
+                                onSelect: { onSelect(meta.slug) },
+                                onOpen: { onOpen(meta) }
+                            )
+                            .draggable(DragPayload.task(project: project.id, slug: meta.slug).text)
+                            .dropDestination(for: String.self) { items, _ in
+                                guard let payload = items.compactMap(DragPayload.init).first,
+                                      case let .task(fromProject, slug) = payload,
+                                      fromProject == project.id
+                                else { return false }
+                                onMoveTask(slug, meta.slug)
+                                return true
+                            } isTargeted: { over in
+                                dropTarget = over ? meta.slug : (dropTarget == meta.slug ? nil : dropTarget)
+                            }
+                            .overlay(alignment: .top) {
+                                if dropTarget == meta.slug {
+                                    Rectangle()
+                                        .fill(LoomColors.accent)
+                                        .frame(height: 2)
+                                }
+                            }
+                            if let chat = chatFor(meta.slug) {
+                                SidebarSubagentList(
+                                    session: chat,
+                                    selectedId: selectedSubagentId,
+                                    onOpen: onOpenSubagent
+                                )
                             }
                         }
                     }
@@ -362,6 +401,135 @@ private struct ProjectCard: View {
             Rectangle()
                 .strokeBorder(LoomColors.border.opacity(0.78), lineWidth: 1)
         )
+    }
+}
+
+/// The selected task's subagents, indented under its sidebar row: a live
+/// status dot each (working / done / error), queued-send badges, and a
+/// disclosure that folds the list. Clicking a row opens that subagent's
+/// trajectory in the detail pane, chat style.
+private struct SidebarSubagentList: View {
+    @ObservedObject var session: ChatSession
+    let selectedId: String?
+    let onOpen: (SessionSubagent) -> Void
+    @State private var collapsed = false
+
+    var body: some View {
+        if !session.subagents.isEmpty {
+            VStack(alignment: .leading, spacing: 3) {
+                Button {
+                    withAnimation(.easeInOut(duration: 0.12)) { collapsed.toggle() }
+                } label: {
+                    HStack(spacing: 6) {
+                        Image(systemName: "chevron.right")
+                            .font(.system(size: 8, weight: .bold))
+                            .rotationEffect(.degrees(collapsed ? 0 : 90))
+                        Text("Subagents")
+                            .font(.system(size: 10.5, weight: .semibold))
+                            .tracking(0.5)
+                        let working = session.subagents.filter { $0.status == "working" }.count
+                        if working > 0 {
+                            Text("\(working) working")
+                                .font(.system(size: 10, weight: .semibold))
+                                .foregroundColor(LoomColors.green)
+                        }
+                        Spacer(minLength: 0)
+                        Text("\(session.subagents.count)")
+                            .font(.system(size: 10, weight: .semibold))
+                    }
+                    .foregroundColor(.secondary)
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .padding(.horizontal, 4)
+
+                if !collapsed {
+                    ForEach(session.subagents) { sub in
+                        SidebarSubagentRow(
+                            subagent: sub,
+                            selected: selectedId == sub.id,
+                            onOpen: { onOpen(sub) }
+                        )
+                    }
+                }
+            }
+            .padding(.leading, 16)
+            .padding(.trailing, 2)
+        }
+    }
+}
+
+private struct SidebarSubagentRow: View {
+    let subagent: SessionSubagent
+    let selected: Bool
+    let onOpen: () -> Void
+    @State private var hovering = false
+
+    var body: some View {
+        Button(action: onOpen) {
+            HStack(alignment: .top, spacing: 7) {
+                statusDot
+                    .padding(.top, 3)
+                VStack(alignment: .leading, spacing: 1) {
+                    Text(subagent.agent_type ?? "subagent")
+                        .font(.system(size: 12, weight: .medium))
+                        .foregroundColor(.primary)
+                        .lineLimit(1)
+                    if let title = subagent.title, !title.isEmpty {
+                        Text(title)
+                            .font(.system(size: 11))
+                            .foregroundColor(.secondary)
+                            .lineLimit(1)
+                    }
+                }
+                Spacer(minLength: 0)
+                if let queued = subagent.queued, queued > 0 {
+                    Label("\(queued)", systemImage: "envelope.badge")
+                        .font(.system(size: 10, weight: .semibold))
+                        .foregroundColor(LoomColors.amber)
+                        .help("\(queued) message(s) from the main agent still queued")
+                }
+            }
+            .padding(.horizontal, 8)
+            .padding(.vertical, 5)
+            .background(
+                selected
+                    ? LoomColors.accentSoft
+                    : (hovering ? LoomColors.bgElev2 : Color.clear),
+                in: Rectangle()
+            )
+            .overlay(
+                Rectangle()
+                    .strokeBorder(
+                        selected ? LoomColors.accent.opacity(0.28) : Color.clear,
+                        lineWidth: 1
+                    )
+            )
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .onHover { hovering = $0 }
+        .help(subagent.id)
+    }
+
+    @ViewBuilder
+    private var statusDot: some View {
+        switch subagent.status ?? "" {
+        case "working":
+            LoomActivityDot(size: 10)
+        case "error":
+            Circle()
+                .fill(LoomColors.red)
+                .frame(width: 8, height: 8)
+        case "completed":
+            Image(systemName: "checkmark.circle.fill")
+                .font(.system(size: 9))
+                .foregroundColor(LoomColors.green)
+        default: // idle, canceled, unknown
+            Circle()
+                .strokeBorder(Color.secondary.opacity(0.45), lineWidth: 1.2)
+                .frame(width: 8, height: 8)
+        }
     }
 }
 

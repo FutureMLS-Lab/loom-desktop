@@ -68,6 +68,11 @@ struct TaskPane: View {
         }
         .background(LoomColors.bgBase)
         .onAppear { session.start() }
+        // A Task step's trajectory drill-in, presented here rather than in
+        // ChatView so it opens from any tab (the sidebar sets it too).
+        .sheet(item: $session.subagentDrill) { subagent in
+            SubagentTrajectoryView(session: session, subagent: subagent)
+        }
     }
 
     // MARK: Header

@@ -464,7 +464,14 @@ private struct MessageRow: View {
     var body: some View {
         switch message.kind {
         case "user":
-            UserBubble(text: message.text ?? "", delivery: nil)
+            switch message.origin ?? "" {
+            case "agent":
+                AgentMessageBubble(message: message)
+            case "system":
+                NotificationCard(message: message)
+            default:
+                UserBubble(text: message.text ?? "", delivery: nil)
+            }
         case "tool":
             if let tool = message.tool {
                 ToolCard(tool: tool, openSubagent: openSubagent)
@@ -511,6 +518,94 @@ struct UserBubble: View {
             }
         }
         .padding(.vertical, 2)
+    }
+}
+
+/// Mail from another agent, landing in this one's user turn. Incoming, so it
+/// reads from the left like the agent's own rows — but in the attention
+/// green, with the sender named, so it can never be mistaken for either the
+/// human (indigo, right) or this agent's own prose.
+private struct AgentMessageBubble: View {
+    let message: ConversationMessage
+
+    var body: some View {
+        HStack {
+            VStack(alignment: .leading, spacing: 4) {
+                HStack(spacing: 5) {
+                    Image(systemName: "envelope")
+                        .font(.system(size: 10, weight: .semibold))
+                    Text("from \(message.from ?? "another agent")")
+                        .font(.system(size: 11, weight: .semibold))
+                }
+                .foregroundColor(LoomColors.attention)
+                Text(message.text ?? "")
+                    .font(.system(size: 13.5))
+                    .lineSpacing(2)
+                    .textSelection(.enabled)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            .padding(.horizontal, 12)
+            .padding(.vertical, 9)
+            .background(LoomColors.attention.opacity(0.10), in: Rectangle())
+            .overlay(alignment: .leading) {
+                Rectangle()
+                    .fill(LoomColors.attention)
+                    .frame(width: 3)
+            }
+            Spacer(minLength: 80)
+        }
+        .padding(.vertical, 2)
+    }
+}
+
+/// A background-task event the harness injected (a monitor snapshot, a
+/// finished subagent): one quiet folded line, the payload on demand. It is
+/// plumbing, not conversation — it should never wear the user's bubble.
+private struct NotificationCard: View {
+    let message: ConversationMessage
+    @State private var expanded = false
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            Button {
+                expanded.toggle()
+            } label: {
+                HStack(spacing: 7) {
+                    Image(systemName: "bell.badge")
+                        .font(.system(size: 10))
+                    Text(headline)
+                        .font(.system(size: 11.5))
+                        .lineLimit(expanded ? 3 : 1)
+                        .multilineTextAlignment(.leading)
+                    Spacer(minLength: 0)
+                    Image(systemName: expanded ? "chevron.up" : "chevron.down")
+                        .font(.system(size: 9))
+                }
+                .foregroundColor(.secondary)
+                .padding(.horizontal, 10)
+                .padding(.vertical, 6)
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+
+            if expanded {
+                ScrollView(.horizontal) {
+                    Text(message.text ?? "")
+                        .font(.system(size: 11.5, design: .monospaced))
+                        .textSelection(.enabled)
+                }
+                .frame(maxHeight: 260)
+                .padding(.horizontal, 10)
+                .padding(.bottom, 8)
+            }
+        }
+        .background(Color.primary.opacity(0.035), in: Rectangle())
+    }
+
+    private var headline: String {
+        let label = (message.label?.isEmpty == false) ? message.label! : "Notification"
+        let summary = message.summary ?? ""
+        return summary.isEmpty ? label : "\(label) · \(summary)"
     }
 }
 
@@ -855,7 +950,14 @@ struct SubagentTrajectoryView: View {
     private func row(_ message: ConversationMessage) -> some View {
         switch message.kind {
         case "user":
-            UserBubble(text: message.text ?? "", delivery: nil)
+            switch message.origin ?? "" {
+            case "agent":
+                AgentMessageBubble(message: message)
+            case "system":
+                NotificationCard(message: message)
+            default:
+                UserBubble(text: message.text ?? "", delivery: nil)
+            }
         case "tool":
             if let tool = message.tool {
                 ToolCard(tool: tool)

@@ -182,6 +182,13 @@ struct ConversationMessage: Decodable, Equatable, Identifiable {
     var created_at: Double?
     var tool: ConversationTool?
     var question: ConversationQuestion?
+    /// On user-kind messages the harness injects into the turn: "agent"
+    /// (mail from another agent, `from` set) or "system" (a background-task
+    /// notification, `label`/`summary` set). Absent for the human's own text.
+    var origin: String?
+    var from: String?
+    var label: String?
+    var summary: String?
 }
 
 struct ConversationFeed: Decodable, Equatable {

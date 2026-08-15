@@ -9,6 +9,7 @@ struct ChatView: View {
     @State private var composerHeight = ComposerField.minHeight
     @State private var composerRevision = 0
     @State private var expandedRuns: Set<String> = []
+    @State private var subagentDrill: ConversationSubagent?
 
     private static let bottomAnchor = "chat-bottom"
 
@@ -22,6 +23,9 @@ struct ChatView: View {
         .background(LoomColors.bgBase)
         .onChange(of: session.chatDraft) { _, _ in
             session.persistChatDraft()
+        }
+        .sheet(item: $subagentDrill) { subagent in
+            SubagentTrajectoryView(session: session, subagent: subagent)
         }
     }
 
@@ -115,8 +119,12 @@ struct ChatView: View {
                             ForEach(FeedItem.group(session.messages)) { item in
                                 switch item {
                                 case .message(let message):
-                                    MessageRow(message: message, session: session)
-                                        .id(message.id)
+                                    MessageRow(
+                                        message: message,
+                                        session: session,
+                                        openSubagent: { subagentDrill = $0 }
+                                    )
+                                    .id(message.id)
                                 case .run(let tools):
                                     ToolRunRow(
                                         tools: tools,
@@ -127,7 +135,8 @@ struct ChatView: View {
                                             } else {
                                                 expandedRuns.insert(item.id)
                                             }
-                                        }
+                                        },
+                                        openSubagent: { subagentDrill = $0 }
                                     )
                                     .id(item.id)
                                 }
@@ -398,6 +407,7 @@ private struct ToolRunRow: View {
     let tools: [ConversationMessage]
     let expanded: Bool
     let toggle: () -> Void
+    var openSubagent: ((ConversationSubagent) -> Void)? = nil
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
@@ -427,7 +437,7 @@ private struct ToolRunRow: View {
             if expanded {
                 ForEach(tools) { message in
                     if let tool = message.tool {
-                        ToolCard(tool: tool)
+                        ToolCard(tool: tool, openSubagent: openSubagent)
                     }
                 }
             }
@@ -453,6 +463,7 @@ private struct ToolRunRow: View {
 private struct MessageRow: View {
     let message: ConversationMessage
     @ObservedObject var session: ChatSession
+    var openSubagent: ((ConversationSubagent) -> Void)? = nil
 
     var body: some View {
         switch message.kind {
@@ -460,7 +471,7 @@ private struct MessageRow: View {
             UserBubble(text: message.text ?? "", delivery: nil)
         case "tool":
             if let tool = message.tool {
-                ToolCard(tool: tool)
+                ToolCard(tool: tool, openSubagent: openSubagent)
             }
         case "question":
             if let question = message.question {
@@ -545,6 +556,7 @@ private struct LoomSpinningRingStatic: View {
 
 private struct ToolCard: View {
     let tool: ConversationTool
+    var openSubagent: ((ConversationSubagent) -> Void)? = nil
     @State private var expanded = false
 
     private var hasDetails: Bool {
@@ -600,6 +612,29 @@ private struct ToolCard: View {
             .buttonStyle(.plain)
             .padding(9)
 
+            if let subagent = tool.subagent, let openSubagent {
+                Button {
+                    openSubagent(subagent)
+                } label: {
+                    HStack(spacing: 5) {
+                        Image(systemName: "arrow.triangle.branch")
+                            .font(.system(size: 10, weight: .semibold))
+                        Text("View \(subagentLabel(subagent)) trajectory")
+                            .font(.system(size: 11.5, weight: .medium))
+                        Image(systemName: "chevron.right")
+                            .font(.system(size: 9, weight: .semibold))
+                    }
+                    .foregroundColor(LoomColors.accent)
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 4)
+                    .background(LoomColors.accentSoft, in: Rectangle())
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .padding(.horizontal, 9)
+                .padding(.bottom, 9)
+            }
+
             if expanded {
                 VStack(alignment: .leading, spacing: 7) {
                     if let input = tool.input, !input.isEmpty {
@@ -619,6 +654,164 @@ private struct ToolCard: View {
                 .strokeBorder(LoomColors.border, lineWidth: 1)
         )
         .padding(.trailing, 30)
+    }
+
+    private func subagentLabel(_ subagent: ConversationSubagent) -> String {
+        let type = (subagent.agent_type ?? "").trimmingCharacters(in: .whitespaces)
+        return type.isEmpty ? "subagent" : type
+    }
+}
+
+/// The transcript of one spawned subagent, opened from the Task step that
+/// launched it. Read-only: questions inside a sidechain were the subagent's
+/// to answer, so they render as plain rows rather than live question cards.
+private struct SubagentTrajectoryView: View {
+    let session: ChatSession
+    let subagent: ConversationSubagent
+    @Environment(\.dismiss) private var dismiss
+    @State private var messages: [ConversationMessage] = []
+    @State private var loading = true
+    @State private var error = ""
+    @State private var expandedRuns: Set<String> = []
+
+    var body: some View {
+        VStack(spacing: 0) {
+            header
+            Divider()
+            feed
+        }
+        .frame(minWidth: 560, idealWidth: 700, minHeight: 420, idealHeight: 640)
+        .background(LoomColors.bgBase)
+        .task(id: subagent.session_id) { await poll() }
+    }
+
+    private var header: some View {
+        HStack(spacing: 10) {
+            Image(systemName: "arrow.triangle.branch")
+                .font(.system(size: 13, weight: .semibold))
+                .foregroundColor(LoomColors.accent)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(title)
+                    .font(.system(size: 14, weight: .semibold))
+                    .lineLimit(1)
+                Text(subagent.session_id)
+                    .font(.system(size: 11, design: .monospaced))
+                    .foregroundColor(.secondary)
+                    .lineLimit(1)
+            }
+            Spacer()
+            Button("Done") { dismiss() }
+                .keyboardShortcut(.cancelAction)
+        }
+        .padding(.horizontal, 14)
+        .padding(.vertical, 10)
+    }
+
+    private var title: String {
+        let type = (subagent.agent_type ?? "").trimmingCharacters(in: .whitespaces)
+        let name = (subagent.title ?? "").trimmingCharacters(in: .whitespaces)
+        switch (type.isEmpty, name.isEmpty) {
+        case (false, false): return "\(type) · \(name)"
+        case (false, true): return "\(type) subagent"
+        case (true, false): return name
+        case (true, true): return "Subagent"
+        }
+    }
+
+    private var feed: some View {
+        ScrollView {
+            LazyVStack(alignment: .leading, spacing: 10) {
+                if loading && messages.isEmpty {
+                    Text("Loading trajectory…")
+                        .font(.system(size: 12.5))
+                        .foregroundColor(.secondary)
+                        .frame(maxWidth: .infinity)
+                        .padding(.top, 30)
+                } else if !error.isEmpty && messages.isEmpty {
+                    Text(error)
+                        .font(.system(size: 12.5))
+                        .foregroundColor(LoomColors.red)
+                        .frame(maxWidth: .infinity)
+                        .padding(.top, 30)
+                } else if messages.isEmpty {
+                    Text("No transcript yet for this subagent.")
+                        .font(.system(size: 12.5))
+                        .foregroundColor(.secondary)
+                        .frame(maxWidth: .infinity)
+                        .padding(.top, 30)
+                } else {
+                    ForEach(FeedItem.group(messages)) { item in
+                        switch item {
+                        case .message(let message):
+                            row(message)
+                        case .run(let tools):
+                            ToolRunRow(
+                                tools: tools,
+                                expanded: expandedRuns.contains(item.id),
+                                toggle: {
+                                    if expandedRuns.contains(item.id) {
+                                        expandedRuns.remove(item.id)
+                                    } else {
+                                        expandedRuns.insert(item.id)
+                                    }
+                                }
+                            )
+                        }
+                    }
+                }
+            }
+            .padding(12)
+        }
+    }
+
+    @ViewBuilder
+    private func row(_ message: ConversationMessage) -> some View {
+        switch message.kind {
+        case "user":
+            UserBubble(text: message.text ?? "", delivery: nil)
+        case "tool":
+            if let tool = message.tool {
+                ToolCard(tool: tool)
+            }
+        case "question":
+            Text(message.question?.title ?? "Question")
+                .font(.system(size: 11.5, weight: .medium))
+                .foregroundColor(.secondary)
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 2)
+        case "event":
+            Text(message.text ?? "")
+                .font(.system(size: 11.5, weight: .medium))
+                .foregroundColor(.secondary)
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 2)
+        default:
+            AssistantRow(text: message.text ?? "")
+        }
+    }
+
+    /// Same cadence as the web console's subagent modal: re-read every 2.5s
+    /// while open, so a still-running subagent's steps stream in. `.task`
+    /// cancels this when the sheet closes.
+    private func poll() async {
+        while !Task.isCancelled {
+            do {
+                let feed = try await session.api.conversation(
+                    projectId: session.projectId,
+                    slug: session.slug,
+                    limit: 500,
+                    session: subagent.session_id
+                )
+                messages = feed.messages ?? []
+                error = ""
+            } catch is CancellationError {
+                return
+            } catch {
+                self.error = error.localizedDescription
+            }
+            loading = false
+            try? await Task.sleep(nanoseconds: 2_500_000_000)
+        }
     }
 }
 

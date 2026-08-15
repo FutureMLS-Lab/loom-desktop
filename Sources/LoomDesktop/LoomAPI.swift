@@ -166,12 +166,17 @@ struct LoomAPI {
     }
 
     func conversation(
-        projectId: String, slug: String, limit: Int
+        projectId: String, slug: String, limit: Int, session: String? = nil
     ) async throws -> ConversationFeed {
         let clamped = max(20, min(500, limit))
-        return try await request(
-            scoped("/api/tasks/\(slugPath(slug))/conversation?limit=\(clamped)", projectId)
-        )
+        var path = "/api/tasks/\(slugPath(slug))/conversation?limit=\(clamped)"
+        if let session, !session.isEmpty,
+           let encoded = session.addingPercentEncoding(
+               withAllowedCharacters: .urlQueryAllowed
+           ) {
+            path += "&session=\(encoded)"
+        }
+        return try await request(scoped(path, projectId))
     }
 
     func send(projectId: String, slug: String, text: String) async throws {

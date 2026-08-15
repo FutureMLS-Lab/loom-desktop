@@ -99,12 +99,23 @@ struct ActivitySnapshot: Decodable, Equatable {
 
 // MARK: - Conversation feed (the chat module)
 
+/// A Task step's link to the transcript of the subagent it spawned; present
+/// only on tool messages the server matched to a sidechain session.
+struct ConversationSubagent: Decodable, Equatable, Identifiable {
+    var session_id: String
+    var agent_type: String?
+    var title: String?
+
+    var id: String { session_id }
+}
+
 struct ConversationTool: Decodable, Equatable {
     var name: String
     var summary: String?
     var status: String // running | completed | error | canceled
     var input: String?
     var output: String?
+    var subagent: ConversationSubagent?
 }
 
 struct ConversationOption: Decodable, Equatable, Identifiable {

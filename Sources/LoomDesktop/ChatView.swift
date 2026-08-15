@@ -737,11 +737,14 @@ struct SubagentTrajectoryView: View {
     @ViewBuilder
     private var statusChip: some View {
         let status = liveInfo?.status ?? subagent.status ?? ""
+        let activity = liveInfo?.activity ?? subagent.activity ?? ""
         switch status {
         case "working":
             HStack(spacing: 6) {
                 LoomSpinnerDot(size: 12)
-                Text("Working")
+                Text(activity.isEmpty || activity == "waiting"
+                    ? (activity == "waiting" ? "Waiting" : "Working")
+                    : "Working · \(activity)")
                     .font(.system(size: 12, weight: .medium))
                     .foregroundColor(LoomColors.accent)
             }

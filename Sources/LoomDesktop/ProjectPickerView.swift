@@ -427,11 +427,21 @@ private struct SidebarSubagentList: View {
                         Text("Subagents")
                             .font(.system(size: 10.5, weight: .semibold))
                             .tracking(0.5)
-                        let working = session.subagents.filter { $0.status == "working" }.count
+                        let working = session.subagents
+                            .filter { $0.status == "working" && $0.activity != "waiting" }
+                            .count
+                        let ready = session.subagents
+                            .filter { $0.status == "working" && $0.activity == "waiting" }
+                            .count
                         if working > 0 {
                             Text("\(working) working")
                                 .font(.system(size: 10, weight: .semibold))
-                                .foregroundColor(LoomColors.green)
+                                .foregroundColor(LoomColors.accent)
+                        }
+                        if ready > 0 {
+                            Text("\(ready) ready")
+                                .font(.system(size: 10, weight: .semibold))
+                                .foregroundColor(.secondary)
                         }
                         Spacer(minLength: 0)
                         Text("\(session.subagents.count)")
@@ -471,10 +481,21 @@ private struct SidebarSubagentRow: View {
                 statusDot
                     .padding(.top, 3)
                 VStack(alignment: .leading, spacing: 1) {
-                    Text(subagent.agent_type ?? "subagent")
-                        .font(.system(size: 12, weight: .medium))
-                        .foregroundColor(.primary)
-                        .lineLimit(1)
+                    HStack(spacing: 5) {
+                        Text(subagent.agent_type ?? "subagent")
+                            .font(.system(size: 12, weight: .medium))
+                            .foregroundColor(.primary)
+                            .lineLimit(1)
+                        if subagent.status == "working",
+                           let activity = subagent.activity, !activity.isEmpty {
+                            Text(activity)
+                                .font(.system(size: 10.5))
+                                .foregroundColor(
+                                    activity == "waiting" ? .secondary : LoomColors.accent
+                                )
+                                .lineLimit(1)
+                        }
+                    }
                     if let title = subagent.title, !title.isEmpty {
                         Text(title)
                             .font(.system(size: 11))
@@ -516,7 +537,14 @@ private struct SidebarSubagentRow: View {
     private var statusDot: some View {
         switch subagent.status ?? "" {
         case "working":
-            LoomActivityDot(size: 10)
+            if subagent.activity == "waiting" {
+                // Ready between events: alive, not consuming — hollow ring.
+                Circle()
+                    .strokeBorder(LoomColors.accent, lineWidth: 1.5)
+                    .frame(width: 9, height: 9)
+            } else {
+                LoomActivityDot(size: 10)
+            }
         case "error":
             Circle()
                 .fill(LoomColors.red)

@@ -106,6 +106,9 @@ struct ConversationSubagent: Decodable, Equatable, Identifiable {
     var agent_type: String?
     var title: String?
     var status: String? // working | completed | error | canceled | idle
+    /// What "working" is concretely: "thinking", "running <tool>", or
+    /// "waiting" (turn ended, ready for the next event).
+    var activity: String?
 
     var id: String { session_id }
 }
@@ -125,6 +128,7 @@ struct SessionSubagent: Decodable, Equatable, Identifiable {
     var agent_type: String?
     var title: String?
     var status: String?
+    var activity: String?
     var mtime: Double?
     var queued: Int?
     var queued_messages: [SubagentQueuedMessage]?
@@ -132,7 +136,8 @@ struct SessionSubagent: Decodable, Equatable, Identifiable {
     /// The per-step link shape, for opening the trajectory sheet.
     var asConversationSubagent: ConversationSubagent {
         ConversationSubagent(
-            session_id: id, agent_type: agent_type, title: title, status: status
+            session_id: id, agent_type: agent_type, title: title,
+            status: status, activity: activity
         )
     }
 }

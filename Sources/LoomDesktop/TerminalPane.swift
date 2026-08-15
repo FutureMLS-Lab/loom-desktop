@@ -275,18 +275,27 @@ private struct TerminalKey {
 }
 
 /// The chrome around the terminal. The screen itself is xterm's, themed in
-/// `TerminalSession` with the web console's palette; these are the light
-/// surfaces the card sits in, matching the rest of the app.
+/// `TerminalSession` with the web console's palette; these are the surfaces
+/// the card sits in, matching the rest of the app — pale sage in light mode,
+/// and in dark mode the same green warmth pulled down next to the screen.
 enum TerminalTheme {
     /// Matches xterm's background, so the card has no seam while it loads.
-    /// Keep in step with the same colours in `TerminalWeb`'s page.
+    /// Keep in step with the same colours in `TerminalWeb`'s page. The one
+    /// colour here that does not change with the appearance: the screen is
+    /// always dark.
     static let screen = Color(red: 0x1E / 255, green: 0x23 / 255, blue: 0x20 / 255)
-    static let chrome = Color(red: 0xD8 / 255, green: 0xE2 / 255, blue: 0xD7 / 255)
-    static let keycap = Color(red: 0xEF / 255, green: 0xF4 / 255, blue: 0xEE / 255)
-    static let keycapBorder = Color(red: 0xB4 / 255, green: 0xC4 / 255, blue: 0xB3 / 255)
-    static let inputBackground = Color(red: 0xF6 / 255, green: 0xFA / 255, blue: 0xF5 / 255)
-    static let text = Color(red: 0x25 / 255, green: 0x2B / 255, blue: 0x26 / 255)
-    static let dimText = Color(red: 0x63 / 255, green: 0x73 / 255, blue: 0x65 / 255)
-    static let rule = Color(red: 0xC4 / 255, green: 0xD2 / 255, blue: 0xC3 / 255)
-    static let inkAccent = Color(red: 0x3C / 255, green: 0x7A / 255, blue: 0x5C / 255)
+    static let chrome = LoomColors.dynamic(light: 0xD8E2D7, dark: 0x272C28)
+    static let keycap = LoomColors.dynamic(light: 0xEFF4EE, dark: 0x323A34)
+    static let keycapBorder = LoomColors.dynamic(light: 0xB4C4B3, dark: 0x44503F)
+    static let inputBackground = LoomColors.dynamic(light: 0xF6FAF5, dark: 0x232823)
+    static let text = LoomColors.dynamic(light: 0x252B26, dark: 0xDFE6DD)
+    static let dimText = LoomColors.dynamic(light: 0x637365, dark: 0x8D9C8F)
+    static let rule = LoomColors.dynamic(light: 0xC4D2C3, dark: 0x39413A)
+    static let inkAccent = LoomColors.dynamic(light: 0x3C7A5C, dark: 0x7FBF9C)
+
+    /// `NSColor` twins for AppKit views configured once at creation
+    /// (`ComposerField`'s text view): a dynamic `NSColor` keeps tracking the
+    /// appearance, where `NSColor(Color)` would freeze the value it resolved.
+    static let textNS = LoomColors.dynamicNSColor(light: 0x252B26, dark: 0xDFE6DD)
+    static let inkAccentNS = LoomColors.dynamicNSColor(light: 0x3C7A5C, dark: 0x7FBF9C)
 }

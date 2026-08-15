@@ -44,8 +44,8 @@ struct ComposerField: NSViewRepresentable {
         textView.isRichText = false
         textView.allowsUndo = true
         textView.font = .systemFont(ofSize: fontSize)
-        textView.textColor = NSColor(TerminalTheme.text)
-        textView.insertionPointColor = NSColor(TerminalTheme.inkAccent)
+        textView.textColor = TerminalTheme.textNS
+        textView.insertionPointColor = TerminalTheme.inkAccentNS
         textView.textContainerInset = NSSize(width: 2, height: 4)
         textView.isVerticallyResizable = true
         textView.isHorizontallyResizable = false

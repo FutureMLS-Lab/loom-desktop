@@ -208,6 +208,9 @@ struct MarkdownPreview: NSViewRepresentable {
         <meta name="viewport" content="width=device-width, initial-scale=1"/>
         <style>
           :root {
+            /* Lets WebKit paint the pre-load page and scrollbars for the
+               appearance we are about to style, instead of flashing white. */
+            color-scheme: light dark;
             --bg: #fffdf7;
             --ink: #1f1a14;
             --muted: #6b6358;
@@ -215,6 +218,25 @@ struct MarkdownPreview: NSViewRepresentable {
             --code-bg: #f4efe3;
             --accent: #4f46e5;
             --quote: #8a7f6a;
+            --hit: #fde68a;
+            --hit-current: #f59e0b;
+            --hit-current-ink: #1f1a14;
+          }
+          /* The palette's dark side — same warm cast as LoomColors' dark
+             surfaces, keep the two in step. */
+          @media (prefers-color-scheme: dark) {
+            :root {
+              --bg: #211f1a;
+              --ink: #e7e1d5;
+              --muted: #a49b8c;
+              --rule: #3d392f;
+              --code-bg: #2c2922;
+              --accent: #8f8cf4;
+              --quote: #9d937f;
+              --hit: #6b5514;
+              --hit-current: #f59e0b;
+              --hit-current-ink: #1f1a14;
+            }
           }
           html, body {
             margin: 0; padding: 0;
@@ -308,7 +330,7 @@ struct MarkdownPreview: NSViewRepresentable {
           #find {
             position: fixed; top: 8px; right: 14px; display: none;
             align-items: center; gap: 6px; z-index: 20;
-            background: #fffdf7; border: 1px solid var(--rule);
+            background: var(--bg); border: 1px solid var(--rule);
             border-radius: 7px; padding: 4px 6px;
             box-shadow: 0 4px 14px rgba(31, 26, 20, 0.13);
             font: 12px -apple-system, BlinkMacSystemFont, sans-serif;
@@ -326,8 +348,8 @@ struct MarkdownPreview: NSViewRepresentable {
           }
           #find button:hover { background: var(--code-bg); color: var(--ink); }
           #findCount { color: var(--muted); min-width: 34px; text-align: right; }
-          mark.loom-hit { background: #fde68a; color: inherit; padding: 0; }
-          mark.loom-hit.current { background: #f59e0b; color: #1f1a14; }
+          mark.loom-hit { background: var(--hit); color: inherit; padding: 0; }
+          mark.loom-hit.current { background: var(--hit-current); color: var(--hit-current-ink); }
         </style>
         </head>
         <body>

@@ -182,8 +182,8 @@ struct ProjectPickerView: View {
         .frame(width: 320)
         .background(
             LinearGradient(
-                colors: [Color(red: 0.973, green: 0.965, blue: 0.941),
-                         Color(red: 0.922, green: 0.906, blue: 0.863)],
+                colors: [LoomColors.dynamic(light: 0xF8F6F0, dark: 0x22211B),
+                         LoomColors.dynamic(light: 0xEBE7DC, dark: 0x1B1A15)],
                 startPoint: .top,
                 endPoint: .bottom
             )
@@ -357,7 +357,7 @@ private struct ProjectCard: View {
             }
         }
         .padding(11)
-        .background(Color.white.opacity(0.62), in: Rectangle())
+        .background(LoomColors.bgElev1.opacity(0.62), in: Rectangle())
         .overlay(
             Rectangle()
                 .strokeBorder(LoomColors.border.opacity(0.78), lineWidth: 1)
@@ -424,7 +424,7 @@ private struct SidebarTaskRow: View {
     private var rowBackground: Color {
         if selected { return LoomColors.accentSoft }
         if state == .finished { return LoomColors.attention.opacity(0.10) }
-        return hovering ? Color.white : Color.white.opacity(0.72)
+        return hovering ? LoomColors.bgElev1 : LoomColors.bgElev1.opacity(0.72)
     }
 
     @ViewBuilder

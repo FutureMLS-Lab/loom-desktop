@@ -156,9 +156,16 @@ then the reply arrives and the pill blinks until you click it.
   that produces no window at all. `LOOM_DESKTOP_TRACE_LAYOUT=1` adds the
   panel's measure/resize decisions to the same file.
 
-The app cannot be brought to the front from a script — neither AppleScript
-nor `open -a` will activate it — so anything that depends on activation or
-window focus has to be checked by hand.
+To drive the app from a script, address it by its process name: System
+Events knows it as `LoomDesktop`, not "Loom Desktop", and `open -a` starts a
+second copy rather than raising this one.
+
+```bash
+osascript -e 'tell application "System Events" to set frontmost of process "LoomDesktop" to true'
+```
+
+Clicks can be posted with `CGEvent` at screen coordinates, which is how the
+tabs and sidebar can be exercised without a person.
 
 ## Auto-start at login
 

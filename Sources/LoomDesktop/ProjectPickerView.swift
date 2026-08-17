@@ -263,8 +263,7 @@ struct ProjectPickerView: View {
         .frame(width: 320)
         .background(
             LinearGradient(
-                colors: [LoomColors.dynamic(light: 0xF8F6F0, dark: 0x22211B),
-                         LoomColors.dynamic(light: 0xEBE7DC, dark: 0x1B1A15)],
+                colors: [LoomColors.sidebarWashTop, LoomColors.sidebarWashBottom],
                 startPoint: .top,
                 endPoint: .bottom
             )

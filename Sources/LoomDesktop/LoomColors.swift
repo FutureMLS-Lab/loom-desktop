@@ -18,11 +18,20 @@ enum LoomColors {
 
     /// An `NSColor` that re-resolves whenever the effective appearance
     /// changes, so a running window restyles live when the system flips.
+    ///
+    /// The two sides are built once, up here. Built inside the closure they
+    /// were rebuilt on every resolution, and a colour that is a new object
+    /// each time it is read is a colour SwiftUI cannot cache: as a `.tint` it
+    /// made every hosted `NSView` rebuild its `NSAppearance` — CoreUI theme
+    /// work — on every pass of the view graph, which climbed to a core of CPU
+    /// and would not come down.
     static func dynamicNSColor(light: UInt32, dark: UInt32) -> NSColor {
-        NSColor(name: nil) { appearance in
+        let lightColor = nsHex(light)
+        let darkColor = nsHex(dark)
+        return NSColor(name: nil) { appearance in
             appearance.bestMatch(from: [.aqua, .darkAqua]) == .darkAqua
-                ? nsHex(dark)
-                : nsHex(light)
+                ? darkColor
+                : lightColor
         }
     }
 
@@ -58,4 +67,12 @@ enum LoomColors {
     /// mistaken for the vivid green of a task that is running.
     static let attention = dynamic(light: 0x6F8C74, dark: 0x8CAB92)
     static let red = dynamic(light: 0xEF4444, dark: 0xF26D6D)
+
+    /// The sidebar's backing wash, top and bottom.
+    ///
+    /// Here rather than inline in the gradient that uses them: built in a
+    /// view body, each pass made two more colours, and a colour that is a
+    /// new object every render is one SwiftUI redraws for.
+    static let sidebarWashTop = dynamic(light: 0xF8F6F0, dark: 0x22211B)
+    static let sidebarWashBottom = dynamic(light: 0xEBE7DC, dark: 0x1B1A15)
 }

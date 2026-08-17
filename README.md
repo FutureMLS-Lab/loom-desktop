@@ -218,3 +218,10 @@ copy it to `~/Library/LaunchAgents/com.loom.desktop.plist`, then
 | `scripts/make-app.sh` | Build, sign, install to `/Applications`, register the login item |
 | `scripts/mock-loom.py` | Offline mock of the Loom API for development |
 | `scripts/summon.swift` | Poke a running app to bring its windows to this screen |
+
+## Licence
+
+Noncommercial use only, under the
+[PolyForm Noncommercial 1.0.0](https://polyformproject.org/licenses/noncommercial/1.0.0)
+terms in [`LICENSE`](LICENSE). Commercial use needs a separate licence from
+FutureMLS-Lab.

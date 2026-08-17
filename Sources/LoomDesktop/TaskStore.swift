@@ -93,6 +93,13 @@ final class TaskStore: ObservableObject {
     /// A different Loom has nothing to do with this one's tasks: drop them
     /// rather than let one server's pills sit under another's name until the
     /// next poll replaces them.
+    /// The current server, republished here because `LoomSettings` is plain
+    /// storage: SwiftUI cannot see it change, so a switch left the old name
+    /// and the old checkmark on screen until something else forced a redraw.
+    @Published private(set) var servers: [LoomServer] = LoomSettings.servers
+    @Published private(set) var activeServerID: String = LoomSettings.activeServerID
+    @Published private(set) var activeServerName: String = LoomSettings.activeName
+
     init() {
         NotificationCenter.default.addObserver(
             forName: LoomSettings.serverDidChange, object: nil, queue: .main
@@ -102,6 +109,9 @@ final class TaskStore: ObservableObject {
     }
 
     func serverChanged() {
+        servers = LoomSettings.servers
+        activeServerID = LoomSettings.activeServerID
+        activeServerName = LoomSettings.activeName
         stop()
         pills = []
         projects = []

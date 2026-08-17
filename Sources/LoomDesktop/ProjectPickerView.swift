@@ -68,11 +68,11 @@ struct ProjectPickerView: View {
     /// answer "whose tasks are these" — so it says it without being asked.
     private var serverBar: some View {
         Menu {
-            ForEach(LoomSettings.servers) { server in
+            ForEach(store.servers) { server in
                 Button {
                     LoomSettings.activate(server)
                 } label: {
-                    if server.id == LoomSettings.activeServerID {
+                    if server.id == store.activeServerID {
                         Label(server.name, systemImage: "checkmark")
                     } else {
                         Text(server.name)
@@ -87,7 +87,7 @@ struct ProjectPickerView: View {
                     .fill(serverDotColor)
                     .frame(width: 7, height: 7)
                 VStack(alignment: .leading, spacing: 1) {
-                    Text(LoomSettings.activeName)
+                    Text(store.activeServerName)
                         .font(.system(size: 13, weight: .semibold))
                         .foregroundColor(.primary)
                         .lineLimit(1)

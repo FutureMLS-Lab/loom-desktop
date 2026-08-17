@@ -122,12 +122,12 @@ private struct LoomMenuButton: View {
             // Which Loom this is, and the way to another one. Shown even with
             // a single server configured: hiding it until there are two left
             // no way to reach the place where a second one is added.
-            Menu("Server: \(LoomSettings.activeName)") {
-                ForEach(LoomSettings.servers) { server in
+            Menu("Server: \(store.activeServerName)") {
+                ForEach(store.servers) { server in
                     Button {
                         LoomSettings.activate(server)
                     } label: {
-                        if server.id == LoomSettings.activeServerID {
+                        if server.id == store.activeServerID {
                             Label(server.name, systemImage: "checkmark")
                         } else {
                             Text(server.name)

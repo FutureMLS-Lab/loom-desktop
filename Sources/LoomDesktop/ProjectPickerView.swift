@@ -63,8 +63,89 @@ struct ProjectPickerView: View {
 
     // MARK: Sidebar
 
+    /// Which Loom this window is showing, at the top of the list it belongs
+    /// to. The menus have the same switch, but this is where you look to
+    /// answer "whose tasks are these" — so it says it without being asked.
+    private var serverBar: some View {
+        Menu {
+            ForEach(LoomSettings.servers) { server in
+                Button {
+                    LoomSettings.activate(server)
+                } label: {
+                    if server.id == LoomSettings.activeServerID {
+                        Label(server.name, systemImage: "checkmark")
+                    } else {
+                        Text(server.name)
+                    }
+                }
+            }
+            Divider()
+            Button("Add or edit servers…") { SettingsWindowController.shared.show() }
+        } label: {
+            HStack(spacing: 8) {
+                Circle()
+                    .fill(serverDotColor)
+                    .frame(width: 7, height: 7)
+                VStack(alignment: .leading, spacing: 1) {
+                    Text(LoomSettings.activeName)
+                        .font(.system(size: 13, weight: .semibold))
+                        .foregroundColor(.primary)
+                        .lineLimit(1)
+                        .truncationMode(.middle)
+                    Text(serverSubtitle)
+                        .font(.system(size: 10.5))
+                        .foregroundColor(.secondary)
+                        .lineLimit(1)
+                        .truncationMode(.middle)
+                }
+                Spacer(minLength: 4)
+                Image(systemName: "chevron.up.chevron.down")
+                    .font(.system(size: 9, weight: .semibold))
+                    .foregroundColor(.secondary)
+            }
+            .padding(.horizontal, 11)
+            .padding(.vertical, 7)
+            // Square, like the filter below it and the cards under that: the
+            // sidebar is one family of surfaces, not this plus a pill.
+            .background(LoomColors.bgElev1, in: Rectangle())
+            .overlay(
+                Rectangle().strokeBorder(LoomColors.border, lineWidth: 1)
+            )
+            .contentShape(Rectangle())
+        }
+        // `.borderlessButton` throws the custom label away and draws its own;
+        // the button style keeps the row exactly as built.
+        .menuStyle(.button)
+        .buttonStyle(.plain)
+        .menuIndicator(.hidden)
+        .padding(.horizontal, 12)
+        .padding(.top, 12)
+        .padding(.bottom, -4)
+        .help(LoomSettings.baseURL)
+    }
+
+    private var serverDotColor: Color {
+        switch store.connection {
+        case .online: return LoomColors.green
+        case .connecting: return LoomColors.amber
+        case .offline: return LoomColors.red
+        }
+    }
+
+    private var serverSubtitle: String {
+        switch store.connection {
+        case .online:
+            let count = store.pills.count
+            return count == 1 ? "1 task" : "\(count) tasks"
+        case .connecting: return "Connecting…"
+        case .offline: return "Can't reach this Loom"
+        }
+    }
+
     private var sidebar: some View {
         VStack(spacing: 0) {
+            serverBar
+
             HStack(spacing: 8) {
                 Image(systemName: "magnifyingglass")
                     .font(.system(size: 13))

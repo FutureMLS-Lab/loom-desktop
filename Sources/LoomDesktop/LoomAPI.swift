@@ -1,27 +1,5 @@
 import Foundation
 
-/// Where the dock's connection settings live. The same base URL + token pair
-/// works against either the loom-app gateway (which injects the Loom token
-/// itself) or a `loom web --auth-token …` instance directly — the API paths
-/// are identical.
-enum LoomSettings {
-    static let baseURLKey = "loomBaseURL"
-    static let tokenKey = "loomAuthToken"
-    static let defaultBaseURL = "http://127.0.0.1:8787"
-
-    static var baseURL: String {
-        let raw = UserDefaults.standard.string(forKey: baseURLKey) ?? ""
-        let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
-        let value = trimmed.isEmpty ? defaultBaseURL : trimmed
-        return value.hasSuffix("/") ? String(value.dropLast()) : value
-    }
-
-    static var token: String {
-        (UserDefaults.standard.string(forKey: tokenKey) ?? "")
-            .trimmingCharacters(in: .whitespacesAndNewlines)
-    }
-}
-
 struct LoomAPIError: LocalizedError {
     let message: String
     let status: Int

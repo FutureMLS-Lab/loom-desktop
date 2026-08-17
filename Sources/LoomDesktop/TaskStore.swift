@@ -90,6 +90,31 @@ final class TaskStore: ObservableObject {
         return min(backoff, Self.maxBackoff)
     }
 
+    /// A different Loom has nothing to do with this one's tasks: drop them
+    /// rather than let one server's pills sit under another's name until the
+    /// next poll replaces them.
+    init() {
+        NotificationCenter.default.addObserver(
+            forName: LoomSettings.serverDidChange, object: nil, queue: .main
+        ) { [weak self] _ in
+            Task { @MainActor in self?.serverChanged() }
+        }
+    }
+
+    func serverChanged() {
+        stop()
+        pills = []
+        projects = []
+        tasksByProject = [:]
+        acked = []
+        labelsFetchedAt = .distantPast
+        failureStreak = 0
+        selection = nil
+        connection = .connecting
+        start()
+        refreshNow()
+    }
+
     func start() {
         guard pollTask == nil else { return }
         pollTask = Task { [weak self] in

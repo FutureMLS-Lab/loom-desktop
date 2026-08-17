@@ -1,3 +1,4 @@
+import Foundation
 import Combine
 
 /// Keeps one `ChatSession` per task for the inline task pane. Only the visible
@@ -13,6 +14,22 @@ final class SessionCache: ObservableObject {
     /// Most recently used order; anything past the cap is dropped.
     private var order: [String] = []
     private static let capacity = 12
+
+    init() {
+        NotificationCenter.default.addObserver(
+            forName: LoomSettings.serverDidChange, object: nil, queue: .main
+        ) { [weak self] _ in
+            Task { @MainActor in self?.dropAll() }
+        }
+    }
+
+    /// Transcripts belong to the Loom they were read from.
+    func dropAll() {
+        for session in sessions.values { session.stop() }
+        sessions = [:]
+        order = []
+        activeKey = nil
+    }
 
     func session(
         projectId: String,

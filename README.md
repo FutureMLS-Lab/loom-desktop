@@ -113,12 +113,21 @@ swift build -c release
 ./.build/release/LoomDesktop
 ```
 
-Configure the URL/token via the loom menu → **Settings…** (stored in
-`defaults`; domain `com.loom.desktop` for the installed app, `LoomDesktop`
-for the bare binary — keys `loomBaseURL` / `loomAuthToken`). Point it at
-whatever serves the Loom HTTP API: the loom-app gateway (which holds the
-Loom token itself, so the app only needs the gateway's own token), or a
+Configure servers via the loom menu → **Settings…**. Point each at whatever
+serves the Loom HTTP API: the loom-app gateway (which holds the Loom token
+itself, so the app only needs the gateway's own token), or a
 `loom web --auth-token …` instance reachable directly or over an SSH tunnel.
+
+More than one machine can be configured — one Loom per box — and the loom
+menu and menu-bar item grow a **Server** submenu to switch between them.
+Switching drops everything belonging to the old one: pills, transcripts, and
+the terminal's stream, so no part of one machine's work is left showing under
+another's name.
+
+Stored in `defaults` (domain `com.loom.desktop` for the installed app,
+`LoomDesktop` for the bare binary): `loomServers` holds the list as JSON,
+`loomActiveServer` the current one's id. `loomBaseURL` / `loomAuthToken` are
+still written for the server in use, so an older build keeps working.
 
 ### Try it without a cluster
 
@@ -202,7 +211,8 @@ copy it to `~/Library/LaunchAgents/com.loom.desktop.plist`, then
 | `QuickOpen.swift` / `NewTaskView.swift` | ⌘P open by name, ⌘N create a task |
 | `ComposeDrafts.swift` | Unsent text, kept across tab and task switches |
 | `Notifier.swift` | Finish notifications + Dock badge |
-| `SettingsWindow.swift` | Base URL + bearer token |
+| `LoomServers.swift` | The configured Looms, and which one is current |
+| `SettingsWindow.swift` | Managing servers: URL, token, and switching |
 | `Snapshotter.swift` | Window → PNG for the headless UI check, web views included |
 | `Resources/` | App icon, and the bundled `marked`, `xterm`, and fit addon |
 | `scripts/make-app.sh` | Build, sign, install to `/Applications`, register the login item |

@@ -125,6 +125,18 @@ final class TerminalSession: NSObject, ObservableObject {
     override init() {
         super.init()
         Self.live.add(self)
+        NotificationCenter.default.addObserver(
+            forName: LoomSettings.serverDidChange, object: nil, queue: .main
+        ) { [weak self] _ in
+            Task { @MainActor in
+                // The stream, and the pane it names, belong to the Loom we
+                // just left.
+                self?.owner = ""
+                self?.target = ""
+                self?.stop()
+                self?.call("window.__loomReset()")
+            }
+        }
     }
 
     /// A stream stays open for as long as the pane is on screen, so it cannot

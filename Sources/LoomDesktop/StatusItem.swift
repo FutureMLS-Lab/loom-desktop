@@ -102,6 +102,23 @@ final class StatusItemController: NSObject, NSMenuDelegate {
             seen.target = self
             menu.addItem(seen)
         }
+        let servers = LoomSettings.servers
+        if servers.count > 1 {
+            let item = NSMenuItem(title: "Server: \(LoomSettings.activeName)", action: nil, keyEquivalent: "")
+            let submenu = NSMenu()
+            for server in servers {
+                let entry = NSMenuItem(
+                    title: server.name, action: #selector(chooseServer(_:)), keyEquivalent: ""
+                )
+                entry.target = self
+                entry.representedObject = server.id
+                entry.state = server.id == LoomSettings.activeServerID ? .on : .off
+                submenu.addItem(entry)
+            }
+            item.submenu = submenu
+            menu.addItem(item)
+            menu.addItem(.separator())
+        }
         let refresh = NSMenuItem(title: "Refresh Now", action: #selector(refreshNow), keyEquivalent: "r")
         refresh.target = self
         menu.addItem(refresh)
@@ -159,6 +176,13 @@ final class StatusItemController: NSObject, NSMenuDelegate {
 
     @objc private func markAllSeen() { store.markAllSeen() }
     @objc private func refreshNow() { store.refreshNow() }
+
+    @objc private func chooseServer(_ sender: NSMenuItem) {
+        guard let id = sender.representedObject as? String,
+              let server = LoomSettings.servers.first(where: { $0.id == id })
+        else { return }
+        LoomSettings.activate(server)
+    }
     @objc private func openSettings() { SettingsWindowController.shared.show() }
     @objc private func quit() { NSApp.terminate(nil) }
 }

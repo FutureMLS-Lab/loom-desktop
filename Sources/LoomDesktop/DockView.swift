@@ -119,24 +119,23 @@ private struct LoomMenuButton: View {
             Button("Open Loom (Projects)") {
                 MainWindowController.shared.show(store: store)
             }
-            // Which Loom this is, and the way to another one. Only worth the
-            // room once there is more than one machine to talk to.
-            if LoomSettings.servers.count > 1 {
-                Menu("Server: \(LoomSettings.activeName)") {
-                    ForEach(LoomSettings.servers) { server in
-                        Button {
-                            LoomSettings.activate(server)
-                        } label: {
-                            if server.id == LoomSettings.activeServerID {
-                                Label(server.name, systemImage: "checkmark")
-                            } else {
-                                Text(server.name)
-                            }
+            // Which Loom this is, and the way to another one. Shown even with
+            // a single server configured: hiding it until there are two left
+            // no way to reach the place where a second one is added.
+            Menu("Server: \(LoomSettings.activeName)") {
+                ForEach(LoomSettings.servers) { server in
+                    Button {
+                        LoomSettings.activate(server)
+                    } label: {
+                        if server.id == LoomSettings.activeServerID {
+                            Label(server.name, systemImage: "checkmark")
+                        } else {
+                            Text(server.name)
                         }
                     }
-                    Divider()
-                    Button("Manage servers…") { SettingsWindowController.shared.show() }
                 }
+                Divider()
+                Button("Add or edit servers…") { SettingsWindowController.shared.show() }
             }
             Divider()
             if store.projects.isEmpty {

@@ -103,22 +103,28 @@ final class StatusItemController: NSObject, NSMenuDelegate {
             menu.addItem(seen)
         }
         let servers = LoomSettings.servers
-        if servers.count > 1 {
-            let item = NSMenuItem(title: "Server: \(LoomSettings.activeName)", action: nil, keyEquivalent: "")
-            let submenu = NSMenu()
-            for server in servers {
-                let entry = NSMenuItem(
-                    title: server.name, action: #selector(chooseServer(_:)), keyEquivalent: ""
-                )
-                entry.target = self
-                entry.representedObject = server.id
-                entry.state = server.id == LoomSettings.activeServerID ? .on : .off
-                submenu.addItem(entry)
-            }
-            item.submenu = submenu
-            menu.addItem(item)
-            menu.addItem(.separator())
+        let serverItem = NSMenuItem(
+            title: "Server: \(LoomSettings.activeName)", action: nil, keyEquivalent: ""
+        )
+        let submenu = NSMenu()
+        for server in servers {
+            let entry = NSMenuItem(
+                title: server.name, action: #selector(chooseServer(_:)), keyEquivalent: ""
+            )
+            entry.target = self
+            entry.representedObject = server.id
+            entry.state = server.id == LoomSettings.activeServerID ? .on : .off
+            submenu.addItem(entry)
         }
+        submenu.addItem(.separator())
+        let manage = NSMenuItem(
+            title: "Add or edit servers…", action: #selector(openSettings), keyEquivalent: ""
+        )
+        manage.target = self
+        submenu.addItem(manage)
+        serverItem.submenu = submenu
+        menu.addItem(serverItem)
+        menu.addItem(.separator())
         let refresh = NSMenuItem(title: "Refresh Now", action: #selector(refreshNow), keyEquivalent: "r")
         refresh.target = self
         menu.addItem(refresh)

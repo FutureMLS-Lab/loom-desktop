@@ -99,12 +99,56 @@ struct ActivitySnapshot: Decodable, Equatable {
 
 // MARK: - Conversation feed (the chat module)
 
+/// A Task step's link to the transcript of the subagent it spawned; present
+/// only on tool messages the server matched to a sidechain session.
+struct ConversationSubagent: Decodable, Equatable, Identifiable {
+    var session_id: String
+    var agent_type: String?
+    var title: String?
+    var status: String? // working | completed | error | canceled | idle
+    /// What "working" is concretely: "thinking", "running <tool>", or
+    /// "waiting" (turn ended, ready for the next event).
+    var activity: String?
+
+    var id: String { session_id }
+}
+
+/// A message the main agent sent to a subagent that has not yet appeared in
+/// the subagent's transcript — still queued, the child was mid-turn.
+struct SubagentQueuedMessage: Decodable, Equatable {
+    var text: String
+    var created_at: Double?
+}
+
+/// One subagent session in the feed's session-level list — the sidebar's
+/// per-task subagent rows. Same server object the per-step link points at,
+/// keyed by the sidechain session id.
+struct SessionSubagent: Decodable, Equatable, Identifiable {
+    var id: String
+    var agent_type: String?
+    var title: String?
+    var status: String?
+    var activity: String?
+    var mtime: Double?
+    var queued: Int?
+    var queued_messages: [SubagentQueuedMessage]?
+
+    /// The per-step link shape, for opening the trajectory sheet.
+    var asConversationSubagent: ConversationSubagent {
+        ConversationSubagent(
+            session_id: id, agent_type: agent_type, title: title,
+            status: status, activity: activity
+        )
+    }
+}
+
 struct ConversationTool: Decodable, Equatable {
     var name: String
     var summary: String?
     var status: String // running | completed | error | canceled
     var input: String?
     var output: String?
+    var subagent: ConversationSubagent?
 }
 
 struct ConversationOption: Decodable, Equatable, Identifiable {
@@ -138,6 +182,13 @@ struct ConversationMessage: Decodable, Equatable, Identifiable {
     var created_at: Double?
     var tool: ConversationTool?
     var question: ConversationQuestion?
+    /// On user-kind messages the harness injects into the turn: "agent"
+    /// (mail from another agent, `from` set) or "system" (a background-task
+    /// notification, `label`/`summary` set). Absent for the human's own text.
+    var origin: String?
+    var from: String?
+    var label: String?
+    var summary: String?
 }
 
 struct ConversationFeed: Decodable, Equatable {
@@ -151,6 +202,7 @@ struct ConversationFeed: Decodable, Equatable {
     var messages: [ConversationMessage]?
     var total: Int?
     var has_more: Bool?
+    var subagents: [SessionSubagent]?
 }
 
 // MARK: - Diff (the Changes tab)

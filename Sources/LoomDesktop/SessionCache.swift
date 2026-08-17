@@ -14,6 +14,12 @@ final class SessionCache: ObservableObject {
     private var order: [String] = []
     private static let capacity = 12
 
+    /// The cached session, if any — no start/stop side effects, for readers
+    /// (the sidebar's subagent list) that must not steal the active slot.
+    func peek(projectId: String, slug: String) -> ChatSession? {
+        sessions["\(projectId)/\(slug)"]
+    }
+
     func session(
         projectId: String,
         slug: String,

@@ -129,6 +129,23 @@ struct LoomAPI {
         try await request(scoped("/api/tasks/\(slugPath(slug))", projectId))
     }
 
+    /// One level of the task directory, or one file's text. The Files tab
+    /// asks per directory rather than for a tree, so opening a task with a
+    /// large worktree costs a single listing.
+    func taskFiles(
+        projectId: String,
+        slug: String,
+        path: String = ""
+    ) async throws -> TaskFileListing {
+        let encoded = path.addingPercentEncoding(
+            withAllowedCharacters: .urlQueryAllowed
+        ) ?? path
+        let query = encoded.isEmpty ? "" : "?path=\(encoded)"
+        return try await request(
+            scoped("/api/tasks/\(slugPath(slug))/files\(query)", projectId)
+        )
+    }
+
     /// Writes an allowed task template (`PLAN.md` / `WIKI.md`) on the server.
     func writeTemplate(
         projectId: String,

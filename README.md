@@ -21,7 +21,7 @@ projects and tasks, and four tabs for whichever one is selected:
 | --- | --- | --- |
 | Chat | ⌘1 | The conversation feed (`/conversation`): user / assistant / tool / question / event rows, question cards with options and custom answers, and a composer that types into the agent's tmux pane |
 | Terminal | ⌘2 | The live pane, with the task's `PLAN.md` rendered underneath — the same pairing the web console's agent tab has |
-| Files | ⌘3 | The task's markdown: a file list, a source editor, and a browser-style preview. `PLAN.md` / `WIKI.md` save back through `/template` |
+| Files | ⌘3 | The task directory as a small editor: a folder tree — `PLAN.md` at the top, the worktree under `work/` — and the file's source. `PLAN.md` / `WIKI.md` save back through `/template`; everything else is read-only |
 | Changes | ⌘4 | Diffs across the task's worktrees, plus push / merge |
 
 Above the tabs are the flow buttons the web console has — Deep Interview,
@@ -203,10 +203,10 @@ copy it to `~/Library/LaunchAgents/com.loom.desktop.plist`, then
 | `ComposerField.swift` | The compose box: ⏎ sends, ⇧⏎ newlines, IME-safe |
 | `NotesView.swift` | The project scratchpad (`.RUD/NOTES.md`), ⌘⇧N |
 | `PlanDigest.swift` | The read-only `PLAN.md` under the terminal |
-| `PlanView.swift` | The Files tab: file list, source editor, preview |
+| `PlanView.swift` | The Files tab: the task's folder tree and source editor |
 | `PlainTextEditor.swift` | The markdown source editor, shared by Files and Notes |
 | `MarkdownBlocks.swift` | Agent turns as blocks: tables, lists, code |
-| `MarkdownPreview.swift` | `marked` in a `WKWebView`, shared by Files and the digest |
+| `MarkdownPreview.swift` | `marked` in a `WKWebView`, shared by the digest and notes |
 | `DiffView.swift` | The Changes tab: per-file diffs, push / merge |
 | `QuickOpen.swift` / `NewTaskView.swift` | ⌘P open by name, ⌘N create a task |
 | `ComposeDrafts.swift` | Unsent text, kept across tab and task switches |

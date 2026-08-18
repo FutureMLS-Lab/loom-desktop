@@ -82,6 +82,28 @@ struct TaskDetail: Decodable {
     }
 }
 
+// MARK: - Browsing the task directory
+
+/// One reply from `/api/tasks/<slug>/files`: either a directory's entries or
+/// a single file's text. `error` explains a file the server will not send —
+/// binary, or larger than an editor should hold.
+struct TaskFileListing: Decodable {
+    struct Entry: Decodable, Identifiable, Equatable {
+        var name: String
+        var dir: Bool
+        var size: Int?
+
+        var id: String { name }
+    }
+
+    var path: String?
+    var dir: Bool?
+    var entries: [Entry]?
+    var body: String?
+    var size: Int?
+    var error: String?
+}
+
 // MARK: - Activity (the dock's heartbeat)
 
 struct ActivityTask: Decodable, Equatable {

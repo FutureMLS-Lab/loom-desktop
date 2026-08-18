@@ -1,17 +1,24 @@
 import AppKit
 import SwiftUI
 
-/// Task markdown as a tiny editor: a folder list on the left, source on the
-/// right. The old SwiftUI markdown renderer froze on large `PLAN.md` files;
-/// an `NSTextView` does not. `PLAN.md` / `WIKI.md` can be saved back through
-/// the gateway's template API — everything else stays read-only.
+/// The Files tab: the whole task directory as a small editor. A folder tree on
+/// the left — `PLAN.md` at the top, the worktree under `work/` — and the file's
+/// source on the right. Loom writes back only `PLAN.md` and `WIKI.md`, so
+/// everything else opens read-only.
 struct PlanView: View {
     @ObservedObject var session: ChatSession
 
-    @State private var files: [PlanFile] = []
+    /// Directory (relative to the task root, `""` for the root) → its entries.
+    /// Only directories someone has opened are in here; the tree is fetched a
+    /// level at a time so a task holding a large worktree still opens at once.
+    @State private var children: [String: [TaskFileListing.Entry]] = [:]
+    @State private var expanded: Set<String> = []
+    @State private var loadingDirs: Set<String> = []
     @State private var selected = ""
     @State private var draft = ""
     @State private var savedBaseline = ""
+    /// Why the open file shows no source: binary, or too big to edit.
+    @State private var unreadable = ""
     @State private var loading = true
     @State private var saving = false
     @State private var error = ""
@@ -19,90 +26,75 @@ struct PlanView: View {
     /// Bumped when the editor must accept an external buffer (load / file switch).
     @State private var editorRevision = 0
     @State private var autosaveTask: Task<Void, Never>?
-    /// Source = edit markdown; Preview = browser page; Split = both.
-    @AppStorage("filesViewMode") private var viewModeRaw = ViewMode.preview.rawValue
 
-    private enum ViewMode: String, CaseIterable, Identifiable {
-        case edit, preview, split
-        var id: String { rawValue }
-        var label: String {
-            switch self {
-            case .edit: return "Edit"
-            case .preview: return "Preview"
-            case .split: return "Split"
-            }
-        }
-        /// For the narrow header, where the words do not fit.
-        var symbol: String {
-            switch self {
-            case .edit: return "pencil"
-            case .preview: return "eye"
-            case .split: return "rectangle.split.2x1"
-            }
-        }
-    }
-
-    private var viewMode: ViewMode {
-        get { ViewMode(rawValue: viewModeRaw) ?? .preview }
-        nonmutating set { viewModeRaw = newValue.rawValue }
-    }
-
+    /// What the gateway's template API accepts, and only at the task root: a
+    /// `PLAN.md` further down inside a worktree is a different file, and saving
+    /// it would write over the task's own plan.
     private static let writable: Set<String> = ["PLAN.md", "WIKI.md"]
 
-    struct PlanFile: Identifiable, Equatable {
-        let name: String
-        let content: String
-        var id: String { name }
-
-        var isDirectoryHint: Bool { name.contains("/") }
-        var displayName: String { (name as NSString).lastPathComponent }
-    }
-
-    private var current: PlanFile? {
-        files.first { $0.name == selected } ?? files.first
-    }
-
     private var dirty: Bool { draft != savedBaseline }
-    private var canEdit: Bool {
-        guard let name = current?.name else { return false }
-        return Self.writable.contains((name as NSString).lastPathComponent)
-            || Self.writable.contains(name)
+    private var canEdit: Bool { Self.writable.contains(selected) }
+
+    /// One line of the tree as drawn: the flattening of everything expanded.
+    private struct Row: Identifiable {
+        let path: String
+        let name: String
+        let isDir: Bool
+        let depth: Int
+        var id: String { path }
+    }
+
+    private var rows: [Row] {
+        var out: [Row] = []
+        func walk(_ dir: String, _ depth: Int) {
+            for entry in children[dir] ?? [] {
+                let path = dir.isEmpty ? entry.name : "\(dir)/\(entry.name)"
+                out.append(
+                    Row(path: path, name: entry.name, isDir: entry.dir, depth: depth)
+                )
+                if entry.dir && expanded.contains(path) {
+                    walk(path, depth + 1)
+                }
+            }
+        }
+        walk("", 0)
+        return out
     }
 
     var body: some View {
         Group {
-            if loading && files.isEmpty {
+            if loading && children.isEmpty {
                 HStack(spacing: 9) {
                     ProgressView().controlSize(.small)
                     Text("Loading files…").foregroundColor(.secondary)
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
-            } else if !error.isEmpty && files.isEmpty {
+            } else if !error.isEmpty && children.isEmpty {
                 emptyState(
                     symbol: "exclamationmark.triangle",
                     title: "Files unavailable",
                     detail: error
                 )
-            } else if files.isEmpty {
+            } else if (children[""] ?? []).isEmpty {
                 emptyState(
                     symbol: "folder",
-                    title: "No markdown yet",
+                    title: "Nothing here yet",
                     detail: "Run the deep interview and the agent will write PLAN.md."
                 )
             } else {
                 HSplitView {
                     fileSidebar
-                        .frame(minWidth: 180, idealWidth: 220, maxWidth: 320)
+                        .frame(minWidth: 180, idealWidth: 240, maxWidth: 360)
                     editorPane
-                        .frame(minWidth: 320)
+                        .frame(minWidth: 300)
                 }
             }
         }
         .background(LoomColors.bgElev1)
-        .task(id: session.id) { await load() }
+        .task(id: session.id) { await loadRoot() }
         .onChange(of: session.planRevision) { _, _ in
             guard !dirty else { return }
-            Task { await load() }
+            Task { await refreshOpenFile() }
         }
         .onChange(of: draft) { _, newValue in
             guard !selected.isEmpty else { return }
@@ -117,19 +109,25 @@ struct PlanView: View {
         }
     }
 
-    // MARK: Sidebar
+    // MARK: Tree
 
     private var fileSidebar: some View {
         VStack(spacing: 0) {
             HStack(spacing: 6) {
                 Image(systemName: "folder.fill")
                     .foregroundColor(LoomColors.amber)
-                Text("Task files")
+                Text(session.slug)
                     .font(.system(size: 12, weight: .semibold))
-                Spacer()
-                Text("\(files.count)")
-                    .font(.system(size: 11, design: .monospaced))
-                    .foregroundColor(.secondary)
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+                Spacer(minLength: 4)
+                Button {
+                    Task { await reloadTree() }
+                } label: {
+                    Image(systemName: "arrow.clockwise").font(.system(size: 11))
+                }
+                .buttonStyle(.plain)
+                .help("Rescan the task directory")
             }
             .padding(.horizontal, 12)
             .padding(.vertical, 9)
@@ -137,47 +135,8 @@ struct PlanView: View {
 
             ScrollView {
                 LazyVStack(alignment: .leading, spacing: 1) {
-                    ForEach(files) { file in
-                        Button {
-                            select(file)
-                        } label: {
-                            HStack(spacing: 8) {
-                                Image(systemName: file.name.hasSuffix(".md")
-                                      ? "doc.text" : "doc")
-                                    .font(.system(size: 12))
-                                    .foregroundColor(
-                                        file.name == selected
-                                            ? LoomColors.accent : .secondary
-                                    )
-                                    .frame(width: 14)
-                                VStack(alignment: .leading, spacing: 1) {
-                                    Text(file.displayName)
-                                        .font(.system(size: 12.5, weight: .medium))
-                                        .foregroundColor(
-                                            file.name == selected
-                                                ? LoomColors.accent : .primary
-                                        )
-                                        .lineLimit(1)
-                                    if file.isDirectoryHint {
-                                        Text(file.name)
-                                            .font(.system(size: 10.5, design: .monospaced))
-                                            .foregroundColor(.secondary)
-                                            .lineLimit(1)
-                                            .truncationMode(.middle)
-                                    }
-                                }
-                                Spacer(minLength: 0)
-                            }
-                            .padding(.horizontal, 10)
-                            .padding(.vertical, 7)
-                            .background(
-                                file.name == selected
-                                    ? LoomColors.accentSoft : Color.clear,
-                                in: Rectangle()
-                            )
-                            .contentShape(Rectangle())
-                        }
-                        .buttonStyle(.plain)
+                    ForEach(rows) { row in
+                        treeRow(row)
                     }
                 }
                 .padding(.vertical, 6)
@@ -186,48 +145,88 @@ struct PlanView: View {
         .background(LoomColors.bgBase)
     }
 
-    // MARK: Editor
-
-    private func modePicker(compact: Bool) -> some View {
-        Picker("View", selection: $viewModeRaw) {
-            ForEach(ViewMode.allCases) { mode in
-                if compact {
-                    Image(systemName: mode.symbol).tag(mode.rawValue)
+    private func treeRow(_ row: Row) -> some View {
+        let isSelected = row.path == selected
+        return Button {
+            if row.isDir {
+                toggle(row.path)
+            } else {
+                Task { await open(row.path) }
+            }
+        } label: {
+            HStack(spacing: 5) {
+                if row.isDir {
+                    Image(
+                        systemName: expanded.contains(row.path)
+                            ? "chevron.down" : "chevron.right"
+                    )
+                    .font(.system(size: 9, weight: .semibold))
+                    .foregroundColor(.secondary)
+                    .frame(width: 10)
                 } else {
-                    Text(mode.label).tag(mode.rawValue)
+                    Color.clear.frame(width: 10, height: 1)
+                }
+                Image(systemName: symbol(for: row))
+                    .font(.system(size: 11.5))
+                    .foregroundColor(isSelected ? LoomColors.accent : .secondary)
+                    .frame(width: 14)
+                Text(row.name)
+                    .font(.system(size: 12.5, weight: isSelected ? .semibold : .regular))
+                    .foregroundColor(isSelected ? LoomColors.accent : .primary)
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+                Spacer(minLength: 0)
+                if loadingDirs.contains(row.path) {
+                    ProgressView()
+                        .controlSize(.small)
+                        .scaleEffect(0.55)
+                        .frame(width: 12, height: 12)
                 }
             }
+            .padding(.leading, CGFloat(row.depth) * 12 + 8)
+            .padding(.trailing, 8)
+            .padding(.vertical, 4)
+            .background(
+                isSelected ? LoomColors.accentSoft : Color.clear,
+                in: Rectangle()
+            )
+            .contentShape(Rectangle())
         }
-        .pickerStyle(.segmented)
-        .fixedSize()
-        .help("Edit source, browser preview, or both")
+        .buttonStyle(.plain)
     }
 
-    private var sourceEditor: some View {
-        PlainTextEditor(
-            text: $draft,
-            documentID: selected,
-            contentRevision: editorRevision,
-            editable: canEdit,
-            fontSize: 13.5
-        )
+    private func symbol(for row: Row) -> String {
+        if row.isDir {
+            return expanded.contains(row.path) ? "folder.fill" : "folder"
+        }
+        switch (row.name as NSString).pathExtension.lowercased() {
+        case "md", "txt", "tex", "bib":
+            return "doc.text"
+        case "png", "jpg", "jpeg", "gif", "webp", "svg", "pdf":
+            return "photo"
+        case "json", "jsonl", "yaml", "yml", "toml", "cfg", "ini":
+            return "curlybraces"
+        case "sh", "bash", "zsh":
+            return "terminal"
+        case "csv", "tsv":
+            return "tablecells"
+        case "log":
+            return "list.bullet.rectangle"
+        case "":
+            return "doc"
+        default:
+            return "chevron.left.forwardslash.chevron.right"
+        }
     }
 
-    private var renderedPreview: some View {
-        MarkdownPreview(
-            markdown: draft,
-            documentID: selected,
-            assetProject: session.projectId,
-            assetTask: session.slug
-        )
-    }
+    // MARK: Editor
 
     private var editorPane: some View {
         VStack(spacing: 0) {
             HStack(spacing: 10) {
                 // Ahead of the controls in the queue for space: squeezed by
                 // them, the name of the file you are editing collapsed to "…".
-                Text(current?.name ?? "")
+                Text(selected.isEmpty ? "No file open" : selected)
                     .font(.system(size: 13, weight: .semibold, design: .monospaced))
                     .lineLimit(1)
                     .truncationMode(.middle)
@@ -240,7 +239,7 @@ struct PlanView: View {
                         .padding(.vertical, 2)
                         .background(LoomColors.amber.opacity(0.14), in: Rectangle())
                 }
-                if !canEdit {
+                if !selected.isEmpty && !canEdit && unreadable.isEmpty {
                     Text("Read-only")
                         .font(.system(size: 11, weight: .medium))
                         .foregroundColor(.secondary)
@@ -253,21 +252,13 @@ struct PlanView: View {
                         .lineLimit(1)
                 }
 
-                // Words when they fit, icons when they do not: at the window's
-                // minimum width this pane is barely 300pt, and the labelled
-                // picker pushed Save off the edge.
-                ViewThatFits(in: .horizontal) {
-                    modePicker(compact: false)
-                    modePicker(compact: true)
-                }
-
                 Button {
-                    Task { await load(keepSelection: true) }
+                    Task { await refreshOpenFile(force: true) }
                 } label: {
                     Image(systemName: "arrow.clockwise")
                 }
                 .help("Reload from server")
-                .disabled(loading || dirty)
+                .disabled(selected.isEmpty || dirty)
 
                 Button {
                     Task { await save() }
@@ -290,32 +281,26 @@ struct PlanView: View {
             .padding(.vertical, 8)
             Divider()
 
-            switch viewMode {
-            case .edit:
-                sourceEditor
-            case .preview:
-                renderedPreview
-            case .split:
-                // Two readable columns need width this pane does not always
-                // have. Narrow, they used to shoulder each other off the
-                // right edge, leaving the preview outside the window, so
-                // below that width they stack. Measured rather than left to
-                // `ViewThatFits`, which an `HSplitView` will always tell it
-                // fits.
-                GeometryReader { geo in
-                    if geo.size.width >= 560 {
-                        HSplitView {
-                            sourceEditor.frame(minWidth: 240)
-                            renderedPreview.frame(minWidth: 280)
-                        }
-                    } else {
-                        VStack(spacing: 0) {
-                            sourceEditor
-                            Divider()
-                            renderedPreview
-                        }
-                    }
-                }
+            if !unreadable.isEmpty {
+                emptyState(
+                    symbol: "doc.questionmark",
+                    title: "Nothing to show",
+                    detail: unreadable
+                )
+            } else if selected.isEmpty {
+                emptyState(
+                    symbol: "doc.text",
+                    title: "No file open",
+                    detail: "Pick one from the tree on the left."
+                )
+            } else {
+                PlainTextEditor(
+                    text: $draft,
+                    documentID: selected,
+                    contentRevision: editorRevision,
+                    editable: canEdit,
+                    fontSize: 13.5
+                )
             }
         }
     }
@@ -337,91 +322,127 @@ struct PlanView: View {
 
     // MARK: Actions
 
-    private func select(_ file: PlanFile) {
-        guard file.name != selected else { return }
+    private func toggle(_ path: String) {
+        if expanded.contains(path) {
+            expanded.remove(path)
+        } else {
+            expanded.insert(path)
+            if children[path] == nil {
+                Task { await list(path) }
+            }
+        }
+    }
+
+    private func list(_ path: String) async {
+        loadingDirs.insert(path)
+        defer { loadingDirs.remove(path) }
+        do {
+            let listing = try await session.api.taskFiles(
+                projectId: session.projectId,
+                slug: session.slug,
+                path: path
+            )
+            children[path] = listing.entries ?? []
+            error = ""
+        } catch {
+            self.error = error.localizedDescription
+        }
+    }
+
+    private func loadRoot() async {
+        loading = true
+        children = [:]
+        expanded = []
+        selected = ""
+        draft = ""
+        savedBaseline = ""
+        unreadable = ""
+        status = ""
+        await list("")
+        // The plan is what the tab is mostly for; open it when there is one.
+        if (children[""] ?? []).contains(where: { !$0.dir && $0.name == "PLAN.md" }) {
+            await open("PLAN.md")
+        }
+        loading = false
+    }
+
+    /// Re-reads every directory already open, so the tree comes back the shape
+    /// it was rather than collapsed to the root.
+    private func reloadTree() async {
+        for path in [""] + expanded.sorted() {
+            await list(path)
+        }
+        await refreshOpenFile()
+    }
+
+    private func open(_ path: String) async {
+        guard path != selected else { return }
         // Stash the current buffer before switching — drafts survive per file.
         if !selected.isEmpty {
             session.persistFileDraft(selected, text: draft, baseline: savedBaseline)
         }
-        applyBuffer(for: file)
-        status = dirty ? "Restored unsaved edits" : ""
-    }
-
-    private func applyBuffer(for file: PlanFile) {
-        selected = file.name
-        savedBaseline = file.content
-        if let local = session.loadFileDraft(file.name), local != file.content {
-            draft = local
-        } else {
-            draft = file.content
-        }
+        selected = path
+        unreadable = ""
+        status = ""
+        draft = ""
+        savedBaseline = ""
         editorRevision += 1
+        await read(path)
     }
 
-    private func load(keepSelection: Bool = false) async {
-        if !keepSelection { loading = true }
+    private func refreshOpenFile(force: Bool = false) async {
+        guard !selected.isEmpty, force || !dirty else { return }
+        await read(selected)
+    }
+
+    private func read(_ path: String) async {
         do {
-            let detail = try await session.api.taskDetail(
+            let file = try await session.api.taskFiles(
                 projectId: session.projectId,
-                slug: session.slug
+                slug: session.slug,
+                path: path
             )
-            var collected: [PlanFile] = []
-            let templates = detail.templates ?? [:]
-            // Prefer the scanned name list so empty files still appear; fall
-            // back to whatever arrived in `templates`.
-            let names: [String] = {
-                if let listed = detail.task_markdown_files, !listed.isEmpty {
-                    return listed
-                }
-                return Array(templates.keys).sorted()
-            }()
-            var seen = Set<String>()
-            for name in names {
-                guard seen.insert(name).inserted else { continue }
-                collected.append(PlanFile(name: name, content: templates[name] ?? ""))
-            }
-            for (name, content) in templates where seen.insert(name).inserted {
-                collected.append(PlanFile(name: name, content: content))
-            }
-            collected.sort { left, right in
-                if left.name == "PLAN.md" { return true }
-                if right.name == "PLAN.md" { return false }
-                return left.name.localizedCaseInsensitiveCompare(right.name) == .orderedAscending
-            }
-            files = collected
-            let pick: String = {
-                if keepSelection,
-                   collected.contains(where: { $0.name == selected }) {
-                    return selected
-                }
-                if collected.contains(where: { $0.name == "PLAN.md" }) {
-                    return "PLAN.md"
-                }
-                return collected.first?.name ?? ""
-            }()
-            // Keep typing in progress when a background reload lands.
-            if keepSelection, dirty, pick == selected {
-                if let idx = collected.firstIndex(where: { $0.name == selected }) {
-                    savedBaseline = collected[idx].content
-                }
-            } else if let file = collected.first(where: { $0.name == pick }) {
-                applyBuffer(for: file)
-            } else {
-                selected = ""
+            // A slow reply for a file the reader has already navigated away
+            // from must not land in the editor.
+            guard selected == path else { return }
+            if let reason = file.error, !reason.isEmpty {
+                unreadable = explain(reason, size: file.size)
                 draft = ""
                 savedBaseline = ""
                 editorRevision += 1
+                return
             }
-            error = ""
-            if dirty {
-                status = status.isEmpty ? "Unsaved edits kept" : status
-            } else {
-                status = ""
-            }
+            unreadable = ""
+            applyBuffer(path: path, content: file.body ?? "")
         } catch {
-            self.error = error.localizedDescription
+            guard selected == path else { return }
+            unreadable = error.localizedDescription
         }
-        loading = false
+    }
+
+    private func explain(_ reason: String, size: Int?) -> String {
+        switch reason {
+        case "binary":
+            return "This is not a text file, so there is no source to show."
+        case "too large":
+            let mb = Double(size ?? 0) / 1_048_576
+            return String(
+                format: "This file is %.1f MB, past what the editor will open.", mb
+            )
+        default:
+            return "The server could not read this file."
+        }
+    }
+
+    private func applyBuffer(path: String, content: String) {
+        savedBaseline = content
+        if let local = session.loadFileDraft(path), local != content {
+            draft = local
+            status = "Restored unsaved edits"
+        } else {
+            draft = content
+        }
+        editorRevision += 1
     }
 
     private func scheduleAutosave() {
@@ -435,23 +456,23 @@ struct PlanView: View {
     }
 
     private func save(silent: Bool = false) async {
-        guard canEdit, let name = current?.name else { return }
+        guard canEdit, !selected.isEmpty else { return }
+        let name = selected
         let payload = draft
         guard payload != savedBaseline else { return }
-        if !silent { saving = true }
-        if !silent { status = "" }
+        if !silent {
+            saving = true
+            status = ""
+        }
         do {
             try await session.api.writeTemplate(
                 projectId: session.projectId,
                 slug: session.slug,
-                name: (name as NSString).lastPathComponent,
+                name: name,
                 content: payload
             )
             savedBaseline = payload
             session.clearFileDraft(name)
-            if let idx = files.firstIndex(where: { $0.name == name }) {
-                files[idx] = PlanFile(name: name, content: payload)
-            }
             status = silent ? "Auto-saved" : "Saved"
         } catch {
             status = error.localizedDescription
@@ -459,5 +480,3 @@ struct PlanView: View {
         if !silent { saving = false }
     }
 }
-
-// MARK: - Plain source editor

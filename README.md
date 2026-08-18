@@ -204,7 +204,7 @@ copy it to `~/Library/LaunchAgents/com.loom.desktop.plist`, then
 | `NotesView.swift` | The project scratchpad (`.RUD/NOTES.md`), ⌘⇧N |
 | `PlanDigest.swift` | The read-only `PLAN.md` under the terminal |
 | `PlanView.swift` | The Files tab: the task's folder tree and source editor |
-| `PlainTextEditor.swift` | The markdown source editor, shared by Files and Notes |
+| `PlainTextEditor.swift` | The plain source editor, shared by Files and Notes |
 | `MarkdownBlocks.swift` | Agent turns as blocks: tables, lists, code |
 | `MarkdownPreview.swift` | `marked` in a `WKWebView`, shared by the digest and notes |
 | `DiffView.swift` | The Changes tab: per-file diffs, push / merge |

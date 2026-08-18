@@ -105,7 +105,11 @@ struct NotesView: View {
                 .foregroundColor(.secondary)
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
         } else if showPreview {
-            MarkdownPreview(markdown: text, documentID: "notes/\(currentProject?.id ?? "")")
+            MarkdownPreview(
+                markdown: text,
+                documentID: "notes/\(currentProject?.id ?? "")",
+                assetProject: currentProject?.id ?? ""
+            )
         } else {
             PlainTextEditor(
                 text: $text,

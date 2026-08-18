@@ -214,7 +214,12 @@ struct PlanView: View {
     }
 
     private var renderedPreview: some View {
-        MarkdownPreview(markdown: draft, documentID: selected)
+        MarkdownPreview(
+            markdown: draft,
+            documentID: selected,
+            assetProject: session.projectId,
+            assetTask: session.slug
+        )
     }
 
     private var editorPane: some View {

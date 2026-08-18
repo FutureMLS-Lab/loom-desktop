@@ -159,7 +159,9 @@ struct PlanDigest: View {
                 documentID: "\(session.id)/\(selected)",
                 compact: true,
                 measuredHeight: $contentHeight,
-                findRequest: findRequest
+                findRequest: findRequest,
+                assetProject: session.projectId,
+                assetTask: session.slug
             )
             .frame(height: contentHeight)
             .onChange(of: contentHeight) { _, height in

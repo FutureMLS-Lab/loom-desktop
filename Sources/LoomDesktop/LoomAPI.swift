@@ -335,6 +335,36 @@ struct LoomAPI {
     /// noticed. The gateway holds its upstream leg open after we go away, so
     /// the server never sees the close and its `tmux attach` — a real client,
     /// pinning the pane's size — outlives every terminal ever opened.
+    /// A figure referenced by a markdown document, fetched as bytes.
+    ///
+    /// Without a task the base is the project's `.RUD/`, which is where
+    /// `NOTES.md` and its images live; with one it is that task's directory.
+    func asset(projectId: String, task: String, path: String) async throws -> (Data, String) {
+        var components = URLComponents(string: LoomSettings.baseURL + "/api/asset")
+        components?.queryItems = [
+            URLQueryItem(name: "path", value: path),
+            URLQueryItem(name: "project", value: projectId),
+        ] + (task.isEmpty ? [] : [URLQueryItem(name: "task", value: task)])
+        guard let url = components?.url else {
+            throw LoomAPIError(message: "Invalid asset URL", status: 0)
+        }
+        var request = URLRequest(url: url)
+        let token = LoomSettings.token
+        if !token.isEmpty {
+            request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+        }
+        let (data, response) = try await Self.session.data(for: request)
+        let http = response as? HTTPURLResponse
+        guard let http, (200..<300).contains(http.statusCode) else {
+            throw LoomAPIError(
+                message: "Asset unavailable (\(http?.statusCode ?? 0))",
+                status: http?.statusCode ?? 0
+            )
+        }
+        let type = http.value(forHTTPHeaderField: "Content-Type") ?? "application/octet-stream"
+        return (data, type)
+    }
+
     func closeStream(streamId: String) async throws {
         let _: OkResponse = try await request(
             "/api/tmux/stream-close",

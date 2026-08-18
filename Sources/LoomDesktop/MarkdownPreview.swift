@@ -44,7 +44,45 @@ final class PassThroughWebView: WKWebView {
 /// article typography. Used by the Files tab, the digest under the terminal,
 /// and the notes window, so large documents stay readable without the old
 /// SwiftUI markdown path that froze the UI.
+/// Serves `loom-asset://` requests from the markdown preview by fetching the
+/// figure through the API, which is the only party holding the token.
+private final class AssetSchemeHandler: NSObject, WKURLSchemeHandler {
+    private let api = LoomAPI()
+
+    func webView(_ webView: WKWebView, start task: WKURLSchemeTask) {
+        guard let url = task.request.url,
+              let parts = URLComponents(url: url, resolvingAgainstBaseURL: false)
+        else {
+            task.didFailWithError(LoomAPIError(message: "bad asset url", status: 0))
+            return
+        }
+        let items = parts.queryItems ?? []
+        func value(_ name: String) -> String {
+            items.first { $0.name == name }?.value ?? ""
+        }
+        let path = value("path"), project = value("project"), slug = value("task")
+        Task { [api] in
+            do {
+                let (data, type) = try await api.asset(projectId: project, task: slug, path: path)
+                let response = URLResponse(
+                    url: url, mimeType: type,
+                    expectedContentLength: data.count, textEncodingName: nil
+                )
+                task.didReceive(response)
+                task.didReceive(data)
+                task.didFinish()
+            } catch {
+                task.didFailWithError(error)
+            }
+        }
+    }
+
+    func webView(_ webView: WKWebView, stop task: WKURLSchemeTask) {}
+}
+
 struct MarkdownPreview: NSViewRepresentable {
+    /// Our own scheme, so `<img>` can reach a figure the server holds.
+    static let assetScheme = "loom-asset"
     let markdown: String
     let documentID: String
     /// Smaller type and tighter margins, for the digest under the terminal.
@@ -57,6 +95,11 @@ struct MarkdownPreview: NSViewRepresentable {
     /// terminal, where focus is usually in the pane rather than in here, so
     /// ⌘F alone would never reach this view.
     var findRequest = 0
+    /// Where a relative image path in the document resolves to. Figures live
+    /// next to the markdown on the server, so they are fetched rather than
+    /// read from disk; without a task the base is the project's `.RUD/`.
+    var assetProject = ""
+    var assetTask = ""
 
     func makeCoordinator() -> Coordinator { Coordinator() }
 
@@ -65,6 +108,10 @@ struct MarkdownPreview: NSViewRepresentable {
         let config = WKWebViewConfiguration()
         config.suppressesIncrementalRendering = false
         config.userContentController = controller
+        // Images come from the server, behind the same bearer token as
+        // everything else, which an <img> cannot send for itself. A scheme of
+        // our own lets the fetch happen in Swift and hands the bytes back.
+        config.setURLSchemeHandler(AssetSchemeHandler(), forURLScheme: MarkdownPreview.assetScheme)
         let web = PassThroughWebView(frame: .zero, configuration: config)
         // Sized to its content, this view has nothing of its own to scroll, so
         // the wheel belongs to the page around it. A web view swallows wheel
@@ -85,6 +132,8 @@ struct MarkdownPreview: NSViewRepresentable {
         context.coordinator.compact = compact
         context.coordinator.measuredHeight = measuredHeight
         context.coordinator.autosize = measuredHeight != nil
+        context.coordinator.assetProject = assetProject
+        context.coordinator.assetTask = assetTask
         return web
     }
 
@@ -92,6 +141,12 @@ struct MarkdownPreview: NSViewRepresentable {
         context.coordinator.webView = webView
         context.coordinator.measuredHeight = measuredHeight
         (webView as? PassThroughWebView)?.forwardsScrollWheel = measuredHeight != nil
+        if context.coordinator.assetProject != assetProject
+            || context.coordinator.assetTask != assetTask {
+            context.coordinator.assetProject = assetProject
+            context.coordinator.assetTask = assetTask
+            context.coordinator.applyAssetScope()
+        }
         let docChanged = context.coordinator.documentID != documentID
         if docChanged {
             context.coordinator.documentID = documentID
@@ -111,6 +166,8 @@ struct MarkdownPreview: NSViewRepresentable {
         weak var webView: WKWebView?
         var documentID = ""
         var findRequest = 0
+        var assetProject = ""
+        var assetTask = ""
         var pendingMarkdown = ""
         var ready = false
         var compact = false
@@ -146,7 +203,18 @@ struct MarkdownPreview: NSViewRepresentable {
                 webView.evaluateJavaScript("window.__loomAutosize(true);", completionHandler: nil)
             }
             applyCompact()
+            applyAssetScope()
             render(pendingMarkdown, immediate: true)
+        }
+
+        func applyAssetScope() {
+            guard let webView, ready else { return }
+            let project = assetProject.replacingOccurrences(of: "'", with: "")
+            let task = assetTask.replacingOccurrences(of: "'", with: "")
+            webView.evaluateJavaScript(
+                "window.__loomAssetScope('\(project)', '\(task)');",
+                completionHandler: nil
+            )
         }
 
         func applyCompact() {
@@ -395,6 +463,33 @@ struct MarkdownPreview: NSViewRepresentable {
             }
             window.addEventListener('resize', reportHeight);
 
+            // Figures. A relative path in the document means "next to this
+            // file on the server", which the page cannot read for itself, so
+            // it is pointed at our own scheme and fetched with the token.
+            var assetProject = '', assetTask = '';
+            window.__loomAssetScope = function (project, task) {
+              assetProject = project || '';
+              assetTask = task || '';
+              linkAssets();
+            };
+            function linkAssets() {
+              if (!assetProject) return;
+              var imgs = document.querySelectorAll('#content img');
+              for (var i = 0; i < imgs.length; i++) {
+                var img = imgs[i];
+                var raw = img.getAttribute('data-loom-src') || img.getAttribute('src') || '';
+                if (!raw || /^(https?:|data:|loom-asset:)/i.test(raw)) continue;
+                img.setAttribute('data-loom-src', raw);
+                img.src = 'loom-asset://figure?path=' + encodeURIComponent(raw)
+                  + '&project=' + encodeURIComponent(assetProject)
+                  + (assetTask ? '&task=' + encodeURIComponent(assetTask) : '');
+                img.addEventListener('error', function () {
+                  this.classList.add('missing');
+                  this.alt = (this.alt || 'figure') + ' — not found on the server';
+                }, { once: true });
+              }
+            }
+
             // Find. `WKWebView.find` would highlight but gives no count and no
             // field to type into, so the whole thing lives in the page: wrap
             // matches in <mark>, step through them, and put the document back
@@ -507,6 +602,7 @@ struct MarkdownPreview: NSViewRepresentable {
               } catch (e) {
                 root.innerHTML = '<pre>' + escapeHtml(md) + '</pre>';
               }
+              linkAssets();
               window.scrollTo(0, keepY);
               reportHeight();
             };

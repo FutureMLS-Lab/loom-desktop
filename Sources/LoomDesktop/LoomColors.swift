@@ -76,3 +76,16 @@ enum LoomColors {
     static let sidebarWashTop = dynamic(light: 0xF8F6F0, dark: 0x22211B)
     static let sidebarWashBottom = dynamic(light: 0xEBE7DC, dark: 0x1B1A15)
 }
+
+extension ConnectionState {
+    /// One colour for "can Loom be reached", so the server bar, the sidebar
+    /// footer and the dock cannot disagree about what amber means. Lives here
+    /// rather than on the state itself, which is model code and holds no view.
+    var dotColor: Color {
+        switch self {
+        case .connecting: return LoomColors.amber
+        case .online: return LoomColors.green
+        case .offline: return LoomColors.red
+        }
+    }
+}

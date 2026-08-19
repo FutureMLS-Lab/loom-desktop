@@ -10,7 +10,7 @@ struct TerminalPane: View {
     @ObservedObject var session: ChatSession
     @ObservedObject private var terminal = TerminalSession.shared
 
-    @AppStorage("terminalFontSize") private var fontSize: Double = 14
+    @AppStorage("terminalFontSize") private var fontSize = TerminalSession.defaultFontSize
     @AppStorage("terminalPlanExpanded") private var planExpanded = true
     @State private var composerHeight = ComposerField.minHeight
     @State private var composerRevision = 0

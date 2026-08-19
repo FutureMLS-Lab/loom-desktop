@@ -1,9 +1,10 @@
 import Foundation
 import Combine
 
-/// Everything one chat window knows about its task: the conversation feed,
-/// polling, sending, answering structured questions, and the pane target for
-/// interrupts. Mirrors the iOS app's feed behavior: full read on open, tail
+/// Everything the open task knows about itself, shared by all four of its
+/// tabs: the conversation feed, polling, sending, answering structured
+/// questions, the run monitor, and the pane target for interrupts. Mirrors
+/// the iOS app's feed behavior: full read on open, tail
 /// polls merged by message id, and a staggered refresh burst after a send so
 /// the reply lands quickly.
 @MainActor
@@ -389,6 +390,36 @@ final class ChatSession: ObservableObject, Identifiable {
             // Newest first: resuming almost always means "the one I was just
             // in", and on-disk transcripts arrive in no useful order.
             sessions = (list.sessions ?? []).sorted { ($0.mtime ?? 0) > ($1.mtime ?? 0) }
+        }
+    }
+
+    // MARK: Run monitor
+
+    /// Whether Loom watches this task's pane for a phrase meaning it finished
+    /// or got stuck, and says so even when no one is looking at the pane.
+    @Published private(set) var monitorOn = false
+    @Published private(set) var monitorBusy = false
+
+    /// Read once when the menu that shows it first opens, rather than on every
+    /// detail poll: it changes only when someone changes it.
+    func loadMonitor() {
+        Task {
+            guard let status = try? await api.monitor(projectId: projectId, slug: slug)
+            else { return }
+            monitorOn = status.isOn
+        }
+    }
+
+    func setMonitor(_ on: Bool) {
+        guard !monitorBusy else { return }
+        monitorBusy = true
+        Task {
+            if let status = try? await api.setMonitor(
+                projectId: projectId, slug: slug, on: on
+            ) {
+                monitorOn = status.isOn
+            }
+            monitorBusy = false
         }
     }
 

@@ -8,10 +8,11 @@ final class FirstMouseHostingView<Content: View>: NSHostingView<Content> {
     override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
 }
 
-/// The always-on-top dock. A titled window whose title bar is invisible but
-/// whose traffic-light buttons stay in place (the window's own close/zoom
-/// controls), while the SwiftUI header carries the loom menu and the hide
-/// button. NOT `.borderless` — macOS 26 (Tahoe) has an Apple-confirmed
+/// The always-on-top dock. A titled window with both its title bar and its
+/// traffic lights hidden — the dock is a card, not a document window — while
+/// the SwiftUI header carries the loom menu and the hide button. It opens at
+/// the top of the screen but can be dragged anywhere and stays put.
+/// NOT `.borderless` — macOS 26 (Tahoe) has an Apple-confirmed
 /// system regression where borderless windows stop receiving clicks and
 /// drags entirely, so the whole design rides on the ordinary titled path.
 final class PanelWindow: NSPanel, NSWindowDelegate {
@@ -86,9 +87,6 @@ final class PanelWindow: NSPanel, NSWindowDelegate {
 
         reposition()
     }
-
-    /// Just enough for the header strip: loom menu + counts + two buttons.
-    private static let compactWidth: CGFloat = 240
 
     /// Called only for user-driven resizes, which makes it the place to learn the
     /// width the user wants. The height is refused: it belongs to the content.

@@ -185,6 +185,14 @@ struct TaskPane: View {
                 Button("Start agent") { session.startAgent() }
             }
             Divider()
+            Toggle("Notify when finished", isOn: Binding(
+                get: { session.monitorOn },
+                set: { session.setMonitor($0) }
+            ))
+            .disabled(session.monitorBusy)
+            .help("Loom watches the pane for a finishing phrase and tells you, "
+                  + "whether or not this task is open")
+            Divider()
             if session.sessions.isEmpty {
                 Text("No past sessions")
             } else {
@@ -202,7 +210,10 @@ struct TaskPane: View {
         .menuIndicator(.hidden)
         .fixedSize()
         .disabled(session.starting)
-        .onAppear { session.loadSessions() }
+        .onAppear {
+            session.loadSessions()
+            session.loadMonitor()
+        }
     }
 
     private static func sessionLabel(_ session: SessionInfo) -> String {

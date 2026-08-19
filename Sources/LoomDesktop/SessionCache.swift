@@ -3,8 +3,9 @@ import Combine
 
 /// Keeps one `ChatSession` per task for the inline task pane. Only the visible
 /// task polls: switching away stops the previous session, so browsing a fleet
-/// of forty tasks does not leave forty pollers running. Sessions are kept (not
-/// discarded) so returning to a task shows its transcript immediately.
+/// of forty tasks does not leave forty pollers running. A stopped session is
+/// kept rather than discarded, so returning to a task shows its transcript at
+/// once — up to the dozen most recent, after which the oldest is let go.
 @MainActor
 final class SessionCache: ObservableObject {
     private var sessions: [String: ChatSession] = [:]

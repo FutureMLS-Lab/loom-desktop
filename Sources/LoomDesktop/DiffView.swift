@@ -12,24 +12,53 @@ struct ChangesView: View {
     @State private var error = ""
     @State private var selection: DiffFile.ID?
     @State private var worktrees: [TaskDetail.WorktreeStatus] = []
+    @State private var candidates: [WorktreeCandidate] = []
     @State private var busyPath: String?
+    @State private var pushingAll = false
     @State private var actionResult = ""
+    @State private var worktreeToRemove: TaskDetail.WorktreeStatus?
 
     var body: some View {
         VStack(spacing: 0) {
-            if !worktrees.isEmpty {
+            // Shown even with no worktree yet: this is where you add the first
+            // one, so hiding the bar until one exists left no way in.
+            if !worktrees.isEmpty || !candidates.isEmpty {
                 WorktreeBar(
                     worktrees: worktrees,
+                    candidates: candidates,
                     busyPath: busyPath,
+                    pushingAll: pushingAll,
                     result: actionResult,
                     onPush: { await act($0, merge: false) },
-                    onMerge: { await act($0, merge: true) }
+                    onMerge: { await act($0, merge: true) },
+                    onAdd: { await addWorktree($0) },
+                    onRemove: { worktreeToRemove = $0 },
+                    onPushAll: { await pushAll() }
                 )
                 Divider()
             }
             content
         }
         .task { await load() }
+        .confirmationDialog(
+            "Remove \(worktreeToRemove?.repoName ?? "") from this task?",
+            isPresented: Binding(
+                get: { worktreeToRemove != nil },
+                set: { if !$0 { worktreeToRemove = nil } }
+            ),
+            titleVisibility: .visible
+        ) {
+            Button("Remove", role: .destructive) {
+                if let worktree = worktreeToRemove {
+                    worktreeToRemove = nil
+                    Task { await removeWorktree(worktree) }
+                }
+            }
+            Button("Cancel", role: .cancel) { worktreeToRemove = nil }
+        } message: {
+            Text("The checkout is deleted. Its branch and commits stay in the "
+                 + "repository it came from — push first if they only exist here.")
+        }
     }
 
     private var fileList: some View {
@@ -91,6 +120,64 @@ struct ChangesView: View {
             actionResult = error.localizedDescription
         }
         busyPath = nil
+        await load()
+    }
+
+    private func addWorktree(_ candidate: WorktreeCandidate) async {
+        busyPath = candidate.path
+        actionResult = "Creating a worktree from \(candidate.name)…"
+        do {
+            try await session.api.addWorktree(
+                projectId: session.projectId, slug: session.slug, repoPath: candidate.path
+            )
+            actionResult = "Added \(candidate.name)"
+        } catch {
+            actionResult = error.localizedDescription
+        }
+        busyPath = nil
+        await load()
+    }
+
+    private func removeWorktree(_ worktree: TaskDetail.WorktreeStatus) async {
+        busyPath = worktree.path
+        actionResult = ""
+        do {
+            try await session.api.removeWorktree(
+                projectId: session.projectId, slug: session.slug, path: worktree.path
+            )
+            actionResult = "Removed \(worktree.repoName)"
+        } catch {
+            actionResult = error.localizedDescription
+        }
+        busyPath = nil
+        await load()
+    }
+
+    /// The server answers 200 even when a push failed, so the per-worktree
+    /// rows are the only place the truth is.
+    private func pushAll() async {
+        pushingAll = true
+        actionResult = ""
+        do {
+            let result = try await session.api.pushAllWorktrees(
+                projectId: session.projectId, slug: session.slug
+            )
+            let rows = result.results ?? []
+            let failed = rows.filter { $0.ok != true }
+            if failed.isEmpty {
+                actionResult = "Pushed \(rows.count) worktree\(rows.count == 1 ? "" : "s")"
+            } else {
+                actionResult = failed
+                    .map { row in
+                        let name = (row.path as NSString?)?.lastPathComponent ?? "worktree"
+                        return "\(name): \(row.error ?? row.message ?? "push failed")"
+                    }
+                    .joined(separator: " · ")
+            }
+        } catch {
+            actionResult = error.localizedDescription
+        }
+        pushingAll = false
         await load()
     }
 
@@ -158,9 +245,13 @@ struct ChangesView: View {
         async let detail = try? session.api.taskDetail(
             projectId: session.projectId, slug: session.slug
         )
+        async let offered = try? session.api.worktreeCandidates(
+            projectId: session.projectId, slug: session.slug
+        )
         do {
             let diff = try await session.api.diff(projectId: session.projectId, slug: session.slug)
             worktrees = await detail?.worktree_statuses ?? []
+            candidates = await offered?.candidates ?? []
             var collected: [DiffFile] = []
             var worktreeErrors: [String] = []
             for worktree in diff.worktrees ?? [] {
@@ -183,15 +274,26 @@ struct ChangesView: View {
     }
 }
 
-/// Branch state and the two things you do after reading a diff: push the
-/// branch, or merge it back. Both are the server's operations — merge refuses
-/// on a dirty tree, aborts on conflicts, and never pushes.
+/// The task's worktrees and what you do with them after reading a diff: push a
+/// branch, merge it back, add another repository, or drop one. Merge and push
+/// are the server's operations — merge refuses on a dirty tree, aborts on
+/// conflicts, and never pushes.
 private struct WorktreeBar: View {
     let worktrees: [TaskDetail.WorktreeStatus]
+    let candidates: [WorktreeCandidate]
     let busyPath: String?
+    let pushingAll: Bool
     let result: String
     let onPush: (TaskDetail.WorktreeStatus) async -> Void
     let onMerge: (TaskDetail.WorktreeStatus) async -> Void
+    let onAdd: (WorktreeCandidate) async -> Void
+    let onRemove: (TaskDetail.WorktreeStatus) -> Void
+    let onPushAll: () async -> Void
+
+    /// Repositories not already checked out for this task.
+    private var available: [WorktreeCandidate] {
+        candidates.filter { !$0.alreadyCreated }
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
@@ -214,10 +316,53 @@ private struct WorktreeBar: View {
                         Button("Merge") { Task { await onMerge(worktree) } }
                             .help("Merge this branch into its base — refuses if the tree is dirty")
                             .disabled(worktree.clean == false)
+                        Button {
+                            onRemove(worktree)
+                        } label: {
+                            Image(systemName: "xmark")
+                        }
+                        .buttonStyle(.plain)
+                        .foregroundColor(.secondary)
+                        .help("Remove this worktree from the task")
                     }
                 }
                 .controlSize(.small)
             }
+
+            HStack(spacing: 10) {
+                if available.isEmpty {
+                    Text(worktrees.isEmpty
+                         ? "No repository to branch from — check the project's code root."
+                         : "Every repository in this project is checked out.")
+                        .font(.system(size: 11.5))
+                        .foregroundColor(.secondary)
+                } else {
+                    Menu("Add worktree") {
+                        ForEach(available) { candidate in
+                            Button {
+                                Task { await onAdd(candidate) }
+                            } label: {
+                                Text(candidate.isPreferred
+                                     ? "\(candidate.name) (this project)"
+                                     : candidate.name)
+                            }
+                        }
+                    }
+                    .fixedSize()
+                    .help("Branch a repository into this task's work/ directory")
+                }
+                Spacer(minLength: 8)
+                if worktrees.count > 1 {
+                    if pushingAll {
+                        ProgressView().controlSize(.small)
+                    } else {
+                        Button("Push all") { Task { await onPushAll() } }
+                            .help("Push every worktree's branch")
+                    }
+                }
+            }
+            .controlSize(.small)
+
             if !result.isEmpty {
                 Text(result)
                     .font(.system(size: 11.5))

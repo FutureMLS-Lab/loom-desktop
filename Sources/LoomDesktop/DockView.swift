@@ -201,13 +201,7 @@ private struct ConnectionDot: View {
             .help(help)
     }
 
-    private var color: Color {
-        switch connection {
-        case .connecting: return .yellow
-        case .online: return LoomColors.green
-        case .offline: return .red
-        }
-    }
+    private var color: Color { connection.dotColor }
 
     private var help: String {
         switch connection {

@@ -1,8 +1,9 @@
 import SwiftUI
 
-/// The chat module: the same conversation the Loom web console and the iOS
-/// app render — user / assistant / tool / question / event rows — with a
-/// composer that types straight into the task's agent pane.
+/// The Chat tab: the same conversation the Loom web console and the iOS app
+/// render — user / assistant / tool / question / event rows — with a composer
+/// that types straight into the task's agent pane. The task's title and agent
+/// state belong to the window around it, in `TaskWindowView`.
 struct ChatView: View {
     @ObservedObject var session: ChatSession
     @State private var stickToLatest = true
@@ -18,71 +19,9 @@ struct ChatView: View {
             Divider()
             composer
         }
-        .frame(minWidth: 420, minHeight: 380)
         .background(LoomColors.bgBase)
         .onChange(of: session.chatDraft) { _, _ in
             session.persistChatDraft()
-        }
-    }
-
-    // MARK: Header
-
-    private var header: some View {
-        HStack(spacing: 10) {
-            VStack(alignment: .leading, spacing: 2) {
-                Text(session.title)
-                    .font(.system(size: 14, weight: .semibold))
-                    .lineLimit(1)
-                Text("\(session.projectLabel) · \(session.slug)")
-                    .font(.system(size: 12))
-                    .foregroundColor(.secondary)
-                    .lineLimit(1)
-            }
-            Spacer()
-            statusChip
-        }
-        .padding(.horizontal, 14)
-        .padding(.vertical, 10)
-    }
-
-    @ViewBuilder
-    private var statusChip: some View {
-        if session.working {
-            HStack(spacing: 6) {
-                LoomSpinnerDot(size: 13)
-                Text("Working")
-                    .font(.system(size: 12, weight: .medium))
-                    .foregroundColor(LoomColors.accent)
-            }
-            .padding(.horizontal, 9)
-            .padding(.vertical, 4)
-            .background(LoomColors.accent.opacity(0.10), in: Rectangle())
-        } else if session.online {
-            HStack(spacing: 6) {
-                Circle().fill(LoomColors.green).frame(width: 7, height: 7)
-                Text("Ready")
-                    .font(.system(size: 12, weight: .medium))
-                    .foregroundColor(LoomColors.green)
-            }
-            .padding(.horizontal, 9)
-            .padding(.vertical, 4)
-            .background(LoomColors.green.opacity(0.10), in: Rectangle())
-        } else {
-            HStack(spacing: 6) {
-                Circle().fill(Color.secondary).frame(width: 7, height: 7)
-                Text("Offline")
-                    .font(.system(size: 12, weight: .medium))
-                    .foregroundColor(.secondary)
-                Button(session.starting ? "Starting…" : "Start agent") {
-                    session.startAgent()
-                }
-                .buttonStyle(.link)
-                .font(.system(size: 12, weight: .medium))
-                .disabled(session.starting)
-            }
-            .padding(.horizontal, 9)
-            .padding(.vertical, 4)
-            .background(Color.secondary.opacity(0.08), in: Rectangle())
         }
     }
 

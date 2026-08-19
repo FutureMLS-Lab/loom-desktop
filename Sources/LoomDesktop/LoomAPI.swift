@@ -7,7 +7,8 @@ struct LoomAPIError: LocalizedError {
 }
 
 /// Thin async client for the Loom HTTP API. Reads the base URL and token from
-/// UserDefaults on every call so settings changes apply without a restart.
+/// `LoomSettings` on every call, so switching server or editing one applies
+/// without a restart.
 struct LoomAPI {
     private static let session: URLSession = {
         let config = URLSessionConfiguration.ephemeral
@@ -16,10 +17,21 @@ struct LoomAPI {
         return URLSession(configuration: config)
     }()
 
+    /// For the few calls that wait on git rather than on Loom. A clone of a
+    /// large repository, or a push across several worktrees, runs for minutes
+    /// server-side — the ordinary session would give up long before the answer.
+    private static let patientSession: URLSession = {
+        let config = URLSessionConfiguration.ephemeral
+        config.timeoutIntervalForRequest = 120
+        config.timeoutIntervalForResource = 900
+        return URLSession(configuration: config)
+    }()
+
     private func request<T: Decodable>(
         _ path: String,
         method: String = "GET",
-        body: [String: Any]? = nil
+        body: [String: Any]? = nil,
+        patient: Bool = false
     ) async throws -> T {
         guard let url = URL(string: LoomSettings.baseURL + path) else {
             throw LoomAPIError(message: "Invalid Loom URL", status: 0)
@@ -39,7 +51,8 @@ struct LoomAPI {
             req.httpBody = Data("{}".utf8)
         }
 
-        let (data, response) = try await Self.session.data(for: req)
+        let session = patient ? Self.patientSession : Self.session
+        let (data, response) = try await session.data(for: req)
         let status = (response as? HTTPURLResponse)?.statusCode ?? 0
         guard (200..<300).contains(status) else {
             let detail = (try? JSONDecoder().decode(OkResponse.self, from: data))?.error
@@ -68,6 +81,53 @@ struct LoomAPI {
     func projects() async throws -> [LoomProject] {
         let out: ProjectsResponse = try await request("/api/projects")
         return out.projects ?? []
+    }
+
+    /// The same call, kept whole for the Add sheet, which also needs the root
+    /// new folders must live under and its children to offer as shortcuts.
+    func workspace() async throws -> ProjectsResponse {
+        try await request("/api/projects")
+    }
+
+    /// Registers a directory as a project. `source` decides how it is obtained
+    /// first: an existing directory, one created now, or one cloned — the last
+    /// two only inside the server's launch root, which the server enforces.
+    func addProject(
+        path: String,
+        source: ProjectSource,
+        repoURL: String = "",
+        codeRoot: String = "."
+    ) async throws {
+        var body: [String: Any] = [
+            "path": path,
+            "mode": source.rawValue,
+            "code_root_pattern": codeRoot.isEmpty ? "." : codeRoot,
+        ]
+        if source == .clone { body["repo_url"] = repoURL }
+        let _: OkResponse = try await request(
+            "/api/projects",
+            method: "POST",
+            body: body,
+            patient: source == .clone
+        )
+    }
+
+    /// Unregisters a project. The directory and everything in it stays.
+    func removeProject(id: String) async throws {
+        let _: OkResponse = try await request(
+            "/api/projects/\(slugPath(id))",
+            method: "DELETE"
+        )
+    }
+
+    /// Where inside the project its code lives, as a path relative to the
+    /// project root — this is what worktree candidates are searched under.
+    func setCodeRoot(id: String, pattern: String) async throws {
+        let _: OkResponse = try await request(
+            "/api/projects/\(slugPath(id))/code-root",
+            method: "POST",
+            body: ["pattern": pattern.isEmpty ? "." : pattern]
+        )
     }
 
     func tasks(projectId: String) async throws -> [LoomTaskMeta] {
@@ -284,7 +344,8 @@ struct LoomAPI {
         try await request(
             scoped("/api/tasks/\(slugPath(slug))/worktree/push", projectId),
             method: "POST",
-            body: ["path": path]
+            body: ["path": path],
+            patient: true
         )
     }
 
@@ -294,7 +355,69 @@ struct LoomAPI {
         try await request(
             scoped("/api/tasks/\(slugPath(slug))/worktree/merge", projectId),
             method: "POST",
-            body: ["path": path]
+            body: ["path": path],
+            patient: true
+        )
+    }
+
+    /// The repositories this task could branch from. The server marks the one
+    /// it considers the project's own, and which are already checked out.
+    func worktreeCandidates(
+        projectId: String, slug: String
+    ) async throws -> WorktreeCandidates {
+        try await request(
+            scoped("/api/tasks/\(slugPath(slug))/worktree-candidates", projectId)
+        )
+    }
+
+    /// Adds a worktree for `repoPath`, which the server will only accept if it
+    /// is one of the candidates it just offered.
+    func addWorktree(projectId: String, slug: String, repoPath: String) async throws {
+        let _: OkResponse = try await request(
+            scoped("/api/tasks/\(slugPath(slug))/worktree", projectId),
+            method: "POST",
+            body: ["source_repo": repoPath],
+            patient: true
+        )
+    }
+
+    /// Removes a worktree — this one does delete the checkout on disk, though
+    /// the branch and its commits survive in the repository it came from.
+    func removeWorktree(projectId: String, slug: String, path: String) async throws {
+        let encoded = path.addingPercentEncoding(
+            withAllowedCharacters: .urlQueryAllowed
+        ) ?? path
+        let _: OkResponse = try await request(
+            scoped("/api/tasks/\(slugPath(slug))/worktree?path=\(encoded)", projectId),
+            method: "DELETE"
+        )
+    }
+
+    /// Pushes every worktree the task has. This answers 200 even when a push
+    /// failed, so the result has to be read row by row.
+    func pushAllWorktrees(projectId: String, slug: String) async throws -> PushAllResult {
+        try await request(
+            scoped("/api/tasks/\(slugPath(slug))/worktrees/push-all", projectId),
+            method: "POST",
+            patient: true
+        )
+    }
+
+    // MARK: Run monitor
+
+    func monitor(projectId: String, slug: String) async throws -> MonitorStatus {
+        try await request(scoped("/api/tasks/\(slugPath(slug))/monitor", projectId))
+    }
+
+    /// Watches the pane for a phrase that means the agent is done or stuck.
+    /// An empty pattern asks for the server's own, which is what the app sends.
+    func setMonitor(
+        projectId: String, slug: String, on: Bool
+    ) async throws -> MonitorStatus {
+        try await request(
+            scoped("/api/tasks/\(slugPath(slug))/monitor", projectId),
+            method: on ? "POST" : "DELETE",
+            body: on ? ["pattern": ""] : nil
         )
     }
 

@@ -19,6 +19,33 @@ struct LoomProject: Decodable, Identifiable, Equatable {
 
 struct ProjectsResponse: Decodable {
     var projects: [LoomProject]?
+    /// The directory the server was launched in. A new folder may only be
+    /// created inside it, so the Add sheet offers its children as shortcuts
+    /// and says so when a path is rejected.
+    var launchRoot: String?
+    var launchRootChildren: [LaunchChild]?
+
+    struct LaunchChild: Decodable, Identifiable, Equatable {
+        var name: String
+        var path: String
+
+        var id: String { path }
+    }
+}
+
+/// How `POST /api/projects` should get a directory before registering it.
+enum ProjectSource: String, CaseIterable, Identifiable {
+    case existing, empty, clone
+
+    var id: String { rawValue }
+
+    var label: String {
+        switch self {
+        case .existing: return "Existing folder"
+        case .empty: return "New folder"
+        case .clone: return "Clone a repo"
+        }
+    }
 }
 
 struct LoomTaskMeta: Decodable, Equatable {
@@ -75,8 +102,9 @@ struct TaskDetail: Decodable {
     /// should name so the agent writes to the same file the viewer reads.
     var plan_path: String?
 
-    /// Best-known tmux target for the agent pane, mirroring the app's
-    /// `agentTarget()` helper.
+    /// Best-known tmux target for the agent pane. The server reports it three
+    /// ways depending on how the pane was started, so take them in the order
+    /// the web console does.
     var paneTarget: String {
         claude?.tmux_target ?? claude?.target ?? meta.tmux_interview_target ?? ""
     }
@@ -199,6 +227,61 @@ struct WorktreeDiff: Decodable {
 struct TaskDiff: Decodable {
     var slug: String?
     var worktrees: [WorktreeDiff]?
+}
+
+// MARK: - Worktrees
+
+/// A repository the task could base a worktree on, as the server offers it.
+/// `alreadyCreated` is why the picker can show a repo without letting you add
+/// it twice.
+struct WorktreeCandidate: Decodable, Identifiable, Equatable {
+    var path: String
+    var name: String
+    var kind: String?
+    var destination: String?
+    var already_created: Bool?
+
+    var id: String { path }
+    var alreadyCreated: Bool { already_created ?? false }
+    /// The server's own pick for the repo this task is really about.
+    var isPreferred: Bool { kind == "preferred" }
+}
+
+struct WorktreeCandidates: Decodable {
+    var candidates: [WorktreeCandidate]?
+    var worktrees: [String]?
+}
+
+/// One row of `push-all`. The request succeeds even when a push does not, so
+/// the caller has to read these rather than trust the status code.
+struct PushResult: Decodable {
+    var ok: Bool?
+    var path: String?
+    var branch: String?
+    var message: String?
+    var error: String?
+}
+
+struct PushAllResult: Decodable {
+    var ok: Bool?
+    var count: Int?
+    var results: [PushResult]?
+}
+
+// MARK: - Run monitor
+
+/// Whether Loom is watching this task's pane for a finishing phrase.
+/// `enabled` mirrors whether the watcher thread is actually alive, so it is
+/// the one to trust over anything the app remembers.
+struct MonitorStatus: Decodable {
+    var enabled: Bool?
+    var running: Bool?
+    var pattern: String?
+    var default_pattern: String?
+    var last_fired: String?
+    var last_match: String?
+
+    var isOn: Bool { enabled ?? false }
 }
 
 // MARK: - Agent sessions

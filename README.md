@@ -2,32 +2,44 @@
 
 A small always-on-top macOS panel — in the spirit of
 [session-dock](https://github.com/togethercomputer/session-dock) — that shows
-one pill per **Loom** task with a live agent pane, and opens a chat window for
-any of them. It speaks the same visual language as the
+one pill per **Loom** task that wants attention, and opens any of them. It
+speaks the same visual language as the
 [Loom web console](https://github.com/FutureMLS-Lab/Loom):
 
 - **Working** — the agent is generating right now: the pill wears the web
   UI's rotating conic ring (`loom-ring-spin`, indigo → green, 1.8 s per lap).
 - **Finished, unseen** — the agent stopped while you were looking elsewhere:
-  the ring blinks (`loom-ring-blink`) and the pill background flashes, the
-  flicker that says "this one wants you now". Clicking acknowledges it
-  (locally and via `/api/activity/ack`) and opens the chat.
-- **Idle** — pane alive, agent waiting, nothing unseen: a quiet gray pill.
+  the ring blinks and the pill background flashes on the same 1.6 s cycle as
+  the sidebar's dot, the flicker that says "this one wants you now". Clicking
+  acknowledges it (locally and via `/api/activity/ack`) and opens the task.
+- **Idle** — pane alive, agent waiting, nothing unseen. Idle tasks are left
+  off the dock entirely; they are in the sidebar, the fleet menu and ⌘P.
 
 Clicking a pill opens that task in the **main window** — a sidebar of
-projects and tasks, and four tabs for whichever one is selected:
+projects and tasks, and four tabs for whichever one is selected. Which tab you
+land on is the one you used last:
 
 | Tab | ⌘ | What it is |
 | --- | --- | --- |
 | Chat | ⌘1 | The conversation feed (`/conversation`): user / assistant / tool / question / event rows, question cards with options and custom answers, and a composer that types into the agent's tmux pane |
 | Terminal | ⌘2 | The live pane, with the task's `PLAN.md` rendered underneath — the same pairing the web console's agent tab has |
 | Files | ⌘3 | The task directory as a small editor: a folder tree (the worktree is under `work/`) and the selected file's source, opening on `PLAN.md`. `PLAN.md` / `WIKI.md` save back through `/template`; everything else is read-only |
-| Changes | ⌘4 | Diffs across the task's worktrees, plus push / merge |
+| Changes | ⌘4 | Diffs across the task's worktrees, plus add / remove a worktree, push, merge, and push all |
 
 Above the tabs are the flow buttons the web console has — Deep Interview,
-Run `/goal`, Write result — and start / stop / resume for the agent session.
-⌘P opens any task by name, ⌘N creates one, ⌘⇧N opens the project's notes
-(`<project>/.RUD/NOTES.md`, the same file the web console edits).
+Run `/goal`, Write result — and, under **⋯**, start / stop / resume for the
+agent session and *Notify when finished*, which has the server watch the pane
+for a finishing phrase whether or not the task is open.
+
+Projects are managed from the sidebar: **+** at the bottom adds one (an
+existing folder on the Loom host, a new folder, or a repo to clone), and
+right-clicking a project sets its code root or removes it from Loom — removing
+unregisters the folder without deleting anything on disk.
+
+⌘P opens any task by name, ⌘N creates one, ⌘0 brings the main window back,
+⌘⇧N opens the project's notes (`<project>/.RUD/NOTES.md`, the same file the
+web console edits), ⌘S saves in Files and Notes, ⌘F finds in the plan preview,
+and ⌘+/⌘− set the terminal's font size.
 
 ### One thing worth knowing about pane size
 
@@ -40,15 +52,17 @@ the window you are in now.
 
 ## How it works
 
-- `Sources/LoomDesktop/` — a SwiftUI/AppKit accessory app. A non-activating
-  `NSPanel` pinned to the top of the screen polls `/api/activity` every 4 s
-  (the Loom server's own watcher cadence) and turns the snapshot into pills.
-  Task titles and project names refresh on a slower cycle.
+- `Sources/LoomDesktop/` — a SwiftUI/AppKit app with an ordinary Dock icon
+  (see the activation-policy note below). A non-activating `NSPanel`, opening
+  at the top of the screen and draggable anywhere from there, polls
+  `/api/activity` every 4 s (the Loom server's own watcher cadence) and turns
+  the snapshot into pills. Task titles and project names refresh on a slower
+  cycle.
 - The panel has a fixed width you set by dragging its **left or right edge**;
   pills wrap onto as many rows as that width needs, and the height follows the
   rows, growing downward. The width is remembered across restarts
-  (`defaults read LoomDesktop panelWidth`) and cannot be dragged narrower than
-  the widest single pill. (Geometry adapted from session-dock.)
+  (`defaults read com.loom.desktop panelWidth`) and cannot be dragged narrower
+  than the widest single pill. (Geometry adapted from session-dock.)
 - The **loom** capsule on the left is the fleet menu: browse every registered
   project/task and open any of them (active or not), refresh, settings, quit.
   The dot shows connection state (green/yellow/red). The same menu lives in
@@ -133,8 +147,10 @@ still written for the server in use, so an older build keeps working.
 
 ```bash
 python3 scripts/mock-loom.py 8787          # mock Loom API
-./.build/debug/LoomDesktop                 # dock shows 3 pills:
-                                           #   spinning / blinking / idle
+./.build/debug/LoomDesktop                 # dock shows 2 pills: spinning
+                                           # and blinking. The mock's third
+                                           # task is idle, so it stays in the
+                                           # sidebar and off the dock.
 ```
 
 The mock echoes chat messages: send one and the pill spins for a few seconds,
@@ -178,9 +194,10 @@ tabs and sidebar can be exercised without a person.
 
 ## Auto-start at login
 
-Fill in the binary path in `launchagent/com.loom.desktop.plist.template`,
-copy it to `~/Library/LaunchAgents/com.loom.desktop.plist`, then
-`launchctl load` it.
+`scripts/make-app.sh` writes `~/Library/LaunchAgents/com.loom.desktop.plist`
+itself, pointing at the installed bundle, so installing is all it takes.
+`launchagent/com.loom.desktop.plist.template` is the same thing by hand, for a
+binary somewhere else.
 
 ## Files
 
@@ -207,14 +224,15 @@ copy it to `~/Library/LaunchAgents/com.loom.desktop.plist`, then
 | `PlainTextEditor.swift` | The plain source editor, shared by Files and Notes |
 | `MarkdownBlocks.swift` | Agent turns as blocks: tables, lists, code |
 | `MarkdownPreview.swift` | `marked` in a `WKWebView`, shared by the digest and notes |
-| `DiffView.swift` | The Changes tab: per-file diffs, push / merge |
+| `DiffView.swift` | The Changes tab: per-file diffs, and the task's worktrees |
 | `QuickOpen.swift` / `NewTaskView.swift` | ⌘P open by name, ⌘N create a task |
+| `AddProjectView.swift` | Registering a project: an existing folder, a new one, or a clone |
 | `ComposeDrafts.swift` | Unsent text, kept across tab and task switches |
 | `Notifier.swift` | Finish notifications + Dock badge |
 | `LoomServers.swift` | The configured Looms, and which one is current |
 | `SettingsWindow.swift` | Managing servers: URL, token, and switching |
 | `Snapshotter.swift` | Window → PNG for the headless UI check, web views included |
-| `Resources/` | App icon, and the bundled `marked`, `xterm`, and fit addon |
+| `Resources/` | App icon, and the bundled `marked`, `xterm`, and fit addon. The sidebar watermark reads `loom-mark.png`, which only the installed bundle has — the bare binary runs without it |
 | `scripts/make-app.sh` | Build, sign, install to `/Applications`, register the login item |
 | `scripts/mock-loom.py` | Offline mock of the Loom API for development |
 | `scripts/summon.swift` | Poke a running app to bring its windows to this screen |

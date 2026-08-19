@@ -12,13 +12,11 @@ final class MainWindowController: NSObject, NSWindowDelegate {
     /// Whether the task on screen is actually on screen — the window is kept
     /// around after it closes, so its existence says nothing.
     var isVisible: Bool { window?.isVisible == true }
-    var store: TaskStore?
 
     /// Content size, sized like the web console in a browser window.
     private static let defaultSize = NSSize(width: 1280, height: 860)
 
     func show(store: TaskStore) {
-        self.store = store
         if window == nil {
             // Sized like the web console in a browser window, not like a
             // utility palette — the sidebar alone is 320pt.

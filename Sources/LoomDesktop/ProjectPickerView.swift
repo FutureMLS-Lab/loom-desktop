@@ -1,6 +1,6 @@
 import SwiftUI
 
-/// The main window, laid out like the Loom web console: a 300pt cream sidebar
+/// The main window, laid out like the Loom web console: a 320pt cream sidebar
 /// of card sections (one per project, tasks inside), and a content pane on the
 /// right. Task titles wrap instead of truncating — a slug like
 /// "Is Quantization Noise Really Exploration?…" is the only way to tell two
@@ -19,6 +19,14 @@ struct ProjectPickerView: View {
 
     @State private var quickOpen = false
     @State private var newTask = false
+    @State private var addProject = false
+    /// The project whose code root is being edited, and the pattern typed so
+    /// far. Two pieces of state because the alert outlives the menu that
+    /// opened it.
+    @State private var codeRootProject: LoomProject?
+    @State private var codeRootDraft = ""
+    @State private var projectToRemove: LoomProject?
+    @State private var projectError = ""
 
     var body: some View {
         HStack(spacing: 0) {
@@ -59,6 +67,73 @@ struct ProjectPickerView: View {
                 onDismiss: { quickOpen = false }
             )
         }
+        .sheet(isPresented: $addProject) {
+            AddProjectView(store: store) { addProject = false }
+        }
+        .alert(
+            "Code root for \(codeRootProject?.label ?? "")",
+            isPresented: Binding(
+                get: { codeRootProject != nil },
+                set: { if !$0 { codeRootProject = nil } }
+            )
+        ) {
+            TextField(".", text: $codeRootDraft)
+            Button("Cancel", role: .cancel) { codeRootProject = nil }
+            Button("Save") { saveCodeRoot() }
+        } message: {
+            Text("Where this project's repositories live, relative to its "
+                 + "folder. Worktree candidates are searched under it.")
+        }
+        .confirmationDialog(
+            "Remove \(projectToRemove?.label ?? "") from Loom?",
+            isPresented: Binding(
+                get: { projectToRemove != nil },
+                set: { if !$0 { projectToRemove = nil } }
+            ),
+            titleVisibility: .visible
+        ) {
+            Button("Remove", role: .destructive) { confirmRemoveProject() }
+            Button("Cancel", role: .cancel) { projectToRemove = nil }
+        } message: {
+            Text("Loom forgets the folder and its tasks disappear from this "
+                 + "list. Nothing on disk is deleted.")
+        }
+        .alert("Couldn't change the project", isPresented: Binding(
+            get: { !projectError.isEmpty },
+            set: { if !$0 { projectError = "" } }
+        )) {
+            Button("OK") { projectError = "" }
+        } message: {
+            Text(projectError)
+        }
+    }
+
+    private func saveCodeRoot() {
+        guard let project = codeRootProject else { return }
+        let pattern = codeRootDraft.trimmingCharacters(in: .whitespacesAndNewlines)
+        codeRootProject = nil
+        Task {
+            do {
+                try await store.api.setCodeRoot(id: project.id, pattern: pattern)
+                store.refreshNow()
+            } catch {
+                projectError = error.localizedDescription
+            }
+        }
+    }
+
+    private func confirmRemoveProject() {
+        guard let project = projectToRemove else { return }
+        projectToRemove = nil
+        Task {
+            do {
+                try await store.api.removeProject(id: project.id)
+                store.forget(projectId: project.id)
+                store.refreshNow()
+            } catch {
+                projectError = error.localizedDescription
+            }
+        }
     }
 
     // MARK: Sidebar
@@ -84,7 +159,7 @@ struct ProjectPickerView: View {
         } label: {
             HStack(spacing: 8) {
                 Circle()
-                    .fill(serverDotColor)
+                    .fill(store.connection.dotColor)
                     .frame(width: 7, height: 7)
                 VStack(alignment: .leading, spacing: 1) {
                     Text(store.activeServerName)
@@ -122,14 +197,6 @@ struct ProjectPickerView: View {
         .padding(.top, 12)
         .padding(.bottom, -4)
         .help(LoomSettings.baseURL)
-    }
-
-    private var serverDotColor: Color {
-        switch store.connection {
-        case .online: return LoomColors.green
-        case .connecting: return LoomColors.amber
-        case .offline: return LoomColors.red
-        }
     }
 
     private var serverSubtitle: String {
@@ -200,7 +267,12 @@ struct ProjectPickerView: View {
                             onOpen: { meta in store.select(projectId: project.id, slug: meta.slug) },
                             onMoveTask: { slug, target in
                                 store.moveTask(projectId: project.id, slug: slug, above: target)
-                            }
+                            },
+                            onSetCodeRoot: {
+                                codeRootDraft = "."
+                                codeRootProject = project
+                            },
+                            onRemove: { projectToRemove = project }
                         )
                         .draggable(DragPayload.project(id: project.id).text)
                         .dropDestination(for: String.self) { items, _ in
@@ -238,12 +310,19 @@ struct ProjectPickerView: View {
             HStack(spacing: 8) {
                 ConnectionPill(connection: store.connection)
                 Spacer()
-                Button { newTask = true } label: {
+                Menu {
+                    Button("New Task…") { newTask = true }
+                        .disabled(store.projects.isEmpty)
+                    Button("Add Project…") { addProject = true }
+                } label: {
                     Image(systemName: "plus")
                         .font(.system(size: 13, weight: .medium))
                 }
+                .menuStyle(.button)
                 .buttonStyle(.plain)
-                .help("New task (⌘N)")
+                .menuIndicator(.hidden)
+                .fixedSize()
+                .help("New task (⌘N) or add a project")
                 Button { store.refreshNow() } label: {
                     Image(systemName: "arrow.clockwise")
                         .font(.system(size: 13, weight: .medium))
@@ -328,7 +407,8 @@ struct ProjectPickerView: View {
                 EmptyDetail(
                     symbol: "square.grid.2x2",
                     title: "No projects registered",
-                    detail: "Register projects in the Loom web console, or check the gateway settings."
+                    detail: "Add one with + at the bottom of the sidebar — an "
+                        + "existing folder on the Loom host, a new one, or a repo to clone."
                 )
             } else {
                 EmptyDetail(
@@ -360,6 +440,8 @@ private struct ProjectCard: View {
     let onSelect: (String) -> Void
     let onOpen: (LoomTaskMeta) -> Void
     let onMoveTask: (String, String) -> Void
+    let onSetCodeRoot: () -> Void
+    let onRemove: () -> Void
 
     @State private var dropTarget: String?
 
@@ -396,6 +478,16 @@ private struct ProjectCard: View {
                 .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
+            .contextMenu {
+                Button("Copy Path") {
+                    NSPasteboard.general.clearContents()
+                    NSPasteboard.general.setString(project.path, forType: .string)
+                }
+                Button("Set Code Root…", action: onSetCodeRoot)
+                Divider()
+                Button("Remove from Loom…", action: onRemove)
+            }
+            .help(project.path)
 
             if !collapsed {
                 VStack(spacing: 4) {
@@ -531,21 +623,13 @@ private struct ConnectionPill: View {
 
     var body: some View {
         HStack(spacing: 5) {
-            Circle().fill(color).frame(width: 7, height: 7)
+            Circle().fill(connection.dotColor).frame(width: 7, height: 7)
             Text(label)
                 .font(.system(size: 12))
                 .foregroundColor(.secondary)
                 .lineLimit(1)
         }
         .help(LoomSettings.baseURL)
-    }
-
-    private var color: Color {
-        switch connection {
-        case .connecting: return LoomColors.amber
-        case .online: return LoomColors.green
-        case .offline: return LoomColors.red
-        }
     }
 
     private var label: String {

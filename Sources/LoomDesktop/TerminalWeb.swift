@@ -63,7 +63,13 @@ final class TerminalSession: NSObject, ObservableObject {
         stop()
     }
 
-    var fontSize: Double = 13 {
+    /// What the page is first built with. It has to match the stored default
+    /// the pane pushes on appear: differ, and which one you saw depended on
+    /// whether the web view or the view's `onAppear` ran first, at the cost of
+    /// a re-fit and a tmux resize on every launch.
+    static let defaultFontSize: Double = 14
+
+    var fontSize: Double = TerminalSession.defaultFontSize {
         didSet {
             guard fontSize != oldValue else { return }
             call("window.__loomFontSize(\(fontSize))")
@@ -82,6 +88,7 @@ final class TerminalSession: NSObject, ObservableObject {
     private var pending = Data()
     private var flushTimer: Timer?
     private var reattach: Task<Void, Never>?
+    /// Signed pending scroll, negative for older output.
     private var pendingScroll = 0
     private var scrollInFlight = false
     private var inputQueue = ""
@@ -650,7 +657,6 @@ extension TerminalSession {
         }
     }
 
-    /// Signed pending scroll, negative for older output.
     /// Wait longer each time, to a minute. Attaching costs the server a pty
     /// and a `tmux attach`, so retrying hard at a server that is struggling is
     /// the worst thing a client can do.

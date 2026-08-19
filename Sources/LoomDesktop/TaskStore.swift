@@ -90,9 +90,6 @@ final class TaskStore: ObservableObject {
         return min(backoff, Self.maxBackoff)
     }
 
-    /// A different Loom has nothing to do with this one's tasks: drop them
-    /// rather than let one server's pills sit under another's name until the
-    /// next poll replaces them.
     /// The current server, republished here because `LoomSettings` is plain
     /// storage: SwiftUI cannot see it change, so a switch left the old name
     /// and the old checkmark on screen until something else forced a redraw.
@@ -108,6 +105,21 @@ final class TaskStore: ObservableObject {
         }
     }
 
+    /// Drops a project the server no longer knows, so the sidebar empties on
+    /// the click rather than at the next poll — and so a task inside it cannot
+    /// stay selected in a pane that has nothing left to show.
+    func forget(projectId: String) {
+        projects.removeAll { $0.id == projectId }
+        tasksByProject.removeValue(forKey: projectId)
+        pills.removeAll { $0.projectId == projectId }
+        if let selection, selection.hasPrefix("\(projectId)/") {
+            self.selection = nil
+        }
+    }
+
+    /// A different Loom has nothing to do with this one's tasks: drop them
+    /// rather than let one server's pills sit under another's name until the
+    /// next poll replaces them.
     func serverChanged() {
         servers = LoomSettings.servers
         activeServerID = LoomSettings.activeServerID
@@ -182,28 +194,8 @@ final class TaskStore: ObservableObject {
                     )
                 )
             }
-            // Loom's own order, not alphabetical: the web console lets you
-            // drag projects and tasks into the order you think in, and the
-            // API hands them back that way.
-            let projectRank = Dictionary(
-                uniqueKeysWithValues: projects.enumerated().map { ($0.element.id, $0.offset) }
-            )
-            var taskRank: [String: Int] = [:]
-            for (projectId, metas) in tasksByProject {
-                for (index, meta) in metas.enumerated() {
-                    taskRank["\(projectId)/\(meta.slug)"] = index
-                }
-            }
-            next.sort { left, right in
-                let lp = projectRank[left.projectId] ?? Int.max
-                let rp = projectRank[right.projectId] ?? Int.max
-                if lp != rp { return lp < rp }
-                let lt = taskRank[left.id] ?? Int.max
-                let rt = taskRank[right.id] ?? Int.max
-                if lt != rt { return lt < rt }
-                return left.id < right.id
-            }
             pills = next
+            reorderPills()
             // The task already open in front of you is not one you need to be
             // called back to. Acknowledging only when the selection *changes*
             // missed the case that matters most: a task that finishes again
@@ -336,8 +328,10 @@ final class TaskStore: ObservableObject {
         reorderPills()
     }
 
-    /// Keep the dock in step with a sidebar drag, rather than waiting for the
-    /// next poll to rebuild it.
+    /// Loom's own order, not alphabetical: the console lets you drag projects
+    /// and tasks into the order you think in, and the API hands them back that
+    /// way. Applied both when a poll rebuilds the pills and after a sidebar
+    /// drag, so the dock never waits for the next poll to agree.
     private func reorderPills() {
         let projectRank = Dictionary(
             uniqueKeysWithValues: projects.enumerated().map { ($0.element.id, $0.offset) }

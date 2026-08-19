@@ -59,11 +59,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         Notifier.shared.start(store: store)
         store.start()
 
-        // First run: the main window opens so there is something to land on.
-        if UserDefaults.standard.bool(forKey: "showMainOnLaunch") {
-            MainWindowController.shared.show(store: store)
-        }
-
         // Dev hook: LOOM_DESKTOP_DEBUG_EVENTS=1 traces every mouse-down, which
         // tells "the click never reached the app" apart from "the click
         // arrived and the control ignored it". Worth keeping, because a
@@ -170,9 +165,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
-    /// Accessory apps get no menu bar of their own, but a main menu is still
-    /// what routes the standard key equivalents — without it there is no ⌘Q,
-    /// no ⌘W, and (worst of all) no ⌘C/⌘V in the chat composer.
+    /// The main menu is what routes the standard key equivalents — build the
+    /// app without one and there is no ⌘Q, no ⌘W, and (worst of all) no ⌘C/⌘V
+    /// in the chat composer.
     private var findEntries: [(String, String, NSEvent.ModifierFlags, NSTextFinder.Action)] {
         [
             ("Find…", "f", [.command], .showFindInterface),

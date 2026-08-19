@@ -1,13 +1,25 @@
 import SwiftUI
 
-/// The web console's agent-activity rings, ported from `app.css` and drawn
-/// by Core Animation: `.is-working` as a conic gradient rotating every 1.8s,
-/// `.is-finished` as a solid indigo→green ring blinking on a 1.1s cycle.
+/// The web console's agent-activity rings, ported from `app.css` and drawn by
+/// Core Animation: `.is-working` as a conic gradient rotating every 1.8s,
+/// `.is-finished` blinking on the shared cycle below.
+
+/// One cadence for every "finished, unseen" signal in the app. The dock pill,
+/// its background, and the sidebar dot are the same task saying the same
+/// thing, so they have to say it in step — with two cadences the eye read them
+/// as two separate alarms.
+///
+/// Slower than the web console's 1.1s: one pill flashing hard reads as "look
+/// here", and a dozen of them at that speed reads as a fault.
+enum LoomBlink {
+    static let cycle: CFTimeInterval = 1.6
+    static var half: CFTimeInterval { cycle / 2 }
+}
 
 /// A pill's activity ring, drawn by Core Animation.
 ///
 /// Working is the web console's conic gradient rotating once every 1.8s;
-/// finished is the solid indigo→green ring blinking on the 1.1s cycle. Both
+/// finished is the solid indigo→green ring blinking on `LoomBlink.cycle`. Both
 /// run on the render server, so a dock of forty pills costs the app nothing
 /// per frame — which is why there is no longer a cap on how many may animate.
 struct PillRing: NSViewRepresentable {
@@ -29,10 +41,6 @@ struct PillRing: NSViewRepresentable {
 }
 
 final class PillRingView: NSView {
-    /// Slower than the web's 1.1s, so a row of them pulses together rather
-    /// than flickering.
-    static let blinkCycle: CFTimeInterval = 1.6
-
     private let gradient = CAGradientLayer()
     private let ring = CAShapeLayer()
     private var mode: PillRing.Mode
@@ -145,12 +153,12 @@ final class PillRingView: NSView {
             let blink = CABasicAnimation(keyPath: "opacity")
             blink.fromValue = 1.0
             blink.toValue = 0.4
-            blink.duration = Self.blinkCycle / 2
+            blink.duration = LoomBlink.half
             blink.autoreverses = true
             blink.repeatCount = .infinity
             blink.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
             let now = gradient.convertTime(CACurrentMediaTime(), from: nil)
-            blink.beginTime = now - now.truncatingRemainder(dividingBy: Self.blinkCycle)
+            blink.beginTime = now - now.truncatingRemainder(dividingBy: LoomBlink.cycle)
             gradient.add(blink, forKey: "blink")
         }
     }
@@ -162,7 +170,7 @@ struct PulsingFill: NSViewRepresentable {
     let color: NSColor
     var from: Float = 0.6
     var to: Float = 0.85
-    var halfCycle: CFTimeInterval = 0.8
+    var halfCycle: CFTimeInterval = LoomBlink.half
 
     func makeNSView(context: Context) -> PulsingFillView {
         PulsingFillView(color: color, from: from, to: to, halfCycle: halfCycle)
@@ -368,8 +376,8 @@ private struct BlinkingSymbol: NSViewRepresentable {
 }
 
 final class BlinkingSymbolView: NSView {
-    /// Matches the web console's `loom-ring-blink` half-cycle.
-    static let interval: CFTimeInterval = 0.62
+    /// The dock pill's cadence, so the same task blinks in step in both places.
+    static let interval: CFTimeInterval = LoomBlink.half
 
     private let tint = CALayer()
     private let glyph = CALayer()

@@ -21,7 +21,7 @@ projects and tasks, and four tabs for whichever one is selected:
 | --- | --- | --- |
 | Chat | ⌘1 | The conversation feed (`/conversation`): user / assistant / tool / question / event rows, question cards with options and custom answers, and a composer that types into the agent's tmux pane |
 | Terminal | ⌘2 | The live pane, with the task's `PLAN.md` rendered underneath — the same pairing the web console's agent tab has |
-| Files | ⌘3 | The task directory as a small editor: a folder tree — `PLAN.md` at the top, the worktree under `work/` — and the file's source. `PLAN.md` / `WIKI.md` save back through `/template`; everything else is read-only |
+| Files | ⌘3 | The task directory as a small editor: a folder tree (the worktree is under `work/`) and the selected file's source, opening on `PLAN.md`. `PLAN.md` / `WIKI.md` save back through `/template`; everything else is read-only |
 | Changes | ⌘4 | Diffs across the task's worktrees, plus push / merge |
 
 Above the tabs are the flow buttons the web console has — Deep Interview,

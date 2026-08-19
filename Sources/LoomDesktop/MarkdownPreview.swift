@@ -40,10 +40,6 @@ final class PassThroughWebView: WKWebView {
     }
 }
 
-/// Browser-style Markdown preview: `marked` → HTML inside a WKWebView, with
-/// article typography. Used by the Files tab, the digest under the terminal,
-/// and the notes window, so large documents stay readable without the old
-/// SwiftUI markdown path that froze the UI.
 /// Serves `loom-asset://` requests from the markdown preview by fetching the
 /// figure through the API, which is the only party holding the token.
 private final class AssetSchemeHandler: NSObject, WKURLSchemeHandler {
@@ -80,6 +76,10 @@ private final class AssetSchemeHandler: NSObject, WKURLSchemeHandler {
     func webView(_ webView: WKWebView, stop task: WKURLSchemeTask) {}
 }
 
+/// Browser-style Markdown preview: `marked` → HTML inside a WKWebView, with
+/// article typography. Used by the digest under the terminal and the notes
+/// window, so large documents stay readable without the old SwiftUI markdown
+/// path that froze the UI.
 struct MarkdownPreview: NSViewRepresentable {
     /// Our own scheme, so `<img>` can reach a figure the server holds.
     static let assetScheme = "loom-asset"

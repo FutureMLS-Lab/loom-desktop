@@ -2,9 +2,9 @@ import AppKit
 import SwiftUI
 
 /// The Files tab: the whole task directory as a small editor. A folder tree on
-/// the left — `PLAN.md` at the top, the worktree under `work/` — and the file's
-/// source on the right. Loom writes back only `PLAN.md` and `WIKI.md`, so
-/// everything else opens read-only.
+/// the left, folders before files as the server lists them, and the selected
+/// file's source on the right; `PLAN.md` is the one opened on arrival. Loom
+/// writes back only `PLAN.md` and `WIKI.md`, so everything else is read-only.
 struct PlanView: View {
     @ObservedObject var session: ChatSession
 

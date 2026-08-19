@@ -346,12 +346,6 @@ struct LoomAPI {
         )
     }
 
-    /// Keystrokes for an attached stream. This writes to the pty, so the keys a
-    /// terminal sends are just their bytes — no tmux key names to get wrong.
-    /// End a stream deliberately, rather than trusting the disconnect to be
-    /// noticed. The gateway holds its upstream leg open after we go away, so
-    /// the server never sees the close and its `tmux attach` — a real client,
-    /// pinning the pane's size — outlives every terminal ever opened.
     /// A figure referenced by a markdown document, fetched as bytes.
     ///
     /// Without a task the base is the project's `.RUD/`, which is where
@@ -382,6 +376,10 @@ struct LoomAPI {
         return (data, type)
     }
 
+    /// End a stream deliberately, rather than trusting the disconnect to be
+    /// noticed. The gateway holds its upstream leg open after we go away, so
+    /// the server never sees the close and its `tmux attach` — a real client,
+    /// pinning the pane's size — outlives every terminal ever opened.
     func closeStream(streamId: String) async throws {
         let _: OkResponse = try await request(
             "/api/tmux/stream-close",
@@ -408,6 +406,8 @@ struct LoomAPI {
         _ = done.wait(timeout: .now() + timeout)
     }
 
+    /// Keystrokes for an attached stream. This writes to the pty, so the keys a
+    /// terminal sends are just their bytes — no tmux key names to get wrong.
     func streamInput(streamId: String, text: String) async throws {
         let _: OkResponse = try await request(
             "/api/tmux/stream-input",

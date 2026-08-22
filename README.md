@@ -238,6 +238,7 @@ binary somewhere else.
 | `scripts/make-app.sh` | Build, sign, install to `/Applications`, register the login item |
 | `scripts/mock-loom.py` | Offline mock of the Loom API for development |
 | `scripts/summon.swift` | Poke a running app to bring its windows to this screen |
+| `scripts/preview-shot.swift` | Render the preview page to a PNG, so a typography change can be looked at rather than guessed at. Touches neither the running app nor the server |
 
 ## Licence
 

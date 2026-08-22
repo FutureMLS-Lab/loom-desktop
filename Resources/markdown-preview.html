@@ -39,8 +39,15 @@
     margin: 0; padding: 0;
     background: var(--bg);
     color: var(--ink);
-    font: 16px/1.65 -apple-system, "SF Pro Text", "Helvetica Neue", sans-serif;
+    /* PingFang named after the Latin faces, not before them: the system font
+       has no CJK glyphs, and leaving the fallback implicit let the two
+       scripts pair differently depending on what else was installed. */
+    font: 16px/1.65 -apple-system, "SF Pro Text", "Helvetica Neue",
+          "PingFang SC", "Hiragino Sans GB", sans-serif;
     -webkit-font-smoothing: antialiased;
+    /* A worktree path or a URL is one long word to the layout engine. Without
+       this it runs past the right edge instead of folding. */
+    overflow-wrap: break-word;
   }
   #wrap {
     max-width: 760px;
@@ -53,6 +60,9 @@
     font-weight: 650;
     letter-spacing: -0.015em;
     margin: 1.6em 0 0.55em;
+    /* Spread a two-line heading evenly rather than leaving one word alone on
+       the second line. Ignored where unsupported. */
+    text-wrap: balance;
   }
   h1 { font-size: 1.85em; border-bottom: 1px solid var(--rule); padding-bottom: 0.35em; }
   h2 { font-size: 1.4em; border-bottom: 1px solid var(--rule); padding-bottom: 0.25em; }
@@ -68,6 +78,9 @@
     background: var(--code-bg);
     padding: 0.12em 0.4em;
     border-radius: 4px;
+    /* A path has no spaces to break at, so it needs permission to break
+       anywhere — otherwise it decides the width of the whole document. */
+    overflow-wrap: anywhere;
   }
   pre {
     background: var(--code-bg);
@@ -88,15 +101,25 @@
     border: 0; border-top: 1px solid var(--rule);
     margin: 2em 0;
   }
+  /* Sized to its contents and scrolled when that is too wide, rather than
+     stretched to the column and squeezed when it does not fit. These
+     documents compare numbers; a results table crushed to fit is unreadable,
+     and the digest under the terminal is narrow. */
   table {
+    display: block;
+    width: max-content;
+    max-width: 100%;
+    overflow-x: auto;
     border-collapse: collapse;
-    width: 100%;
     font-size: 0.95em;
   }
   th, td {
     border: 1px solid var(--rule);
     padding: 0.45em 0.7em;
     text-align: left;
+    /* Same-width digits, so a column of measurements lines up on the decimal
+       point instead of drifting. */
+    font-variant-numeric: tabular-nums;
   }
   th { background: var(--code-bg); }
   img { max-width: 100%; }
@@ -107,7 +130,10 @@
     font-size: 15px;
   }
   /* Digest under the terminal: same document, less room. */
-  body.compact { font-size: 13px; line-height: 1.55; }
+  /* Leading stays generous even here. Chinese sets a solid block of glyphs
+     with no ascenders or descenders to open the line up, so the 1.55 that
+     reads fine in English closed up into a wall. */
+  body.compact { font-size: 13px; line-height: 1.68; }
   body.compact #wrap { max-width: none; padding: 14px 20px 30px; }
   body.compact h1 { font-size: 1.5em; }
   body.compact h2 { font-size: 1.22em; }

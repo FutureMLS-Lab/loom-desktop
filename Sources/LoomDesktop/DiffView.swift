@@ -509,7 +509,7 @@ private struct DiffLine: View {
     private var background: Color {
         switch kind {
         case "+": return LoomColors.green.opacity(0.10)
-        case "-": return Color.red.opacity(0.10)
+        case "-": return LoomColors.red.opacity(0.10)
         case "@": return LoomColors.accent.opacity(0.10)
         default: return .clear
         }

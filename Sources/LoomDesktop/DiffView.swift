@@ -240,18 +240,14 @@ struct ChangesView: View {
     private func load() async {
         loading = true
         error = ""
-        // Worktree state comes from the task detail, the diff from its own
-        // endpoint; fetch both together so the bar and the file list agree.
-        async let detail = try? session.api.taskDetail(
-            projectId: session.projectId, slug: session.slug
-        )
-        async let offered = try? session.api.worktreeCandidates(
-            projectId: session.projectId, slug: session.slug
-        )
+        // The bar's two sources are fetched alongside but not waited for. The
+        // task detail arrives with every markdown under the task inlined,
+        // which for a worktree holding a documented repository is megabytes
+        // and seconds — the diff is the point of this tab and should not
+        // queue behind it. The bar fills itself in when its answer lands.
+        loadWorktreeBar()
         do {
             let diff = try await session.api.diff(projectId: session.projectId, slug: session.slug)
-            worktrees = await detail?.worktree_statuses ?? []
-            candidates = await offered?.candidates ?? []
             var collected: [DiffFile] = []
             var worktreeErrors: [String] = []
             for worktree in diff.worktrees ?? [] {
@@ -271,6 +267,20 @@ struct ChangesView: View {
             self.error = error.localizedDescription
         }
         loading = false
+    }
+
+    /// Branch state and the repositories on offer, filled in behind the diff.
+    private func loadWorktreeBar() {
+        Task {
+            async let detail = try? session.api.taskDetail(
+                projectId: session.projectId, slug: session.slug
+            )
+            async let offered = try? session.api.worktreeCandidates(
+                projectId: session.projectId, slug: session.slug
+            )
+            worktrees = await detail?.worktree_statuses ?? []
+            candidates = await offered?.candidates ?? []
+        }
     }
 }
 

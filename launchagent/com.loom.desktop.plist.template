@@ -12,8 +12,14 @@
     </array>
     <key>RunAtLoad</key>
     <true/>
+    <!-- Bring it back when it dies, but not when it meant to go: a plain
+         <true/> here respawns after Quit, and loops forever if a second
+         instance starts and exits on finding the first. -->
     <key>KeepAlive</key>
-    <true/>
+    <dict>
+        <key>SuccessfulExit</key>
+        <false/>
+    </dict>
     <key>StandardErrorPath</key>
     <string>/tmp/loom-desktop.err.log</string>
     <key>StandardOutPath</key>

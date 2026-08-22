@@ -14,17 +14,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         defer {
             loomBoot("didFinishLaunching done; policy=\(NSRunningApplication.current.activationPolicy.rawValue) finished=\(NSRunningApplication.current.isFinishedLaunching)")
         }
-        // Single instance: a second launch (e.g. double-clicking the app in
-        // Finder while it is already running) pokes the first instance to
-        // summon everything to the current screen, then exits.
+        // Single instance: a second copy stands down and leaves the first
+        // alone. It used to summon the first one's windows forward on its way
+        // out, on the theory that a second launch means "show me Loom" — but
+        // the gesture that means that (a Dock click, a Finder double-click on
+        // a running app) arrives as `applicationShouldHandleReopen`, never
+        // here. What reaches here is a launch nobody asked for, and answering
+        // it by taking the screen stole focus from whatever was in front.
         if let bundleID = Bundle.main.bundleIdentifier,
            NSRunningApplication.runningApplications(withBundleIdentifier: bundleID).count > 1 {
-            DistributedNotificationCenter.default().postNotificationName(
-                .init(Self.summonNotification), object: nil, userInfo: nil,
-                deliverImmediately: true
-            )
-            NSApp.terminate(nil)
-            return
+            loomBoot("another instance is already running; standing down")
+            exit(0)
         }
         DistributedNotificationCenter.default().addObserver(
             forName: .init(Self.summonNotification), object: nil, queue: .main

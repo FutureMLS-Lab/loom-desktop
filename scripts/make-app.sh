@@ -93,7 +93,12 @@ cat > "$PLIST" <<EOF
     <key>ProgramArguments</key>
     <array><string>${DEST_DIR}/${APP_NAME}.app/Contents/MacOS/LoomDesktop</string></array>
     <key>RunAtLoad</key><true/>
-    <key>KeepAlive</key><true/>
+    <!-- Bring it back when it dies, but not when it meant to go. A plain
+         KeepAlive respawns on any exit, which turned Quit into a ten-second
+         pause and, worse, put a second instance in a loop: it saw the first,
+         exited cleanly, and launchd started it again forever. -->
+    <key>KeepAlive</key>
+    <dict><key>SuccessfulExit</key><false/></dict>
     <key>ProcessType</key><string>Interactive</string>
     <key>StandardErrorPath</key><string>/tmp/loom-desktop.err.log</string>
 </dict>

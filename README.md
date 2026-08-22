@@ -109,7 +109,8 @@ login item (`~/Library/LaunchAgents/com.loom.desktop.plist`), and starts it.
   a terminal/automation context may leave an unnotarized app suspended at
   launch on newer macOS — `launchctl kickstart` and Finder are reliable.)
 - **Quit**: menu-bar loom icon → *Quit Loom Desktop* (or ⌘Q); also in the
-  panel's loom menu.
+  panel's loom menu. It stays quit — the login item brings it back only after
+  a crash, or at the next login.
 - **Hide the panel** without quitting: *Hide Dock Panel* in either menu; the
   menu-bar icon stays and *Show Dock Panel* brings it back.
 

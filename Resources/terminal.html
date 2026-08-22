@@ -1,0 +1,175 @@
+<!doctype html>
+<html><head><meta charset="utf-8"/>
+<style>/*xterm.css*/</style>
+<style>
+  html, body { margin: 0; padding: 0; height: 100%; background: #1e2320; overflow: hidden; }
+  #host { position: absolute; inset: 0; padding: 8px 10px; background: #1e2320; }
+  #host .xterm { height: 100%; padding: 0; }
+  #host .xterm-viewport { background-color: transparent !important; }
+  #host .xterm-viewport::-webkit-scrollbar { width: 10px; }
+  #host .xterm-viewport::-webkit-scrollbar-thumb {
+    background: rgba(120, 150, 128, 0.28); border-radius: 6px;
+  }
+  .composition-view {
+    background: #f2f8f1; color: #3a4a3c;
+    border: 1px solid #6f9a7d; border-radius: 4px; padding: 0 3px; z-index: 10;
+  }
+</style>
+</head><body><div id="host"></div>
+<script>/*xterm.js*/</script>
+<script>/*addon-fit.js*/</script>
+<script>
+var term = new Terminal({
+  fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace',
+  fontSize: __LOOM_FONT_SIZE__,
+  lineHeight: 1.15,
+  // Steady, not blinking. This pane is mostly watched rather than
+  // typed into — the compose box below is where you write — and an
+  // idle agent parks a block cursor on whatever it last drew, so a
+  // blink turns a still screen into something flashing at you.
+  cursorBlink: false,
+  cursorInactiveStyle: 'outline',
+  macOptionIsMeta: true,
+  scrollback: 8000,
+  theme: {
+    background: '#1e2320', foreground: '#dfe6dd',
+    cursor: '#8fc3a2', cursorAccent: '#1e2320',
+    selectionBackground: 'rgba(143,195,162,0.30)',
+    black: '#2b2620', red: '#e06c5a', green: '#9ec46a', yellow: '#e0af68',
+    blue: '#7aa2f7', magenta: '#c79bf0', cyan: '#79c7c7', white: '#d8cfc2',
+    brightBlack: '#7a6f60', brightRed: '#f08a7a', brightGreen: '#b6d98a',
+    brightYellow: '#f0c987', brightBlue: '#9bb8fa', brightMagenta: '#d4b3f5',
+    brightCyan: '#9bd9d9', brightWhite: '#fdf6ea',
+  },
+});
+var fit = null;
+try { fit = new FitAddon.FitAddon(); term.loadAddon(fit); } catch (e) {}
+var host = document.getElementById('host');
+term.open(host);
+
+function post(msg) {
+  try { window.webkit.messageHandlers.loom.postMessage(msg); } catch (e) {}
+}
+term.onData(function (data) { post({ type: 'input', data: data }); });
+
+var lastCols = 0, lastRows = 0;
+function doFit() {
+  if (!fit) return;
+  // Never report a size measured mid-layout. tmux sizes the window to
+  // its smallest client, so a fleeting "20 rows" while this view is
+  // still settling squeezes the pane for everyone attached — and the
+  // agent reflows its screen to match, which outlasts the client that
+  // caused it.
+  if (host.clientWidth < 120 || host.clientHeight < 120) {
+    setTimeout(doFit, 100);
+    return;
+  }
+  try { fit.fit(); } catch (e) { return; }
+  if (term.cols !== lastCols || term.rows !== lastRows) {
+    lastCols = term.cols; lastRows = term.rows;
+    post({ type: 'resize', cols: term.cols, rows: term.rows });
+  }
+}
+
+// tmux does the scrolling, for both kinds of screen. Left to xterm,
+// the wheel either moves a buffer holding nothing from before this
+// client attached, or — on a full-screen pane — turns into arrow keys,
+// which a TUI reads as "previous prompt" rather than "scroll up".
+// That costs a round trip, so deltas are batched per frame,
+// and Swift keeps only one request in flight, because a flick that
+// fires a dozen overlapping requests arrives out of order and judders.
+var scrollAccum = 0, scrollFrame = null;
+host.addEventListener('wheel', function (e) {
+  // Both screens go through tmux, not just full-screen ones.
+  //
+  // Scrolling the local buffer looks like the cheaper answer, but it
+  // only holds what has arrived since this client attached — usually
+  // nothing — so the wheel appeared to do nothing at all, the bottom
+  // line sitting there as if pinned. Worse, an agent mid-answer
+  // rewrites the screen in place, which drags the view back down as
+  // fast as you scroll it. tmux has the real history and freezes the
+  // view while you read it, and scrolling back to the bottom leaves
+  // that state on its own.
+  e.preventDefault();
+  e.stopPropagation();
+  scrollAccum += (e.deltaMode === 1 ? e.deltaY * 18 : e.deltaY);
+  if (scrollFrame) return;
+  scrollFrame = requestAnimationFrame(function () {
+    var total = scrollAccum;
+    scrollAccum = 0;
+    scrollFrame = null;
+    if (!total) return;
+    post({
+      type: 'scroll',
+      dir: total < 0 ? 'up' : 'down',
+      lines: Math.max(1, Math.min(80, Math.round(Math.abs(total) / 24))),
+    });
+  });
+}, { passive: false, capture: true });
+var fitTimer = null;
+window.addEventListener('resize', function () {
+  if (fitTimer) clearTimeout(fitTimer);
+  fitTimer = setTimeout(doFit, 90);
+});
+
+// Drop the sequences that turn on mouse reporting, so the app cannot
+// take the pointer: with it on, xterm forwards clicks and drags to the
+// app and text can no longer be selected. Only sequences whose
+// parameters are *all* mouse modes are removed, and nothing is
+// buffered across chunks, so this cannot corrupt other escapes. One
+// split across two reads slips through and self-heals on the next
+// redraw. The trade is that clicks do not reach the app.
+var MOUSE_MODES = [1000, 1001, 1002, 1003, 1005, 1006, 1015, 1016];
+function stripMouseModes(u8) {
+  if (!u8 || u8.length < 4) return u8;
+  var hit = false;
+  for (var k = 0; k + 3 < u8.length; k++) {
+    if (u8[k] === 0x1b && u8[k + 1] === 0x5b && u8[k + 2] === 0x3f) { hit = true; break; }
+  }
+  if (!hit) return u8;
+  var n = u8.length, out = new Uint8Array(n), w = 0, i = 0;
+  while (i < n) {
+    if (i + 3 < n && u8[i] === 0x1b && u8[i + 1] === 0x5b && u8[i + 2] === 0x3f) {
+      var j = i + 3, params = '';
+      while (j < n && ((u8[j] >= 0x30 && u8[j] <= 0x39) || u8[j] === 0x3b)) {
+        params += String.fromCharCode(u8[j]); j++;
+      }
+      if (j < n && (u8[j] === 0x68 || u8[j] === 0x6c)) {
+        var nums = params.split(';').filter(Boolean).map(Number);
+        if (nums.length && nums.every(function (x) { return MOUSE_MODES.indexOf(x) >= 0; })) {
+          i = j + 1;
+          continue;
+        }
+      }
+    }
+    out[w++] = u8[i++];
+  }
+  return out.subarray(0, w);
+}
+
+window.__loomWrite = function (b64) {
+  var raw = atob(b64);
+  var bytes = new Uint8Array(raw.length);
+  for (var i = 0; i < raw.length; i++) { bytes[i] = raw.charCodeAt(i); }
+  term.write(stripMouseModes(bytes));
+};
+window.__loomTerm = term;
+window.__loomReset = function () { try { term.reset(); } catch (e) {} };
+window.__loomFocus = function () { try { term.focus(); } catch (e) {} };
+window.__loomFontSize = function (n) {
+  term.options.fontSize = n;
+  doFit();
+};
+// Force a measurement even if the grid works out the same, so the pane
+// can be re-sized to this window after something else shrank it.
+window.__loomRefit = function () {
+  lastCols = 0;
+  lastRows = 0;
+  doFit();
+};
+window.__loomSelection = function () { return term.getSelection() || ''; };
+window.__loomBottom = function () { try { term.scrollToBottom(); } catch (e) {} };
+
+doFit();
+post({ type: 'ready', cols: term.cols, rows: term.rows });
+</script></body></html>

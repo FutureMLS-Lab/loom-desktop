@@ -23,7 +23,7 @@ cp .build/release/LoomDesktop "$STAGE/Contents/MacOS/LoomDesktop"
 # Web assets loaded via Bundle.main at runtime: the markdown preview engine
 # and xterm, which renders the agent's pane exactly as the web console does.
 cp Resources/marked.min.js Resources/xterm.js Resources/xterm.css Resources/addon-fit.js \
-   Resources/markdown-preview.html \
+   Resources/markdown-preview.html Resources/terminal.html \
    "$STAGE/Contents/Resources/"
 
 cat > "$STAGE/Contents/Info.plist" <<PLIST

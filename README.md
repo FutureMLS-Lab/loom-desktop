@@ -217,7 +217,7 @@ binary somewhere else.
 | `ChatSession.swift` / `ChatView.swift` | The chat module (feed, question cards, composer) |
 | `SessionCache.swift` | One session per task; only the visible one polls |
 | `TerminalPane.swift` | The Terminal tab: pane on top, plan below, one scrolling page |
-| `TerminalWeb.swift` | xterm in a `WKWebView`, attached to the pane's pty |
+| `TerminalWeb.swift` | xterm in a `WKWebView`, attached to the pane's pty. The page it hosts is `Resources/terminal.html` |
 | `ComposerField.swift` | The compose box: ⏎ sends, ⇧⏎ newlines, IME-safe |
 | `NotesView.swift` | The project scratchpad (`.RUD/NOTES.md`), ⌘⇧N |
 | `PlanDigest.swift` | The read-only `PLAN.md` under the terminal |
@@ -234,7 +234,7 @@ binary somewhere else.
 | `LoomServers.swift` | The configured Looms, and which one is current |
 | `SettingsWindow.swift` | Managing servers: URL, token, and switching |
 | `Snapshotter.swift` | Window → PNG for the headless UI check, web views included |
-| `Resources/` | App icon, the markdown preview's page, and the bundled `marked`, `xterm`, and fit addon. Anything added here must also be copied in `make-app.sh`, or it exists for the checkout and not for the installed app. The sidebar watermark reads `loom-mark.png`, which only the installed bundle has — the bare binary runs without it |
+| `Resources/` | App icon, the two pages the app hosts (`terminal.html`, `markdown-preview.html`), and the bundled `marked`, `xterm`, and fit addon that get spliced into them at their placeholders. Anything added here must also be copied in `make-app.sh`, or it exists for the checkout and not for the installed app. The sidebar watermark reads `loom-mark.png`, which only the installed bundle has — the bare binary runs without it |
 | `scripts/make-app.sh` | Build, sign, install to `/Applications`, register the login item |
 | `scripts/mock-loom.py` | Offline mock of the Loom API for development |
 | `scripts/summon.swift` | Poke a running app to bring its windows to this screen |

@@ -205,6 +205,12 @@ struct MarkdownBody: View {
     let text: String
     var fontSize: CGFloat = 14
 
+    /// Leading for running text. At 14pt the 2 this used to be worked out
+    /// around 1.35× — fine for a caption, close for a paragraph, and closer
+    /// still in Chinese, which has no ascenders or descenders to open a line
+    /// up. Agent turns here run to whole screens of prose.
+    private var leading: CGFloat { (fontSize * 0.42).rounded() }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 9) {
             ForEach(Array(MarkdownBlockParser.blocks(text).enumerated()), id: \.offset) { _, block in
@@ -212,7 +218,7 @@ struct MarkdownBody: View {
                 case .paragraph(let body):
                     Text(InlineMarkdown.text(body))
                         .font(.system(size: fontSize))
-                        .lineSpacing(2)
+                        .lineSpacing(leading)
                         .textSelection(.enabled)
                         .fixedSize(horizontal: false, vertical: true)
                         .frame(maxWidth: .infinity, alignment: .leading)
@@ -235,7 +241,7 @@ struct MarkdownBody: View {
                                     .padding(.top, 6)
                                 Text(InlineMarkdown.text(item))
                                     .font(.system(size: fontSize))
-                                    .lineSpacing(2)
+                                    .lineSpacing(leading)
                                     .textSelection(.enabled)
                                     .fixedSize(horizontal: false, vertical: true)
                                     .frame(maxWidth: .infinity, alignment: .leading)

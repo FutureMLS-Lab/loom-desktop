@@ -12,6 +12,8 @@ struct ChatView: View {
     @State private var expandedRuns: Set<String> = []
 
     private static let bottomAnchor = "chat-bottom"
+    /// Widest the conversation column is allowed to get.
+    private static let readingMeasure: CGFloat = 860
 
     var body: some View {
         VStack(spacing: 0) {
@@ -82,6 +84,13 @@ struct ChatView: View {
                         Color.clear.frame(height: 1).id(Self.bottomAnchor)
                     }
                     .padding(12)
+                    // A line of prose gets hard to track back from once it
+                    // runs much past 90 characters, and this pane is 950pt
+                    // wide on a full-screen window. Capped and centred, so a
+                    // wide window gives margins rather than longer lines —
+                    // and generous enough that a results table still has room.
+                    .frame(maxWidth: Self.readingMeasure)
+                    .frame(maxWidth: .infinity)
                     .background(
                         GeometryReader { geo in
                             Color.clear.preference(
@@ -267,6 +276,10 @@ struct ChatView: View {
             .padding(.bottom, 2)
         }
         .padding(10)
+        // Held to the same column as the conversation, so what you type lines
+        // up with what you are replying to instead of running wider than it.
+        .frame(maxWidth: Self.readingMeasure)
+        .frame(maxWidth: .infinity)
     }
 
     private func sendDraft() {
@@ -427,7 +440,8 @@ struct UserBubble: View {
             VStack(alignment: .trailing, spacing: 3) {
                 Text(text)
                     .font(.system(size: 14))
-                    .lineSpacing(2)
+                    // Same leading as the agent's turns opposite it.
+                    .lineSpacing(6)
                     .foregroundColor(.white)
                     .textSelection(.enabled)
                     .multilineTextAlignment(.leading)

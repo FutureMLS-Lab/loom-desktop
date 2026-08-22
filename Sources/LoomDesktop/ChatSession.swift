@@ -31,7 +31,10 @@ final class ChatSession: ObservableObject, Identifiable {
     @Published private(set) var answerFeedback = ""
     @Published private(set) var starting = false
 
-    private(set) var paneTarget = ""
+    /// The tmux pane the agent is in. Published because the terminal attaches
+    /// when it arrives and three controls are disabled until it does — it was
+    /// getting through only on the redraw some other poll happened to cause.
+    @Published private(set) var paneTarget = ""
     /// Bumped whenever a flow step that rewrites PLAN.md completes, so an open
     /// plan view knows to re-read it.
     @Published private(set) var planRevision = 0
@@ -49,6 +52,7 @@ final class ChatSession: ObservableObject, Identifiable {
     /// Exposed for the tabbed task window (diff/terminal fetch through it).
     let api: LoomAPI
     private var pollTask: Task<Void, Never>?
+    private var detailTask: Task<Void, Never>?
     private var sessionId: String?
     private var limit = 60
     /// Poll hard while the agent is producing output, back off when it is
@@ -117,8 +121,14 @@ final class ChatSession: ObservableObject, Identifiable {
 
     func start() {
         guard pollTask == nil else { return }
+        // Alongside the transcript, not in front of it. The detail read gives
+        // the pane target and the title, but it arrives with every markdown
+        // under the task inlined — seconds of it where a worktree holds a
+        // documented repository — and the conversation is what you opened the
+        // task to see. Waiting for one to show the other left the feed empty
+        // for as long as the download took.
+        detailTask = Task { [weak self] in await self?.loadDetail() }
         pollTask = Task { [weak self] in
-            await self?.loadDetail()
             await self?.load(full: true)
             while !Task.isCancelled {
                 let interval = self?.pollDelay ?? Self.idleInterval
@@ -131,6 +141,8 @@ final class ChatSession: ObservableObject, Identifiable {
     func stop() {
         pollTask?.cancel()
         pollTask = nil
+        detailTask?.cancel()
+        detailTask = nil
     }
 
     private func loadDetail() async {

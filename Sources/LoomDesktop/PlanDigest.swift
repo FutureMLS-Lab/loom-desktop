@@ -12,9 +12,13 @@ struct PlanDigest: View {
     @AppStorage("terminalPlanExpanded") private var expanded = true
     @AppStorage("taskTab") private var taskTabRaw = TaskPane.Tab.conversation.rawValue
 
-    @State private var files: [String: String] = [:]
+    /// The markdown sitting in the task's own directory, and the one on show.
+    /// Deliberately not the whole task tree: a task whose worktree holds a
+    /// documented repository has hundreds of `.md` files in it, none of them
+    /// this task's plan. The Files tab is where you go looking for those.
     @State private var order: [String] = []
     @State private var selected = ""
+    @State private var content = ""
     @State private var loading = true
     @State private var error = ""
     @State private var poller: Task<Void, Never>?
@@ -70,7 +74,7 @@ struct PlanDigest: View {
                 Menu {
                     ForEach(order, id: \.self) { name in
                         Button {
-                            selected = name
+                            select(name)
                         } label: {
                             if name == selected {
                                 Label(name, systemImage: "checkmark")
@@ -95,7 +99,7 @@ struct PlanDigest: View {
                     .font(.system(size: 12, weight: .semibold))
             }
 
-            if loading && files.isEmpty {
+            if loading && content.isEmpty {
                 ProgressView().controlSize(.small).scaleEffect(0.7)
             }
 
@@ -151,7 +155,7 @@ struct PlanDigest: View {
 
     @ViewBuilder
     private var body_: some View {
-        if let content = files[selected], !content.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+        if !content.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
             // Sized to the document: this sits in a scrolling page, and a box
             // with its own scrollbar inside one is what makes reading awkward.
             MarkdownPreview(
@@ -211,31 +215,61 @@ struct PlanDigest: View {
         poller = nil
     }
 
+    /// Lists the task's own directory and reads the one document on show.
+    ///
+    /// This used to read the task detail, which arrives with every markdown in
+    /// the task tree inlined — 13 MB and seven seconds for a task holding a
+    /// documented repository, re-read on a timer, with all of it then kept in
+    /// view state. Two small reads instead.
     private func load() async {
         do {
-            let detail = try await session.api.taskDetail(
+            let listing = try await session.api.taskFiles(
                 projectId: session.projectId,
                 slug: session.slug
             )
-            let templates = detail.templates ?? [:]
-            var names = Array(templates.keys).filter {
-                !(templates[$0] ?? "").trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-            }
+            var names = (listing.entries ?? [])
+                .filter { !$0.dir && $0.name.lowercased().hasSuffix(".md") && ($0.size ?? 0) > 0 }
+                .map(\.name)
             names.sort { left, right in
                 if left == "PLAN.md" { return true }
                 if right == "PLAN.md" { return false }
                 return left.localizedCaseInsensitiveCompare(right) == .orderedAscending
             }
-            files = templates
             order = names
             if selected.isEmpty || !names.contains(selected) {
                 selected = names.first ?? ""
             }
+            content = selected.isEmpty ? "" : try await read(selected)
             error = ""
         } catch {
             self.error = error.localizedDescription
         }
         loading = false
+    }
+
+    /// Switching document reads only that one, rather than going back for the
+    /// listing it already has.
+    private func select(_ name: String) {
+        guard name != selected else { return }
+        selected = name
+        content = ""
+        Task {
+            do {
+                content = try await read(name)
+                error = ""
+            } catch {
+                self.error = error.localizedDescription
+            }
+        }
+    }
+
+    private func read(_ name: String) async throws -> String {
+        let file = try await session.api.taskFiles(
+            projectId: session.projectId,
+            slug: session.slug,
+            path: name
+        )
+        return file.body ?? ""
     }
 }
 

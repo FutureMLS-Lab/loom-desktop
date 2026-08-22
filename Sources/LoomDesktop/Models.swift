@@ -94,10 +94,12 @@ struct TaskDetail: Decodable {
     var meta: LoomTaskMeta
     var claude: AgentStatus?
     var worktree_statuses: [WorktreeStatus]?
-    /// File name → contents. `PLAN.md` lives here.
-    var templates: [String: String]?
-    /// Names only, of the markdown the server scanned in the task directory.
-    var task_markdown_files: [String]?
+    // `templates` and `task_markdown_files` are deliberately not decoded. The
+    // server inlines the full text of every markdown file it finds anywhere
+    // under the task, worktree included — 13 MB for a task holding a
+    // documented repository. Nothing here needs it: the plan digest and the
+    // Files tab both read what they show through `/files`, a directory at a
+    // time. Naming the fields would rebuild all of it on every read.
     /// Where the server says the plan lives, which is what the flow prompts
     /// should name so the agent writes to the same file the viewer reads.
     var plan_path: String?

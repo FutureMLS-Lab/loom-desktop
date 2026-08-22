@@ -19,6 +19,8 @@ struct NotesView: View {
     @State private var status = ""
     @State private var editorRevision = 0
     @State private var autosave: Task<Void, Never>?
+    /// One writer at a time — see `save`.
+    @State private var writing = false
 
     private var dirty: Bool { text != savedBaseline }
 
@@ -119,7 +121,7 @@ struct NotesView: View {
                 fontSize: 13.5,
                 placeholder: loading
                     ? "Loading…"
-                    : "Notes for \(currentProject?.name ?? "this project") — saved to NOTES.md, shared with the web console."
+                    : "Notes for \(currentProject?.label ?? "this project") — saved to NOTES.md, shared with the web console."
             )
         }
     }
@@ -153,15 +155,29 @@ struct NotesView: View {
         }
     }
 
+    /// Writes what is on screen, one write at a time.
+    ///
+    /// ⌘S while the autosave is still in the air used to start a second PUT of
+    /// the same file. Whichever reached the server last won, which is not
+    /// necessarily the newer text — so a note could end up as an older draft
+    /// while the window said it had been saved. A second caller now returns
+    /// and lets the running write pick its text up: the loop re-reads `dirty`
+    /// after each round trip, so anything typed during one is written by the
+    /// next.
     private func save(silent: Bool = false) async {
-        guard let project = currentProject, dirty else { return }
-        let payload = text
-        do {
-            try await store.api.saveNotes(projectId: project.id, content: payload)
-            savedBaseline = payload
-            status = silent ? "Saved" : "Saved just now"
-        } catch {
-            status = error.localizedDescription
+        guard !writing else { return }
+        writing = true
+        defer { writing = false }
+        while let project = currentProject, dirty {
+            let payload = text
+            do {
+                try await store.api.saveNotes(projectId: project.id, content: payload)
+                savedBaseline = payload
+                status = silent ? "Saved" : "Saved just now"
+            } catch {
+                status = error.localizedDescription
+                return
+            }
         }
     }
 }

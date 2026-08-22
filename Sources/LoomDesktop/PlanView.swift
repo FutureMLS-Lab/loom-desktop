@@ -20,7 +20,10 @@ struct PlanView: View {
     /// Why the open file shows no source: binary, or too big to edit.
     @State private var unreadable = ""
     @State private var loading = true
+    /// Drives the Save button's spinner, so only an explicit save shows one.
     @State private var saving = false
+    /// One writer at a time — see `save`.
+    @State private var writing = false
     @State private var error = ""
     @State private var status = ""
     /// Bumped when the editor must accept an external buffer (load / file switch).
@@ -455,28 +458,43 @@ struct PlanView: View {
         }
     }
 
+    /// Writes the open file, one write at a time.
+    ///
+    /// ⌘S landing while the autosave was still in the air sent a second write
+    /// of the same file, and the server kept whichever arrived last rather
+    /// than whichever was newer. The loop re-checks after each round trip, so
+    /// edits made during a write go out in the next one.
     private func save(silent: Bool = false) async {
-        guard canEdit, !selected.isEmpty else { return }
-        let name = selected
-        let payload = draft
-        guard payload != savedBaseline else { return }
+        guard canEdit, !selected.isEmpty, !writing else { return }
+        writing = true
+        defer { writing = false }
+        // The spinner belongs to a save you asked for. An autosave firing
+        // after every pause in typing should not blink the button.
         if !silent {
             saving = true
             status = ""
         }
-        do {
-            try await session.api.writeTemplate(
-                projectId: session.projectId,
-                slug: session.slug,
-                name: name,
-                content: payload
-            )
-            savedBaseline = payload
-            session.clearFileDraft(name)
-            status = silent ? "Auto-saved" : "Saved"
-        } catch {
-            status = error.localizedDescription
+        defer { if !silent { saving = false } }
+        while dirty {
+            let name = selected
+            let payload = draft
+            do {
+                try await session.api.writeTemplate(
+                    projectId: session.projectId,
+                    slug: session.slug,
+                    name: name,
+                    content: payload
+                )
+                savedBaseline = payload
+                session.clearFileDraft(name)
+                status = silent ? "Auto-saved" : "Saved"
+            } catch {
+                status = error.localizedDescription
+                return
+            }
+            // Switching file mid-write leaves the new file's buffer to its own
+            // save; this one is done.
+            if selected != name { return }
         }
-        if !silent { saving = false }
     }
 }

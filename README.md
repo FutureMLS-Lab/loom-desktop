@@ -224,7 +224,8 @@ binary somewhere else.
 | `PlanView.swift` | The Files tab: the task's folder tree and source editor |
 | `PlainTextEditor.swift` | The plain source editor, shared by Files and Notes |
 | `MarkdownBlocks.swift` | Agent turns as blocks: tables, lists, code |
-| `MarkdownPreview.swift` | `marked` in a `WKWebView`, shared by the digest and notes |
+| `MarkdownPreview.swift` | `marked` in a `WKWebView`, shared by the digest and notes. The page it hosts is `Resources/markdown-preview.html` |
+| `LoomResource.swift` | Finds a bundled asset, whether the app is installed or run from a checkout |
 | `DiffView.swift` | The Changes tab: per-file diffs, and the task's worktrees |
 | `QuickOpen.swift` / `NewTaskView.swift` | ⌘P open by name, ⌘N create a task |
 | `AddProjectView.swift` | Registering a project: an existing folder, a new one, or a clone |
@@ -233,7 +234,7 @@ binary somewhere else.
 | `LoomServers.swift` | The configured Looms, and which one is current |
 | `SettingsWindow.swift` | Managing servers: URL, token, and switching |
 | `Snapshotter.swift` | Window → PNG for the headless UI check, web views included |
-| `Resources/` | App icon, and the bundled `marked`, `xterm`, and fit addon. The sidebar watermark reads `loom-mark.png`, which only the installed bundle has — the bare binary runs without it |
+| `Resources/` | App icon, the markdown preview's page, and the bundled `marked`, `xterm`, and fit addon. Anything added here must also be copied in `make-app.sh`, or it exists for the checkout and not for the installed app. The sidebar watermark reads `loom-mark.png`, which only the installed bundle has — the bare binary runs without it |
 | `scripts/make-app.sh` | Build, sign, install to `/Applications`, register the login item |
 | `scripts/mock-loom.py` | Offline mock of the Loom API for development |
 | `scripts/summon.swift` | Poke a running app to bring its windows to this screen |

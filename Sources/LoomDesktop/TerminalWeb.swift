@@ -406,21 +406,7 @@ final class TerminalSession: NSObject, ObservableObject {
     }
 
     private static func asset(_ name: String, _ ext: String) -> String {
-        let candidates: [URL?] = [
-            Bundle.main.url(forResource: name, withExtension: ext),
-            Bundle.main.resourceURL?.appendingPathComponent("\(name).\(ext)"),
-            URL(fileURLWithPath: #filePath)
-                .deletingLastPathComponent()
-                .deletingLastPathComponent()
-                .deletingLastPathComponent()
-                .appendingPathComponent("Resources/\(name).\(ext)"),
-        ]
-        for case let url? in candidates {
-            if let text = try? String(contentsOf: url, encoding: .utf8), !text.isEmpty {
-                return text
-            }
-        }
-        return ""
+        LoomResource.text(name, ext) ?? ""
     }
 
     /// The web console's terminal, verbatim: same theme, same font stack, same

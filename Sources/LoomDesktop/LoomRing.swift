@@ -1,16 +1,15 @@
 import SwiftUI
 
 /// The web console's agent-activity rings, ported from `app.css` and drawn by
-/// Core Animation: `.is-working` as a conic gradient rotating every 1.8s,
-/// `.is-finished` blinking on the shared cycle below.
+/// Core Animation.
 
-/// One cadence for every "finished, unseen" signal in the app. The dock pill,
-/// its background, and the sidebar dot are the same task saying the same
-/// thing, so they have to say it in step — with two cadences the eye read them
-/// as two separate alarms.
+/// The cadence for a blinking "finished, unseen" dot, so the sidebar and
+/// quick-open say the same thing in step rather than as two separate alarms.
 ///
-/// Slower than the web console's 1.1s: one pill flashing hard reads as "look
+/// Slower than the web console's 1.1s: one thing flashing hard reads as "look
 /// here", and a dozen of them at that speed reads as a fault.
+///
+/// The dock's pills no longer blink at all — see `PillRing`.
 enum LoomBlink {
     static let cycle: CFTimeInterval = 1.6
     static var half: CFTimeInterval { cycle / 2 }
@@ -18,10 +17,12 @@ enum LoomBlink {
 
 /// A pill's activity ring, drawn by Core Animation.
 ///
-/// Working is the web console's conic gradient rotating once every 1.8s;
-/// finished is the solid indigo→green ring blinking on `LoomBlink.cycle`. Both
-/// run on the render server, so a dock of forty pills costs the app nothing
-/// per frame — which is why there is no longer a cap on how many may animate.
+/// Working is the web console's conic gradient rotating once every 1.8s.
+/// Finished is the same indigo→green ring, held still: these are drawn on a
+/// panel that floats above every window on every space, where each animated
+/// frame costs the compositor a rebuild of the desktop underneath it, and a
+/// dock of a dozen finished pills was enough to slow the whole machine.
+/// Motion is spent on the one state that is actually changing.
 struct PillRing: NSViewRepresentable {
     enum Mode {
         case working
@@ -41,6 +42,9 @@ struct PillRing: NSViewRepresentable {
 }
 
 final class PillRingView: NSView {
+    /// Positions per revolution of the working ring.
+    static let spinSteps = 12
+
     private let gradient = CAGradientLayer()
     private let ring = CAShapeLayer()
     private var mode: PillRing.Mode
@@ -139,95 +143,39 @@ final class PillRingView: NSView {
         gradient.removeAllAnimations()
         switch mode {
         case .working:
-            let spin = CABasicAnimation(keyPath: "transform.rotation.z")
-            spin.fromValue = 0
-            spin.toValue = 2 * Double.pi
+            // Stepped, not swept. A smooth rotation asks the compositor for a
+            // new frame at the display's rate, and this ring sits on a
+            // transparent panel above every window on every space, so each of
+            // those frames is a re-blend of the desktop underneath it —
+            // enough, with three tasks working, to take WindowServer to 77%
+            // and make the whole machine feel slow.
+            //
+            // Twelve positions a revolution costs a twelfth of the frames and
+            // reads as a spinner regardless: the classic ones tick.
+            let steps = Self.spinSteps
+            let spin = CAKeyframeAnimation(keyPath: "transform.rotation.z")
+            spin.values = (0...steps).map { Double($0) / Double(steps) * 2 * .pi }
+            spin.calculationMode = .discrete
             spin.duration = 1.8
             spin.repeatCount = .infinity
             gradient.add(spin, forKey: "spin")
         case .finished:
-            // A gentler swing than the web's 1→0.12 strobe, and slower. One
-            // pill flashing hard reads as "look here"; a dozen of them reads
-            // as a fault, and the dock often has a dozen. Still unmistakably
-            // moving, just not shouting.
-            let blink = CABasicAnimation(keyPath: "opacity")
-            blink.fromValue = 1.0
-            blink.toValue = 0.4
-            blink.duration = LoomBlink.half
-            blink.autoreverses = true
-            blink.repeatCount = .infinity
-            blink.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
-            let now = gradient.convertTime(CACurrentMediaTime(), from: nil)
-            blink.beginTime = now - now.truncatingRemainder(dividingBy: LoomBlink.cycle)
-            gradient.add(blink, forKey: "blink")
+            // Deliberately still. This ring used to blink, and the dock
+            // routinely carries a dozen of them at once: the panel floats
+            // above every window on every space, so each frame of each
+            // animation makes the compositor rebuild the whole desktop
+            // beneath it. Measured, a dock of thirteen finished pills held
+            // WindowServer at 82% against 46% with the panel hidden — the
+            // machine, not the app, was what went slow.
+            //
+            // The colour says "finished" on its own, and the count in the
+            // header says how many. Motion is kept for work in progress,
+            // which is the state that is actually changing.
+            break
         }
     }
 }
 
-/// The pill's own background, pulsing between two opacities of one colour.
-/// Same reasoning as the ring: a layer animation instead of SwiftUI state.
-struct PulsingFill: NSViewRepresentable {
-    let color: NSColor
-    var from: Float = 0.6
-    var to: Float = 0.85
-    var halfCycle: CFTimeInterval = LoomBlink.half
-
-    func makeNSView(context: Context) -> PulsingFillView {
-        PulsingFillView(color: color, from: from, to: to, halfCycle: halfCycle)
-    }
-
-    func updateNSView(_ view: PulsingFillView, context: Context) {}
-}
-
-final class PulsingFillView: NSView {
-    private let fill = CALayer()
-    private let from: Float
-    private let to: Float
-    private let halfCycle: CFTimeInterval
-
-    init(color: NSColor, from: Float, to: Float, halfCycle: CFTimeInterval) {
-        self.from = from
-        self.to = to
-        self.halfCycle = halfCycle
-        super.init(frame: .zero)
-        wantsLayer = true
-        fill.backgroundColor = color.cgColor
-        // The resting value, for the moments a layer carries no animation —
-        // off-window, or before it is attached.
-        fill.opacity = to
-        layer?.addSublayer(fill)
-    }
-
-    @available(*, unavailable)
-    required init?(coder: NSCoder) { fatalError("not used") }
-
-    override func layout() {
-        super.layout()
-        CATransaction.begin()
-        CATransaction.setDisableActions(true)
-        fill.frame = bounds
-        CATransaction.commit()
-    }
-
-    override func viewDidMoveToWindow() {
-        super.viewDidMoveToWindow()
-        guard window != nil else {
-            fill.removeAnimation(forKey: "pulse")
-            return
-        }
-        guard fill.animation(forKey: "pulse") == nil else { return }
-        let pulse = CABasicAnimation(keyPath: "opacity")
-        pulse.fromValue = from
-        pulse.toValue = to
-        pulse.duration = halfCycle
-        pulse.autoreverses = true
-        pulse.repeatCount = .infinity
-        pulse.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
-        let now = fill.convertTime(CACurrentMediaTime(), from: nil)
-        pulse.beginTime = now - now.truncatingRemainder(dividingBy: halfCycle * 2)
-        fill.add(pulse, forKey: "pulse")
-    }
-}
 
 /// "This one is running", for a header or a status line — one or two on
 /// screen at a time.

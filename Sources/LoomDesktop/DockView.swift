@@ -352,7 +352,10 @@ struct TaskPillView: View {
         .background {
             switch pill.state {
             case .finished:
-                PulsingFill(color: NSColor(LoomColors.accent))
+                // Was a pulsing layer. Static now, for the same reason the
+                // ring is: a dozen of these animating over every space kept
+                // the compositor busy enough to slow the whole machine.
+                LoomColors.accent
             case .working:
                 Color.gray.opacity(0.85)
             case .idle:

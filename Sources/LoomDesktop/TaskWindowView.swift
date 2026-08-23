@@ -265,7 +265,15 @@ struct TaskPane: View {
 
     // MARK: Terminal
 
+    private var terminalEmptyTitle: String {
+        if session.detailLoading { return "Opening the task…" }
+        return session.detailError.isEmpty ? "No terminal yet" : "Can't reach this task"
+    }
+
     private var detailMessage: String {
+        if session.detailLoading {
+            return "Reading where its agent is running."
+        }
         if !session.detailError.isEmpty {
             return "\(session.detailError)\n\nThe pane may well be running — this is the "
                 + "task's own details that could not be read. Retrying."
@@ -279,11 +287,15 @@ struct TaskPane: View {
     private var terminalContent: some View {
         if session.paneTarget.isEmpty {
             VStack(spacing: 10) {
-                Image(systemName: session.detailError.isEmpty
-                      ? "apple.terminal" : "exclamationmark.triangle")
-                    .font(.system(size: 26))
-                    .foregroundColor(.secondary.opacity(0.7))
-                Text(session.detailError.isEmpty ? "No terminal yet" : "Can't reach this task")
+                if session.detailLoading {
+                    ProgressView().controlSize(.small)
+                } else {
+                    Image(systemName: session.detailError.isEmpty
+                          ? "apple.terminal" : "exclamationmark.triangle")
+                        .font(.system(size: 26))
+                        .foregroundColor(.secondary.opacity(0.7))
+                }
+                Text(terminalEmptyTitle)
                     .font(.system(size: 16, weight: .semibold))
                 // A pane can be alive and this still be empty, when the task's
                 // details are too big to fetch. Saying "waiting" then is a
@@ -293,7 +305,10 @@ struct TaskPane: View {
                     .foregroundColor(.secondary)
                     .multilineTextAlignment(.center)
                     .padding(.horizontal, 40)
-                if !session.online && session.detailError.isEmpty {
+                // Offered only once there is an answer. Until the read lands
+                // the app does not know whether an agent is already running,
+                // so inviting you to start one is a guess.
+                if !session.online && session.detailError.isEmpty && !session.detailLoading {
                     Button("Start agent") { session.startAgent() }
                         .buttonStyle(.borderedProminent)
                         .tint(LoomColors.accent)

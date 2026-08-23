@@ -36,8 +36,14 @@ final class ChatSession: ObservableObject, Identifiable {
     /// getting through only on the redraw some other poll happened to cause.
     @Published private(set) var paneTarget = ""
     /// Why the pane target is still unknown, so the Terminal tab can say what
-    /// is wrong instead of implying it is nearly there.
+    /// is wrong instead of implying it is nearly there. Empty while the read
+    /// is merely in progress — see `detailLoading`.
     @Published private(set) var detailError = ""
+    /// The first read of the task's details is on its way. Distinct from
+    /// having failed: until it settles, the Terminal tab knows neither the
+    /// pane target nor whether there is an agent to start, and should offer
+    /// neither answer.
+    @Published private(set) var detailLoading = false
     /// Bumped whenever a flow step that rewrites PLAN.md completes, so an open
     /// plan view knows to re-read it.
     @Published private(set) var planRevision = 0
@@ -70,6 +76,9 @@ final class ChatSession: ObservableObject, Identifiable {
     /// answering rather than keep a full-rate poll pointed at it.
     private var failureStreak = 0
     private static let maxBackoff: TimeInterval = 60
+    /// How many times the task detail may fail before the Terminal tab stops
+    /// saying it is loading and says it cannot be reached.
+    private static let detailAttemptsBeforeComplaining = 3
 
     private var pollDelay: TimeInterval {
         if failureStreak > 0 {
@@ -157,6 +166,9 @@ final class ChatSession: ObservableObject, Identifiable {
     /// is the response being enormous, and hammering it would only add load.
     private func loadDetail() async {
         var attempt = 0
+        detailLoading = true
+        detailError = ""
+        defer { detailLoading = false }
         while !Task.isCancelled {
             do {
                 let detail = try await api.taskDetail(projectId: projectId, slug: slug)
@@ -167,7 +179,14 @@ final class ChatSession: ObservableObject, Identifiable {
                 return
             } catch {
                 attempt += 1
-                detailError = error.localizedDescription
+                // Quiet about the first couple of failures. A cold connection
+                // drops one often enough, and the retry behind it usually
+                // lands within a second or two — announcing "can't reach this
+                // task" that early made every ordinary open flash a failure
+                // it then took back.
+                if attempt >= Self.detailAttemptsBeforeComplaining {
+                    detailError = error.localizedDescription
+                }
                 guard attempt < 5 else { return }
                 let delay = min(pow(2, Double(attempt)) * 2, 30)
                 try? await Task.sleep(nanoseconds: UInt64(delay * 1_000_000_000))

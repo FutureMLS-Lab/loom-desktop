@@ -21,6 +21,9 @@ final class PanelWindow: NSPanel, NSWindowDelegate {
     /// Floor for a drag before any pill has been measured; once there is
     /// content the real limit is the widest single row (header or pill).
     private static let minimumWidth: CGFloat = 240
+    /// Enough for the header strip and a sliver of the rows below it.
+    private static let minimumHeight: CGFloat = 60
+    private static let heightDefaultsKey = "panelHeight"
 
     private var hosting: NSHostingView<DockView>!
     private var store: TaskStore!
@@ -29,6 +32,8 @@ final class PanelWindow: NSPanel, NSWindowDelegate {
     /// width so a panel forced wider by an unusually long pill still returns to
     /// the chosen width once that pill goes away.
     private var userWidth: CGFloat = PanelWindow.savedWidth
+    /// The height dragged to, or 0 while it still follows the content.
+    private var userHeight: CGFloat = PanelWindow.savedHeight
     private var metrics = WrappingHStack.Metrics(contentSize: .zero, widestSubview: 0)
 
     init(store: TaskStore) {
@@ -84,18 +89,32 @@ final class PanelWindow: NSPanel, NSWindowDelegate {
         hosting.rootView.onHidePanel = { [weak self] in
             self?.setPanelHidden(true)
         }
+        hosting.rootView.onFitToContents = { [weak self] in
+            self?.fitToContents()
+        }
 
         reposition()
     }
 
-    /// Called only for user-driven resizes, which makes it the place to learn the
-    /// width the user wants. The height is refused: it belongs to the content.
+    /// Called only for user-driven resizes, which makes it the place to learn
+    /// the size the user wants — both ways, so a corner drag does what a
+    /// corner drag looks like it should.
+    ///
+    /// Dragging the height also fixes it: from then on the dock stays that
+    /// tall and the rows scroll inside it, rather than growing down the screen
+    /// as tasks appear. `fitToContents()` gives that back.
     func windowWillResize(_ sender: NSWindow, to frameSize: NSSize) -> NSSize {
         userWidth = max(Self.minimumWidth, frameSize.width)
-        persistWidth()
-        // Answer in frame coordinates — the content is shorter than the frame
-        // by the (hidden but still present) title bar.
-        return frameSizeFitting(content: NSSize(width: clampedWidth, height: contentHeight))
+        userHeight = max(Self.minimumHeight, frameSize.height)
+        persistSize()
+        return NSSize(width: clampedWidth, height: userHeight)
+    }
+
+    /// Back to a dock exactly as tall as what is in it.
+    func fitToContents() {
+        userHeight = 0
+        persistSize()
+        applyGeometry()
     }
 
     private func frameSizeFitting(content: NSSize) -> NSSize {
@@ -104,12 +123,14 @@ final class PanelWindow: NSPanel, NSWindowDelegate {
 
     /// Width is the user's choice, only widened when a single pill cannot fit
     /// (pills are never broken mid-way). Height follows the wrapped rows plus
-    /// the header strip, growing downward from a fixed top edge.
+    /// the header strip, growing downward from a fixed top edge — unless a
+    /// height was dragged, which the content then scrolls within.
     private func applyGeometry() {
         // Sizes here are the *content* size; the window frame is taller by the
         // title bar, and setting the frame to a content height is what clipped
         // the bottom row off the dock.
-        let target = frameSizeFitting(content: NSSize(width: clampedWidth, height: contentHeight))
+        var target = frameSizeFitting(content: NSSize(width: clampedWidth, height: contentHeight))
+        if userHeight > 0 { target.height = userHeight }
         guard abs(target.width - frame.width) > 0.5 || abs(target.height - frame.height) > 0.5
         else { return }
 
@@ -187,8 +208,16 @@ final class PanelWindow: NSPanel, NSWindowDelegate {
         return saved >= minimumWidth ? saved : defaultWidth
     }
 
-    private func persistWidth() {
+    /// Zero means "as tall as the content", which is the default and what
+    /// `fitToContents()` returns to.
+    private static var savedHeight: CGFloat {
+        let saved = UserDefaults.standard.double(forKey: heightDefaultsKey)
+        return saved >= minimumHeight ? saved : 0
+    }
+
+    private func persistSize() {
         UserDefaults.standard.set(Double(userWidth), forKey: Self.widthDefaultsKey)
+        UserDefaults.standard.set(Double(userHeight), forKey: Self.heightDefaultsKey)
     }
 
     func windowWillClose(_ notification: Notification) {

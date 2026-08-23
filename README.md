@@ -61,6 +61,11 @@ the window you are in now.
 - **Dock Size** in the loom menu draws the whole dock smaller or larger
   (`panelScale`, 0.85 / 1.0 / 1.2). It changes the real metrics rather than
   zooming, so the window shrinks with the pills and more of them fit a row.
+- Drag any **edge or corner** to size the panel. Dragging the height also
+  fixes it: the dock stays that tall and the rows scroll inside it, instead of
+  growing down the screen as tasks appear. *Fit Height to Contents* in the
+  loom menu hands that back. Both are remembered (`panelWidth`, `panelHeight`;
+  a height of 0 means "follow the contents").
 - The panel has a fixed width you set by dragging its **left or right edge**;
   pills wrap onto as many rows as that width needs, and the height follows the
   rows, growing downward. The width is remembered across restarts

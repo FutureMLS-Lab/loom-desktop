@@ -9,73 +9,63 @@ import SwiftUI
 /// Slower than the web console's 1.1s: one thing flashing hard reads as "look
 /// here", and a dozen of them at that speed reads as a fault.
 ///
-/// The dock's pills do not blink at all — their state is a colour, and a
-/// running one carries a `ScanLine`.
+/// A dock pill that has finished breathes on this same cycle, so a finished
+/// task says the same thing at the same moment wherever it appears.
 enum LoomBlink {
     static let cycle: CFTimeInterval = 1.6
     static var half: CFTimeInterval { cycle / 2 }
 }
 
-/// A band of light travelling along the foot of a running pill.
+/// The still colour of a dock pill's rim: indigo→cyan→green while the agent
+/// works, green→cyan once it has finished.
 ///
-/// Replaces a ring that marched around the pill's border: a ring on a
-/// rectangle reads as a marquee, and drawing it meant masking a gradient to a
-/// ring shape, which composites offscreen on every frame it changes. This is
-/// one small gradient sliding inside the pill — no mask, and stepped rather
-/// than swept, so it asks the compositor for a fraction of the frames.
-struct ScanLine: NSViewRepresentable {
-    let color: NSColor
-    var thickness: CGFloat = 2
+/// Fills the pill. The pill's own face is laid over the middle of it, and what
+/// is left showing is the rim — a rim drawn as a rim would have to be masked,
+/// and a masked layer is redrawn offscreen on every frame it changes.
+struct PillBand: NSViewRepresentable {
+    let mode: PillGlow.Mode
 
-    func makeNSView(context: Context) -> ScanLineView {
-        ScanLineView(color: color, thickness: thickness)
-    }
+    func makeNSView(context: Context) -> PillBandView { PillBandView(mode: mode) }
 
-    func updateNSView(_ view: ScanLineView, context: Context) {
-        view.apply(color: color)
-    }
+    func updateNSView(_ view: PillBandView, context: Context) { view.apply(mode: mode) }
 }
 
-final class ScanLineView: NSView {
-    /// Positions the band takes crossing the pill once.
-    private static let steps = 16
-    private static let duration: CFTimeInterval = 1.4
-    /// How much of the pill the band spans.
-    private static let widthFraction: CGFloat = 0.42
-
+final class PillBandView: NSView {
     private let band = CAGradientLayer()
-    private let thickness: CGFloat
-    private var color: NSColor
+    private var mode: PillGlow.Mode
 
-    init(color: NSColor, thickness: CGFloat) {
-        self.color = color
-        self.thickness = thickness
+    init(mode: PillGlow.Mode) {
+        self.mode = mode
         super.init(frame: .zero)
         wantsLayer = true
-        band.startPoint = CGPoint(x: 0, y: 0.5)
-        band.endPoint = CGPoint(x: 1, y: 0.5)
-        band.locations = [0, 0.5, 1]
-        applyColors()
+        band.startPoint = CGPoint(x: 0, y: 1)
+        band.endPoint = CGPoint(x: 1, y: 0)
         layer?.addSublayer(band)
+        applyColors()
     }
 
     @available(*, unavailable)
     required init?(coder: NSCoder) { fatalError("not used") }
 
-    func apply(color: NSColor) {
-        guard color != self.color else { return }
-        self.color = color
+    func apply(mode: PillGlow.Mode) {
+        guard mode != self.mode else { return }
+        self.mode = mode
         applyColors()
     }
 
     private func applyColors() {
         CATransaction.begin()
         CATransaction.setDisableActions(true)
-        band.colors = [
-            color.withAlphaComponent(0).cgColor,
-            color.cgColor,
-            color.withAlphaComponent(0).cgColor,
-        ]
+        switch mode {
+        case .working:
+            band.colors = [
+                PillGlow.accent.cgColor, PillGlow.cyan.cgColor, PillGlow.green.cgColor,
+            ]
+            band.locations = [0, 0.55, 1]
+        case .finished:
+            band.colors = [PillGlow.green.cgColor, PillGlow.cyan.cgColor]
+            band.locations = [0, 1]
+        }
         CATransaction.commit()
     }
 
@@ -83,36 +73,182 @@ final class ScanLineView: NSView {
         super.layout()
         CATransaction.begin()
         CATransaction.setDisableActions(true)
-        let width = max(12, bounds.width * Self.widthFraction)
-        band.frame = CGRect(
-            x: 0, y: bounds.height - thickness, width: width, height: thickness
-        )
+        band.frame = bounds
         CATransaction.commit()
-        restart()
+    }
+}
+
+/// The part that moves: a mote of light running round the inside of a working
+/// pill, or a slow swell of colour over a finished one.
+///
+/// Everything that animates in the dock lives in this one view, so there is a
+/// single place to look when the dock starts costing something. What it costs
+/// is not something the drawing predicts: measured against the same dock
+/// holding still, this mote and a full-pill rotating gradient came to the same
+/// 26 points of WindowServer, because the price was being paid by the card's
+/// drop shadow rather than by anything here (see `DockView`). With that fixed
+/// the same animation costs 9, about 4 of which is the card's frosted material
+/// re-blurring underneath it.
+struct PillGlow: NSViewRepresentable {
+    enum Mode { case working, finished }
+
+    /// How much of the band the pill's face leaves showing. Lives here because
+    /// the mote has to know where the rim is.
+    static let rimWidth: CGFloat = 2.4
+
+    let mode: Mode
+
+    func makeNSView(context: Context) -> PillGlowView { PillGlowView(mode: mode) }
+
+    func updateNSView(_ view: PillGlowView, context: Context) { view.apply(mode: mode) }
+
+    // Resolved once: reading these off `LoomColors` per use allocates an
+    // NSColor each time, which showed up in a profile.
+    static let accent = NSColor(calibratedRed: 0.42, green: 0.40, blue: 0.98, alpha: 1)
+    static let green = NSColor(calibratedRed: 0.30, green: 0.86, blue: 0.58, alpha: 1)
+    static let cyan = NSColor(calibratedRed: 0.30, green: 0.85, blue: 0.95, alpha: 1)
+}
+
+final class PillGlowView: NSView {
+    private let light = CAGradientLayer()
+    private var mode: PillGlow.Mode
+    /// What the animation was last built for. Rebuilding restarts it from the
+    /// top, and SwiftUI lays this view out often enough that the mote never
+    /// made it past the first corner.
+    private var builtFor: (mode: PillGlow.Mode, size: CGSize)?
+
+    init(mode: PillGlow.Mode) {
+        self.mode = mode
+        super.init(frame: .zero)
+        wantsLayer = true
+        light.type = .radial
+        light.startPoint = CGPoint(x: 0.5, y: 0.5)
+        light.endPoint = CGPoint(x: 1, y: 1)
+        layer?.addSublayer(light)
+        applyColors()
+    }
+
+    @available(*, unavailable)
+    required init?(coder: NSCoder) { fatalError("not used") }
+
+    func apply(mode: PillGlow.Mode) {
+        guard mode != self.mode else { return }
+        self.mode = mode
+        applyColors()
+        layoutLight()
+        refreshAnimation()
+    }
+
+    private func applyColors() {
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        switch mode {
+        case .working:
+            light.type = .radial
+            light.colors = [
+                NSColor.white.withAlphaComponent(0.92).cgColor,
+                PillGlow.cyan.withAlphaComponent(0.55).cgColor,
+                PillGlow.cyan.withAlphaComponent(0).cgColor,
+            ]
+            light.locations = [0, 0.4, 1]
+        case .finished:
+            light.type = .axial
+            light.startPoint = CGPoint(x: 0, y: 0.5)
+            light.endPoint = CGPoint(x: 1, y: 0.5)
+            light.colors = [
+                PillGlow.green.withAlphaComponent(0.30).cgColor,
+                PillGlow.cyan.withAlphaComponent(0.22).cgColor,
+            ]
+            light.locations = [0, 1]
+        }
+        CATransaction.commit()
+    }
+
+    override func layout() {
+        super.layout()
+        layoutLight()
+        refreshAnimation()
+    }
+
+    private func layoutLight() {
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        switch mode {
+        case .working:
+            light.bounds = CGRect(x: 0, y: 0, width: Self.moteSize, height: Self.moteSize)
+            light.position = CGPoint(x: bounds.minX + Self.moteSize / 2, y: bounds.midY)
+        case .finished:
+            light.frame = bounds
+        }
+        CATransaction.commit()
     }
 
     override func viewDidMoveToWindow() {
         super.viewDidMoveToWindow()
-        window == nil ? band.removeAllAnimations() : restart()
-    }
-
-    private func restart() {
-        guard window != nil, bounds.width > 0 else { return }
-        band.removeAllAnimations()
-        // Travels entirely inside the pill, so nothing needs clipping — a
-        // clip would put the offscreen pass straight back.
-        let travel = max(0, bounds.width - band.bounds.width)
-        let slide = CAKeyframeAnimation(keyPath: "position.x")
-        slide.values = (0...Self.steps).map {
-            band.bounds.width / 2 + travel * CGFloat($0) / CGFloat(Self.steps)
+        if window == nil {
+            light.removeAllAnimations()
+            builtFor = nil
+        } else {
+            refreshAnimation()
         }
-        slide.calculationMode = .discrete
-        slide.duration = Self.duration
-        slide.repeatCount = .infinity
-        band.add(slide, forKey: "scan")
     }
-}
 
+    private func refreshAnimation() {
+        guard window != nil, bounds.width > 1, bounds.height > 1 else { return }
+        let key = mode == .working ? "orbit" : "breathe"
+        if let builtFor, builtFor == (mode, bounds.size), light.animation(forKey: key) != nil {
+            return
+        }
+        builtFor = (mode, bounds.size)
+        light.removeAllAnimations()
+        switch mode {
+        case .working:
+            let orbit = CAKeyframeAnimation(keyPath: "position")
+            orbit.values = orbitStops()
+            orbit.duration = 2.8
+            orbit.repeatCount = .infinity
+            orbit.calculationMode = .paced
+            light.add(orbit, forKey: key)
+        case .finished:
+            // Breathing, not flashing, and on opacity — the compositor
+            // re-blends a layer it already holds rather than asking for new
+            // pixels.
+            let breathe = CABasicAnimation(keyPath: "opacity")
+            breathe.fromValue = 1.0
+            breathe.toValue = 0.1
+            breathe.duration = LoomBlink.half
+            breathe.autoreverses = true
+            breathe.repeatCount = .infinity
+            breathe.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
+            let now = light.convertTime(CACurrentMediaTime(), from: nil)
+            breathe.beginTime = now - now.truncatingRemainder(dividingBy: LoomBlink.cycle)
+            light.add(breathe, forKey: key)
+        }
+    }
+
+    /// Evenly spaced stops around the pill, inset by the mote's own radius so
+    /// it grazes the rim from the inside and never overhangs the card.
+    private func orbitStops() -> [CGPoint] {
+        let inset = Self.moteSize / 2
+        let rect = bounds.insetBy(dx: inset, dy: inset)
+        guard rect.width > 1, rect.height > 1 else { return [CGPoint(x: bounds.midX, y: bounds.midY)] }
+        let perimeter = 2 * (rect.width + rect.height)
+        return (0..<Self.orbitStopCount).map { step in
+            var along = perimeter * CGFloat(step) / CGFloat(Self.orbitStopCount)
+            if along < rect.width { return CGPoint(x: rect.minX + along, y: rect.minY) }
+            along -= rect.width
+            if along < rect.height { return CGPoint(x: rect.maxX, y: rect.minY + along) }
+            along -= rect.height
+            if along < rect.width { return CGPoint(x: rect.maxX - along, y: rect.maxY) }
+            along -= rect.width
+            return CGPoint(x: rect.minX, y: rect.maxY - along)
+        }
+    }
+
+    private static let orbitStopCount = 36
+
+    private static let moteSize: CGFloat = 20
+}
 
 
 /// "This one is running", for a header or a status line — one or two on

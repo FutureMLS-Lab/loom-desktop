@@ -139,6 +139,7 @@ final class TaskStore: ObservableObject {
 
     func start() {
         guard pollTask == nil else { return }
+        if loadMockPills() { return }
         pollTask = Task { [weak self] in
             while !Task.isCancelled {
                 await self?.tick()
@@ -151,6 +152,43 @@ final class TaskStore: ObservableObject {
     func stop() {
         pollTask?.cancel()
         pollTask = nil
+    }
+
+    /// `LOOM_DESKTOP_MOCK_PILLS=1` fills the dock with one pill in each state
+    /// and polls nothing, so the dock's appearance can be worked on and
+    /// photographed without a reachable server and without creating real tasks
+    /// on someone's machine to look at.
+    ///
+    /// `=idle` gives the same dock with nothing animating. The two together
+    /// are how the dock's cost is measured: this machine's WindowServer load
+    /// swings by twenty points on its own, so an absolute reading says
+    /// nothing, and the honest question — what does the animation add? — is
+    /// answered by alternating between these two and comparing.
+    private func loadMockPills() -> Bool {
+        let mock = ProcessInfo.processInfo.environment["LOOM_DESKTOP_MOCK_PILLS"]
+        guard mock == "1" || mock == "idle" else { return false }
+        var states: [(String, String, TaskPill.State)] = [
+            ("codegptq-paper", "quant-eval", .working),
+            ("1bit-trials", "quant-eval", .working),
+            ("branch-mos-training", "tquark", .finished),
+            ("tunekv", "tquark", .idle),
+        ]
+        if mock == "idle" {
+            states = states.map { ($0.0, $0.1, .idle) }
+        }
+        pills = states.map { slug, project, state in
+            TaskPill(
+                id: "\(project)/\(slug)",
+                projectId: project,
+                slug: slug,
+                title: slug,
+                projectLabel: project,
+                agent: "claude",
+                state: state
+            )
+        }
+        connection = .online
+        return true
     }
 
     /// Force a full refresh (settings changed, user asked). Asking by hand

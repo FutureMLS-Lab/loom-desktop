@@ -89,12 +89,22 @@ struct DockView: View {
         .padding(.horizontal, DockView.contentInset)
         .padding(.vertical, DockView.contentInset)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(.ultraThinMaterial, in: Rectangle())
+        // The shadow hangs on the card's own backing shape rather than on the
+        // card as a whole. A shadow over the whole card is computed from
+        // everything inside it, so one pill animating had the compositor
+        // redraw and re-shadow the entire dock every frame: 26 points of
+        // WindowServer with the shadow out here, 9 with it moved down onto a
+        // shape that never changes. This, not the animation, was what made the
+        // machine drag whenever the dock was on screen.
+        .background(
+            Rectangle()
+                .fill(.ultraThinMaterial)
+                .shadow(color: .black.opacity(0.28), radius: 7, y: 2)
+        )
         .overlay(
             Rectangle()
                 .strokeBorder(Color.white.opacity(0.14), lineWidth: 0.5)
         )
-        .shadow(color: .black.opacity(0.28), radius: 7, y: 2)
         // The window's own corners are rounded by macOS and cannot be
         // squared off. Insetting the card by that radius means the curve
         // only ever clips transparent margin — the card stays square and
@@ -362,16 +372,16 @@ struct TaskPillView: View {
 
     @State private var isHovering = false
 
-    /// Indigo is running, green is done. They used to differ by whether the
-    /// pill moved, which meant reading motion to answer a question colour can
-    /// answer on sight.
-    private var statusColor: Color {
+    private var glowMode: PillGlow.Mode? {
         switch pill.state {
-        case .working: return LoomColors.accent
-        case .finished: return LoomColors.green
-        case .idle: return .secondary
+        case .working: return .working
+        case .finished: return .finished
+        case .idle: return nil
         }
     }
+
+    /// Dark in both appearances, because the title on it is always white.
+    private static let chipFace = Color(nsColor: NSColor(calibratedWhite: 0.11, alpha: 1))
 
     /// A pill never gets wider than this. One 90-character research title
     /// would otherwise be the whole row (and force the panel wider than the
@@ -407,27 +417,23 @@ struct TaskPillView: View {
             .frame(height: DockView.rowHeight)
         }
         .buttonStyle(.plain)
-        // A dark chip with a lit gutter down its left edge, the way a terminal
-        // marks a line. The state is in the colour of that strip rather than
-        // in the colour of the whole pill, which leaves the title legible and
-        // tells running from finished at a glance instead of by motion.
+        // A lit edge around a dark face: the band fills the pill and the face
+        // covers its middle, so what shows is a rim. Drawing a rim as a rim
+        // would mean masking it to that shape, and a masked layer is redrawn
+        // offscreen on every frame it changes.
         .background {
-            ZStack(alignment: .leading) {
-                Color.black.opacity(0.58)
-                statusColor.opacity(0.16)
-                Rectangle()
-                    .fill(statusColor)
-                    .frame(width: 3)
+            ZStack {
+                if let glow = glowMode {
+                    PillBand(mode: glow)
+                } else {
+                    Color.secondary.opacity(0.5)
+                }
+                Self.chipFace.padding(PillGlow.rimWidth)
+                if let glow = glowMode {
+                    PillGlow(mode: glow).allowsHitTesting(false)
+                }
             }
         }
-        .overlay(alignment: .bottom) {
-            if pill.state == .working {
-                ScanLine(color: NSColor(statusColor)).allowsHitTesting(false)
-            }
-        }
-        .overlay(
-            Rectangle().strokeBorder(statusColor.opacity(0.35), lineWidth: 0.5)
-        )
         .scaleEffect(isHovering ? 1.04 : 1)
         .contentShape(Rectangle())
         .help("\(pill.projectLabel) / \(pill.slug)")

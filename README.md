@@ -6,14 +6,14 @@ one pill per **Loom** task that wants attention, and opens any of them. It
 speaks the same visual language as the
 [Loom web console](https://github.com/FutureMLS-Lab/Loom):
 
-Each pill is a dark chip with a lit strip down its left edge, the way a
-terminal marks a line. The strip's colour is the state:
+Each pill is a dark chip inside a lit rim. The rim's colour is the state:
 
-- **Working** — the agent is generating right now: an indigo strip, and a
-  band of light crossing the foot of the pill.
+- **Working** — the agent is generating right now: the rim runs indigo through
+  cyan to green, with a mote of light travelling round the inside of it.
 - **Finished, unseen** — the agent stopped while you were looking elsewhere:
-  a green strip, still. Clicking acknowledges it (locally and via
-  `/api/activity/ack`) and opens the task.
+  a green rim that breathes, slowly, on the same 1.6 s cadence as the sidebar.
+  Clicking acknowledges it (locally and via `/api/activity/ack`) and opens the
+  task.
 - **Idle** — pane alive, agent waiting, nothing unseen. Idle tasks are left
   off the dock entirely; they are in the sidebar, the fleet menu and ⌘P.
 
@@ -176,6 +176,12 @@ then the reply arrives and the pill blinks until you click it.
   a script cannot make it small.
 - `LOOM_DESKTOP_OPEN_WINDOWS=notes,settings` — open windows that otherwise
   need a menu click, so a snapshot can include them.
+- `LOOM_DESKTOP_MOCK_PILLS=1` — fill the dock with a pill in each state and
+  poll nothing, so the dock can be worked on and photographed without a
+  reachable server and without leaving real tasks behind on someone's machine.
+  `=idle` gives the same dock with nothing animating, which is how the dock's
+  cost is measured: WindowServer's load swings by twenty points on its own, so
+  only the difference between these two means anything.
 - `LOOM_DESKTOP_SNAPSHOT_DIR=/tmp/snaps` — render every window's content to
   PNGs ~7 s after launch (headless UI check, no screen-recording permission
   needed). Run the bundled binary, not `.build/release/LoomDesktop`:

@@ -89,10 +89,6 @@ struct DockView: View {
         .padding(.horizontal, DockView.contentInset)
         .padding(.vertical, DockView.contentInset)
         .frame(maxWidth: .infinity, alignment: .leading)
-        // Scrollable so a dock dragged shorter than its contents hides the
-        // extra rows rather than clipping them. Left to itself the panel is
-        // exactly as tall as the rows, and then this never scrolls.
-        .modifier(ScrollWhenTaller())
         .background(.ultraThinMaterial, in: Rectangle())
         .overlay(
             Rectangle()
@@ -117,20 +113,6 @@ struct DockView: View {
     /// Every element on the dock is this tall, so a row reads as one band
     /// rather than a set of differently-sized chips.
     static var rowHeight: CGFloat { (28 * DockScale.factor).rounded() }
-}
-
-/// Lets the rows scroll, but only once there are more of them than fit.
-///
-/// A plain `ScrollView` would claim whatever height it is offered, which is
-/// the opposite of what the dock wants when it is sizing itself to its
-/// contents. `.basedOnSize` keeps it inert until the content is genuinely
-/// taller than the frame.
-private struct ScrollWhenTaller: ViewModifier {
-    func body(content: Content) -> some View {
-        ScrollView(.vertical) { content }
-            .scrollBounceBehavior(.basedOnSize)
-            .scrollIndicators(.never)
-    }
 }
 
 /// How large the dock draws itself.

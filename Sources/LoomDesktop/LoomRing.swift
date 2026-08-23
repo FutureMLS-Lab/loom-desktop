@@ -152,6 +152,13 @@ final class PillRingView: NSView {
             //
             // Twelve positions a revolution costs a twelfth of the frames and
             // reads as a spinner regardless: the classic ones tick.
+            //
+            // Worth a quarter, not a miracle: measured against the same three
+            // working tasks, showing the dock costs 29 points of WindowServer
+            // where it used to cost 36-39. The rest is the mask — a ring
+            // masking a gradient composites offscreen on every frame it
+            // changes — and getting that back would mean a spinner drawn some
+            // other way.
             let steps = Self.spinSteps
             let spin = CAKeyframeAnimation(keyPath: "transform.rotation.z")
             spin.values = (0...steps).map { Double($0) / Double(steps) * 2 * .pi }

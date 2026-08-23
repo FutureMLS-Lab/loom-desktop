@@ -17,21 +17,38 @@ struct LoomAPI {
         return URLSession(configuration: config)
     }()
 
-    /// For the few calls that wait on git rather than on Loom. A clone of a
-    /// large repository, or a push across several worktrees, runs for minutes
-    /// server-side — the ordinary session would give up long before the answer.
-    private static let patientSession: URLSession = {
+    /// How long a call is allowed to take. Most of Loom answers in under a
+    /// second; two kinds do not, for reasons the app cannot shorten, and each
+    /// gets exactly as much rope as its reason justifies.
+    enum Patience {
+        /// Loom answering about itself.
+        case standard
+        /// A read whose size the server decides. The task detail inlines every
+        /// markdown file under the task, which is kilobytes for most and tens
+        /// of megabytes for a worktree full of documentation. Bounded on
+        /// purpose: past this the answer is not worth the connection it would
+        /// hold, and giving up says so.
+        case large
+        /// Waiting on git rather than on Loom — a clone, or a push across
+        /// several worktrees, which genuinely runs for minutes.
+        case git
+    }
+
+    private static let largeSession: URLSession = session(request: 60, resource: 90)
+    private static let gitSession: URLSession = session(request: 120, resource: 900)
+
+    private static func session(request: TimeInterval, resource: TimeInterval) -> URLSession {
         let config = URLSessionConfiguration.ephemeral
-        config.timeoutIntervalForRequest = 120
-        config.timeoutIntervalForResource = 900
+        config.timeoutIntervalForRequest = request
+        config.timeoutIntervalForResource = resource
         return URLSession(configuration: config)
-    }()
+    }
 
     private func request<T: Decodable>(
         _ path: String,
         method: String = "GET",
         body: [String: Any]? = nil,
-        patient: Bool = false
+        patience: Patience = .standard
     ) async throws -> T {
         guard let url = URL(string: LoomSettings.baseURL + path) else {
             throw LoomAPIError(message: "Invalid Loom URL", status: 0)
@@ -51,7 +68,13 @@ struct LoomAPI {
             req.httpBody = Data("{}".utf8)
         }
 
-        let session = patient ? Self.patientSession : Self.session
+        let session: URLSession = {
+            switch patience {
+            case .standard: return Self.session
+            case .large: return Self.largeSession
+            case .git: return Self.gitSession
+            }
+        }()
         let (data, response) = try await session.data(for: req)
         let status = (response as? HTTPURLResponse)?.statusCode ?? 0
         guard (200..<300).contains(status) else {
@@ -108,7 +131,7 @@ struct LoomAPI {
             "/api/projects",
             method: "POST",
             body: body,
-            patient: source == .clone
+            patience: source == .clone ? .git : .standard
         )
     }
 
@@ -185,8 +208,14 @@ struct LoomAPI {
 
     // MARK: Per-task
 
+    /// Given longer than the rest, because this one is not sized by anything
+    /// the app controls: the server inlines every markdown file under the
+    /// task, which for a worktree holding a JavaScript dependency tree has
+    /// measured 655 MB. Longer, but still bounded — past a minute the answer
+    /// costs more than the tmux target it carries is worth, and the caller
+    /// says so rather than holding the connection open.
     func taskDetail(projectId: String, slug: String) async throws -> TaskDetail {
-        try await request(scoped("/api/tasks/\(slugPath(slug))", projectId))
+        try await request(scoped("/api/tasks/\(slugPath(slug))", projectId), patience: .large)
     }
 
     /// One level of the task directory, or one file's text. The Files tab
@@ -345,7 +374,7 @@ struct LoomAPI {
             scoped("/api/tasks/\(slugPath(slug))/worktree/push", projectId),
             method: "POST",
             body: ["path": path],
-            patient: true
+            patience: .git
         )
     }
 
@@ -356,7 +385,7 @@ struct LoomAPI {
             scoped("/api/tasks/\(slugPath(slug))/worktree/merge", projectId),
             method: "POST",
             body: ["path": path],
-            patient: true
+            patience: .git
         )
     }
 
@@ -377,7 +406,7 @@ struct LoomAPI {
             scoped("/api/tasks/\(slugPath(slug))/worktree", projectId),
             method: "POST",
             body: ["source_repo": repoPath],
-            patient: true
+            patience: .git
         )
     }
 
@@ -399,7 +428,7 @@ struct LoomAPI {
         try await request(
             scoped("/api/tasks/\(slugPath(slug))/worktrees/push-all", projectId),
             method: "POST",
-            patient: true
+            patience: .git
         )
     }
 

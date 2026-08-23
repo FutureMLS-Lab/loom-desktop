@@ -35,6 +35,9 @@ final class ChatSession: ObservableObject, Identifiable {
     /// when it arrives and three controls are disabled until it does — it was
     /// getting through only on the redraw some other poll happened to cause.
     @Published private(set) var paneTarget = ""
+    /// Why the pane target is still unknown, so the Terminal tab can say what
+    /// is wrong instead of implying it is nearly there.
+    @Published private(set) var detailError = ""
     /// Bumped whenever a flow step that rewrites PLAN.md completes, so an open
     /// plan view knows to re-read it.
     @Published private(set) var planRevision = 0
@@ -145,11 +148,31 @@ final class ChatSession: ObservableObject, Identifiable {
         detailTask = nil
     }
 
+    /// Keeps asking until it learns the pane target.
+    ///
+    /// One silent attempt used to be enough, and when it failed the Terminal
+    /// tab sat on "waiting for the pane target" forever with a live pane on
+    /// the other end — nothing retried, and the swallowed error meant nothing
+    /// said why. Attempts spread out, because the thing that makes this fail
+    /// is the response being enormous, and hammering it would only add load.
     private func loadDetail() async {
-        guard let detail = try? await api.taskDetail(projectId: projectId, slug: slug) else { return }
-        paneTarget = detail.paneTarget
-        serverPlanPath = detail.plan_path
-        if let t = detail.meta.title, !t.isEmpty { title = t }
+        var attempt = 0
+        while !Task.isCancelled {
+            do {
+                let detail = try await api.taskDetail(projectId: projectId, slug: slug)
+                paneTarget = detail.paneTarget
+                serverPlanPath = detail.plan_path
+                if let t = detail.meta.title, !t.isEmpty { title = t }
+                detailError = ""
+                return
+            } catch {
+                attempt += 1
+                detailError = error.localizedDescription
+                guard attempt < 5 else { return }
+                let delay = min(pow(2, Double(attempt)) * 2, 30)
+                try? await Task.sleep(nanoseconds: UInt64(delay * 1_000_000_000))
+            }
+        }
     }
 
     private var serverPlanPath: String?

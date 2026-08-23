@@ -265,21 +265,35 @@ struct TaskPane: View {
 
     // MARK: Terminal
 
+    private var detailMessage: String {
+        if !session.detailError.isEmpty {
+            return "\(session.detailError)\n\nThe pane may well be running — this is the "
+                + "task's own details that could not be read. Retrying."
+        }
+        return session.online
+            ? "Waiting for the pane target…"
+            : "Start the agent to open its terminal."
+    }
+
     @ViewBuilder
     private var terminalContent: some View {
         if session.paneTarget.isEmpty {
             VStack(spacing: 10) {
-                Image(systemName: "apple.terminal")
+                Image(systemName: session.detailError.isEmpty
+                      ? "apple.terminal" : "exclamationmark.triangle")
                     .font(.system(size: 26))
                     .foregroundColor(.secondary.opacity(0.7))
-                Text("No terminal yet")
+                Text(session.detailError.isEmpty ? "No terminal yet" : "Can't reach this task")
                     .font(.system(size: 16, weight: .semibold))
-                Text(session.online
-                     ? "Waiting for the pane target…"
-                     : "Start the agent to open its terminal.")
+                // A pane can be alive and this still be empty, when the task's
+                // details are too big to fetch. Saying "waiting" then is a
+                // promise the app cannot keep.
+                Text(detailMessage)
                     .font(.system(size: 13.5))
                     .foregroundColor(.secondary)
-                if !session.online {
+                    .multilineTextAlignment(.center)
+                    .padding(.horizontal, 40)
+                if !session.online && session.detailError.isEmpty {
                     Button("Start agent") { session.startAgent() }
                         .buttonStyle(.borderedProminent)
                         .tint(LoomColors.accent)

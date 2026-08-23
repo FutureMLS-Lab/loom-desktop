@@ -14,6 +14,9 @@ struct DockView: View {
     /// One row by default: the dock is a glance, not a list. Expanding shows
     /// every pill, and the choice sticks across launches.
     @AppStorage("panelExpanded") private var expanded = false
+    /// Read so the dock redraws when the size is changed; the metrics
+    /// themselves come from `DockScale`.
+    @AppStorage(DockScale.key) private var scale = 1.0
     /// How many pills the collapsed row fits. Building the rest and hiding
     /// them offscreen still ran their animations — forty pills' worth of
     /// spinning and blinking for a dock showing three.
@@ -100,24 +103,66 @@ struct DockView: View {
         .animation(.easeInOut, value: store.pills)
     }
 
-    static let contentInset: CGFloat = 8
+    static var contentInset: CGFloat { (8 * DockScale.factor).rounded() }
     /// Transparent gap between the card and the window edge, sized to clear
     /// the system's window corner radius (larger on macOS 26 than the 10pt
-    /// that still clipped the first and last pill).
+    /// that still clipped the first and last pill). Not scaled: it answers to
+    /// the system's corner, not to how big you like your pills.
     static let cardMargin: CGFloat = 16
     /// Every element on the dock is this tall, so a row reads as one band
     /// rather than a set of differently-sized chips.
-    static let rowHeight: CGFloat = 28
+    static var rowHeight: CGFloat { (28 * DockScale.factor).rounded() }
+}
+
+/// How large the dock draws itself.
+///
+/// A real size, not a zoom: the panel measures the content it is given and
+/// sizes the window to fit, so scaling the metrics is what actually makes the
+/// dock smaller — a visual transform would leave the window the same size
+/// with the pills floating inside it.
+enum DockScale {
+    static let key = "panelScale"
+
+    static let choices: [(label: String, value: Double)] = [
+        ("Small", 0.85), ("Medium", 1.0), ("Large", 1.2),
+    ]
+
+    static var factor: CGFloat {
+        let stored = UserDefaults.standard.double(forKey: key)
+        guard stored > 0 else { return 1 }
+        return CGFloat(min(max(stored, 0.7), 1.5))
+    }
+
+    /// Point sizes are scaled through here so a chosen size reaches the type
+    /// as well as the boxes around it.
+    static func font(_ size: CGFloat) -> CGFloat { (size * factor).rounded() }
 }
 
 /// Fleet menu — the loom knot on the left of the header.
 private struct LoomMenuButton: View {
     @ObservedObject var store: TaskStore
+    @AppStorage(DockScale.key) private var scale = 1.0
 
     var body: some View {
         Menu {
             Button("Open Loom (Projects)") {
                 MainWindowController.shared.show(store: store)
+            }
+            // Width is a drag on the panel's edge; this is the other axis —
+            // how big the pills themselves are, which is what decides how
+            // much of the screen the dock takes for a given number of tasks.
+            Menu("Dock Size") {
+                ForEach(DockScale.choices, id: \.value) { choice in
+                    Button {
+                        scale = choice.value
+                    } label: {
+                        if abs(scale - choice.value) < 0.01 {
+                            Label(choice.label, systemImage: "checkmark")
+                        } else {
+                            Text(choice.label)
+                        }
+                    }
+                }
             }
             // Which Loom this is, and the way to another one. Shown even with
             // a single server configured: hiding it until there are two left
@@ -318,34 +363,34 @@ struct TaskPillView: View {
     /// A pill never gets wider than this. One 90-character research title
     /// would otherwise be the whole row (and force the panel wider than the
     /// screen); the full text is in the tooltip and the sidebar.
-    private static let maxTitleWidth: CGFloat = 190
+    private static var maxTitleWidth: CGFloat { (190 * DockScale.factor).rounded() }
 
     var body: some View {
         Button(action: action) {
             HStack(spacing: 5) {
                 Image(systemName: pill.symbolName)
-                    .font(.system(size: 11, weight: .medium))
+                    .font(.system(size: DockScale.font(11), weight: .medium))
                     .foregroundColor(.white.opacity(0.8))
                 if showProject {
                     Text(pill.projectLabel)
-                        .font(.system(size: 12))
+                        .font(.system(size: DockScale.font(12)))
                         .foregroundColor(.white.opacity(0.7))
                         .lineLimit(1)
-                        .frame(maxWidth: 110, alignment: .leading)
+                        .frame(maxWidth: (110 * DockScale.factor).rounded(), alignment: .leading)
                         .fixedSize(horizontal: true, vertical: false)
                     Text("·")
-                        .font(.system(size: 12))
+                        .font(.system(size: DockScale.font(12)))
                         .foregroundColor(.white.opacity(0.45))
                 }
                 Text(pill.displayTitle)
-                    .font(.system(size: 13, weight: .medium))
+                    .font(.system(size: DockScale.font(13), weight: .medium))
                     .foregroundColor(.white)
                     .lineLimit(1)
                     .truncationMode(.tail)
                     .frame(maxWidth: Self.maxTitleWidth, alignment: .leading)
                     .fixedSize(horizontal: false, vertical: true)
             }
-            .padding(.horizontal, 12)
+            .padding(.horizontal, (12 * DockScale.factor).rounded())
             .frame(height: DockView.rowHeight)
         }
         .buttonStyle(.plain)

@@ -58,6 +58,9 @@ the window you are in now.
   `/api/activity` every 4 s (the Loom server's own watcher cadence) and turns
   the snapshot into pills. Task titles and project names refresh on a slower
   cycle.
+- **Dock Size** in the loom menu draws the whole dock smaller or larger
+  (`panelScale`, 0.85 / 1.0 / 1.2). It changes the real metrics rather than
+  zooming, so the window shrinks with the pills and more of them fit a row.
 - The panel has a fixed width you set by dragging its **left or right edge**;
   pills wrap onto as many rows as that width needs, and the height follows the
   rows, growing downward. The width is remembered across restarts

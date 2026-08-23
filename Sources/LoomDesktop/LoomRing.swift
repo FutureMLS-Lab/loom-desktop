@@ -9,101 +9,73 @@ import SwiftUI
 /// Slower than the web console's 1.1s: one thing flashing hard reads as "look
 /// here", and a dozen of them at that speed reads as a fault.
 ///
-/// The dock's pills no longer blink at all — see `PillRing`.
+/// The dock's pills do not blink at all — their state is a colour, and a
+/// running one carries a `ScanLine`.
 enum LoomBlink {
     static let cycle: CFTimeInterval = 1.6
     static var half: CFTimeInterval { cycle / 2 }
 }
 
-/// A pill's activity ring, drawn by Core Animation.
+/// A band of light travelling along the foot of a running pill.
 ///
-/// Working is the web console's conic gradient rotating once every 1.8s.
-/// Finished is the same indigo→green ring, held still: these are drawn on a
-/// panel that floats above every window on every space, where each animated
-/// frame costs the compositor a rebuild of the desktop underneath it, and a
-/// dock of a dozen finished pills was enough to slow the whole machine.
-/// Motion is spent on the one state that is actually changing.
-struct PillRing: NSViewRepresentable {
-    enum Mode {
-        case working
-        case finished
+/// Replaces a ring that marched around the pill's border: a ring on a
+/// rectangle reads as a marquee, and drawing it meant masking a gradient to a
+/// ring shape, which composites offscreen on every frame it changes. This is
+/// one small gradient sliding inside the pill — no mask, and stepped rather
+/// than swept, so it asks the compositor for a fraction of the frames.
+struct ScanLine: NSViewRepresentable {
+    let color: NSColor
+    var thickness: CGFloat = 2
+
+    func makeNSView(context: Context) -> ScanLineView {
+        ScanLineView(color: color, thickness: thickness)
     }
 
-    let mode: Mode
-    var lineWidth: CGFloat = 2.2
-
-    func makeNSView(context: Context) -> PillRingView {
-        PillRingView(mode: mode, lineWidth: lineWidth)
-    }
-
-    func updateNSView(_ view: PillRingView, context: Context) {
-        view.apply(mode: mode)
+    func updateNSView(_ view: ScanLineView, context: Context) {
+        view.apply(color: color)
     }
 }
 
-final class PillRingView: NSView {
-    /// Positions per revolution of the working ring.
-    static let spinSteps = 12
+final class ScanLineView: NSView {
+    /// Positions the band takes crossing the pill once.
+    private static let steps = 16
+    private static let duration: CFTimeInterval = 1.4
+    /// How much of the pill the band spans.
+    private static let widthFraction: CGFloat = 0.42
 
-    private let gradient = CAGradientLayer()
-    private let ring = CAShapeLayer()
-    private var mode: PillRing.Mode
-    private let lineWidth: CGFloat
+    private let band = CAGradientLayer()
+    private let thickness: CGFloat
+    private var color: NSColor
 
-    init(mode: PillRing.Mode, lineWidth: CGFloat) {
-        self.mode = mode
-        self.lineWidth = lineWidth
+    init(color: NSColor, thickness: CGFloat) {
+        self.color = color
+        self.thickness = thickness
         super.init(frame: .zero)
         wantsLayer = true
-        // The ring masks the whole view, so the gradient can spin underneath
-        // without the mask spinning with it.
-        ring.fillColor = nil
-        ring.strokeColor = NSColor.white.cgColor
-        ring.lineWidth = lineWidth
-        layer?.mask = ring
-        layer?.addSublayer(gradient)
-        applyGradient()
+        band.startPoint = CGPoint(x: 0, y: 0.5)
+        band.endPoint = CGPoint(x: 1, y: 0.5)
+        band.locations = [0, 0.5, 1]
+        applyColors()
+        layer?.addSublayer(band)
     }
 
     @available(*, unavailable)
     required init?(coder: NSCoder) { fatalError("not used") }
 
-    func apply(mode: PillRing.Mode) {
-        guard mode != self.mode else { return }
-        self.mode = mode
-        applyGradient()
-        restartAnimation()
+    func apply(color: NSColor) {
+        guard color != self.color else { return }
+        self.color = color
+        applyColors()
     }
 
-    private func applyGradient() {
+    private func applyColors() {
         CATransaction.begin()
         CATransaction.setDisableActions(true)
-        switch mode {
-        case .working:
-            gradient.type = .conic
-            gradient.startPoint = CGPoint(x: 0.5, y: 0.5)
-            gradient.endPoint = CGPoint(x: 0.5, y: 0)
-            gradient.colors = [
-                NSColor.clear.cgColor,
-                NSColor.clear.cgColor,
-                NSColor(LoomColors.accent).withAlphaComponent(0.22).cgColor,
-                NSColor(LoomColors.accent).cgColor,
-                NSColor(LoomColors.green).cgColor,
-                NSColor.clear.cgColor,
-            ]
-            gradient.locations = [0, 140, 210, 300, 348, 360].map {
-                NSNumber(value: $0 / 360.0)
-            }
-        case .finished:
-            gradient.type = .axial
-            gradient.startPoint = CGPoint(x: 0, y: 0)
-            gradient.endPoint = CGPoint(x: 1, y: 1)
-            gradient.colors = [
-                NSColor(LoomColors.accent).cgColor,
-                NSColor(LoomColors.green).cgColor,
-            ]
-            gradient.locations = [0, 1]
-        }
+        band.colors = [
+            color.withAlphaComponent(0).cgColor,
+            color.cgColor,
+            color.withAlphaComponent(0).cgColor,
+        ]
         CATransaction.commit()
     }
 
@@ -111,77 +83,36 @@ final class PillRingView: NSView {
         super.layout()
         CATransaction.begin()
         CATransaction.setDisableActions(true)
-        ring.path = CGPath(
-            rect: bounds.insetBy(dx: lineWidth / 2, dy: lineWidth / 2),
-            transform: nil
+        let width = max(12, bounds.width * Self.widthFraction)
+        band.frame = CGRect(
+            x: 0, y: bounds.height - thickness, width: width, height: thickness
         )
-        ring.frame = bounds
-        switch mode {
-        case .working:
-            // Oversized and centred, so the gradient's square corners never
-            // rotate into the ring.
-            let side = max(bounds.width, bounds.height) * 1.5
-            gradient.bounds = CGRect(x: 0, y: 0, width: side, height: side)
-            gradient.position = CGPoint(x: bounds.midX, y: bounds.midY)
-        case .finished:
-            gradient.frame = bounds
-        }
         CATransaction.commit()
+        restart()
     }
 
     override func viewDidMoveToWindow() {
         super.viewDidMoveToWindow()
-        if window == nil {
-            gradient.removeAllAnimations()
-        } else {
-            restartAnimation()
-        }
+        window == nil ? band.removeAllAnimations() : restart()
     }
 
-    private func restartAnimation() {
-        guard window != nil else { return }
-        gradient.removeAllAnimations()
-        switch mode {
-        case .working:
-            // Stepped, not swept. A smooth rotation asks the compositor for a
-            // new frame at the display's rate, and this ring sits on a
-            // transparent panel above every window on every space, so each of
-            // those frames is a re-blend of the desktop underneath it —
-            // enough, with three tasks working, to take WindowServer to 77%
-            // and make the whole machine feel slow.
-            //
-            // Twelve positions a revolution costs a twelfth of the frames and
-            // reads as a spinner regardless: the classic ones tick.
-            //
-            // Worth a quarter, not a miracle: measured against the same three
-            // working tasks, showing the dock costs 29 points of WindowServer
-            // where it used to cost 36-39. The rest is the mask — a ring
-            // masking a gradient composites offscreen on every frame it
-            // changes — and getting that back would mean a spinner drawn some
-            // other way.
-            let steps = Self.spinSteps
-            let spin = CAKeyframeAnimation(keyPath: "transform.rotation.z")
-            spin.values = (0...steps).map { Double($0) / Double(steps) * 2 * .pi }
-            spin.calculationMode = .discrete
-            spin.duration = 1.8
-            spin.repeatCount = .infinity
-            gradient.add(spin, forKey: "spin")
-        case .finished:
-            // Deliberately still. This ring used to blink, and the dock
-            // routinely carries a dozen of them at once: the panel floats
-            // above every window on every space, so each frame of each
-            // animation makes the compositor rebuild the whole desktop
-            // beneath it. Measured, a dock of thirteen finished pills held
-            // WindowServer at 82% against 46% with the panel hidden — the
-            // machine, not the app, was what went slow.
-            //
-            // The colour says "finished" on its own, and the count in the
-            // header says how many. Motion is kept for work in progress,
-            // which is the state that is actually changing.
-            break
+    private func restart() {
+        guard window != nil, bounds.width > 0 else { return }
+        band.removeAllAnimations()
+        // Travels entirely inside the pill, so nothing needs clipping — a
+        // clip would put the offscreen pass straight back.
+        let travel = max(0, bounds.width - band.bounds.width)
+        let slide = CAKeyframeAnimation(keyPath: "position.x")
+        slide.values = (0...Self.steps).map {
+            band.bounds.width / 2 + travel * CGFloat($0) / CGFloat(Self.steps)
         }
+        slide.calculationMode = .discrete
+        slide.duration = Self.duration
+        slide.repeatCount = .infinity
+        band.add(slide, forKey: "scan")
     }
 }
+
 
 
 /// "This one is running", for a header or a status line — one or two on

@@ -6,12 +6,14 @@ one pill per **Loom** task that wants attention, and opens any of them. It
 speaks the same visual language as the
 [Loom web console](https://github.com/FutureMLS-Lab/Loom):
 
-- **Working** — the agent is generating right now: the pill wears the web
-  UI's rotating conic ring (`loom-ring-spin`, indigo → green, 1.8 s per lap).
+Each pill is a dark chip with a lit strip down its left edge, the way a
+terminal marks a line. The strip's colour is the state:
+
+- **Working** — the agent is generating right now: an indigo strip, and a
+  band of light crossing the foot of the pill.
 - **Finished, unseen** — the agent stopped while you were looking elsewhere:
-  the ring blinks and the pill background flashes on the same 1.6 s cycle as
-  the sidebar's dot, the flicker that says "this one wants you now". Clicking
-  acknowledges it (locally and via `/api/activity/ack`) and opens the task.
+  a green strip, still. Clicking acknowledges it (locally and via
+  `/api/activity/ack`) and opens the task.
 - **Idle** — pane alive, agent waiting, nothing unseen. Idle tasks are left
   off the dock entirely; they are in the sidebar, the fleet menu and ⌘P.
 

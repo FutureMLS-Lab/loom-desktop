@@ -86,8 +86,12 @@ struct PlanView: View {
                 )
             } else {
                 HSplitView {
+                    // The ceiling does the work here, not the ideal: given
+                    // room, HSplitView hands the extra to the first view, so
+                    // the tree was taking 360pt to show names that fit in
+                    // half that, out of the width the file itself is read in.
                     fileSidebar
-                        .frame(minWidth: 180, idealWidth: 240, maxWidth: 360)
+                        .frame(minWidth: 170, idealWidth: 220, maxWidth: 260)
                     editorPane
                         .frame(minWidth: 300)
                 }
@@ -196,6 +200,9 @@ struct PlanView: View {
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
+        // Names truncate in the middle at this width, and inside a worktree
+        // the part that identifies a file is often the part that goes.
+        .help(row.path)
     }
 
     private func symbol(for row: Row) -> String {

@@ -450,6 +450,9 @@ struct UserBubble: View {
                     .padding(.vertical, 9)
                     .background(LoomColors.accent, in: Rectangle())
                     .fixedSize(horizontal: false, vertical: true)
+                    .contextMenu {
+                        Button("Copy Message") { copyToPasteboard(text) }
+                    }
                 if let delivery {
                     Text(delivery)
                         .font(.system(size: 11))
@@ -477,7 +480,18 @@ private struct AssistantRow: View {
         .padding(.vertical, 2)
         .padding(.trailing, 40)
         .fixedSize(horizontal: false, vertical: true)
+        // Selection works, but dragging one across a turn of tables and code
+        // blocks is fiddly; this hands over the raw markdown in one gesture.
+        .contextMenu {
+            Button("Copy Message") { copyToPasteboard(text) }
+        }
     }
+}
+
+/// One pasteboard write for every "Copy …" the feed offers.
+private func copyToPasteboard(_ text: String) {
+    NSPasteboard.general.clearContents()
+    NSPasteboard.general.setString(text, forType: .string)
 }
 
 /// The assistant avatar: a small filled Loom square. Static — a transcript

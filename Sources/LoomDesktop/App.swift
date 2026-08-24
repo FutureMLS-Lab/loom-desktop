@@ -199,6 +199,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let appItem = NSMenuItem()
         main.addItem(appItem)
         let appMenu = NSMenu()
+        // ⌘, is where macOS hands live; without it Settings is only
+        // reachable through the loom menus.
+        let settings = NSMenuItem(
+            title: "Settings…", action: #selector(openSettings), keyEquivalent: ","
+        )
+        settings.target = self
+        appMenu.addItem(settings)
+        appMenu.addItem(.separator())
         appMenu.addItem(
             withTitle: "Quit Loom Desktop",
             action: #selector(NSApplication.terminate(_:)),
@@ -236,6 +244,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         editMenu.addItem(findItem)
         editItem.submenu = editMenu
 
+        // ⌘R asks the store for a fresh poll wherever focus is. The menus
+        // each carry a Refresh entry, but a menu's key equivalent only fires
+        // while that menu is open; this one is global.
+        let viewItem = NSMenuItem()
+        main.addItem(viewItem)
+        let viewMenu = NSMenu(title: "View")
+        let refresh = NSMenuItem(
+            title: "Refresh", action: #selector(refreshNow), keyEquivalent: "r"
+        )
+        refresh.target = self
+        viewMenu.addItem(refresh)
+        viewItem.submenu = viewMenu
+
         let windowItem = NSMenuItem()
         main.addItem(windowItem)
         let windowMenu = NSMenu(title: "Window")
@@ -265,6 +286,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     @objc private func openNotes() {
         NotesWindowController.shared.show(store: store)
+    }
+
+    @objc private func openSettings() {
+        SettingsWindowController.shared.show()
+    }
+
+    @objc private func refreshNow() {
+        store.refreshNow()
     }
 }
 

@@ -323,7 +323,14 @@ final class TerminalSession: NSObject, ObservableObject {
             },
             onChunk: { [weak self] data in
                 guard let self, generation == self.streamGeneration else { return }
+                // Only a stream that was accepted feeds the screen. A non-200
+                // body is JSON saying why the pane is unavailable, not pty
+                // bytes; the toolbar already carries that message, and left in
+                // the buffer it was painted into the terminal as junk the
+                // moment a flush ran.
+                guard self.connected else { return }
                 self.pending.append(data)
+                self.startFlushing()
             },
             onComplete: { [weak self] failure in
                 guard let self, generation == self.streamGeneration else { return }
@@ -360,15 +367,27 @@ final class TerminalSession: NSObject, ObservableObject {
 
     // MARK: Feeding xterm
 
+    /// Runs only while there are bytes to hand over. Left running it is sixty
+    /// wakeups a second finding nothing, for a pane that spends most of every
+    /// session sitting at a prompt; the first chunk to arrive starts it again.
     private func startFlushing() {
-        flushTimer?.invalidate()
-        flushTimer = Timer.scheduledTimer(withTimeInterval: 1.0 / 60.0, repeats: true) { [weak self] _ in
+        guard flushTimer == nil else { return }
+        let timer = Timer.scheduledTimer(withTimeInterval: 1.0 / 60.0, repeats: true) { [weak self] _ in
             Task { @MainActor in self?.flush() }
         }
+        // Display-rate output does not need wall-clock precision; let the
+        // system coalesce the wakeups it can.
+        timer.tolerance = 1.0 / 120.0
+        flushTimer = timer
     }
 
     private func flush() {
-        guard !pending.isEmpty, ready else { return }
+        guard ready else { return }
+        guard !pending.isEmpty else {
+            flushTimer?.invalidate()
+            flushTimer = nil
+            return
+        }
         let chunk = pending
         pending.removeAll(keepingCapacity: true)
         call("window.__loomWrite('\(chunk.base64EncodedString())')")

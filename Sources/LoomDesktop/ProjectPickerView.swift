@@ -169,6 +169,7 @@ struct ProjectPickerView: View {
                         .truncationMode(.middle)
                     Text(serverSubtitle)
                         .font(.system(size: 10.5))
+                        .monospacedDigit()
                         .foregroundColor(.secondary)
                         .lineLimit(1)
                         .truncationMode(.middle)
@@ -460,18 +461,23 @@ private struct ProjectCard: View {
                         .foregroundColor(.secondary)
                         .lineLimit(1)
                     Spacer(minLength: 4)
+                    // Live counts; fixed-width digits so the header row does
+                    // not shuffle when one of them ticks over.
                     Text("\(tasks.count)")
                         .font(.system(size: 10, weight: .semibold))
+                        .monospacedDigit()
                         .foregroundColor(.secondary)
                     if let counts {
                         if counts.finished > 0 {
                             Label("\(counts.finished)", systemImage: "exclamationmark.circle.fill")
                                 .font(.system(size: 10, weight: .semibold))
+                                .monospacedDigit()
                                 .foregroundColor(LoomColors.attention)
                         }
                         if counts.working > 0 {
                             Label("\(counts.working)", systemImage: "arrow.triangle.2.circlepath")
                                 .font(.system(size: 10, weight: .semibold))
+                                .monospacedDigit()
                                 .foregroundColor(LoomColors.accent)
                         }
                     }

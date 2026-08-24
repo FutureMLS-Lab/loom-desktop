@@ -394,6 +394,9 @@ private struct DockStatus: View {
             }
         }
         .font(.system(size: 12, weight: .semibold))
+        // The counts tick as tasks start and finish; fixed-width digits keep
+        // the header from shuffling sideways every time one does.
+        .monospacedDigit()
         .padding(.horizontal, finished > 0 || working > 0 || isOffline ? 9 : 0)
         .frame(height: DockView.rowHeight)
         .background(
@@ -424,6 +427,7 @@ private struct ExpandButton: View {
                 if !expanded && hidden > 0 {
                     Text("+\(hidden)")
                         .font(.system(size: 12, weight: .bold))
+                        .monospacedDigit()
                 }
                 Image(systemName: expanded ? "chevron.up" : "chevron.down")
                     .font(.system(size: 10, weight: .bold))

@@ -43,6 +43,7 @@ struct ChatView: View {
                                     systemImage: "clock.arrow.circlepath"
                                 )
                                 .font(.system(size: 12, weight: .medium))
+                                .monospacedDigit()
                             }
                             .buttonStyle(.plain)
                             .foregroundColor(LoomColors.accent)

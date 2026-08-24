@@ -267,6 +267,7 @@ binary somewhere else.
 | `Snapshotter.swift` | Window → PNG for the headless UI check, web views included |
 | `Resources/` | App icon, the two pages the app hosts (`terminal.html`, `markdown-preview.html`), and the bundled `marked`, `xterm`, and fit addon that get spliced into them at their placeholders. Anything added here must also be copied in `make-app.sh`, or it exists for the checkout and not for the installed app. The sidebar watermark reads `loom-mark.png`, which only the installed bundle has — the bare binary runs without it |
 | `scripts/make-app.sh` | Build, sign, install to `/Applications`, register the login item |
+| `scripts/dev-shot.sh` | Build a dev copy under its own bundle id, run it against the mock, and save window PNGs — without killing or replacing the installed app the way `make-app.sh` does. The dev hooks below pass through (`LOOM_DESKTOP_OPEN_CHAT=… scripts/dev-shot.sh`) |
 | `scripts/mock-loom.py` | Offline mock of the Loom API for development |
 | `scripts/summon.swift` | Poke a running app to bring its windows to this screen |
 | `scripts/preview-shot.swift` | Render the preview page to a PNG, so a typography change can be looked at rather than guessed at. Touches neither the running app nor the server |

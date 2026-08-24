@@ -405,14 +405,12 @@ struct ProjectPickerView: View {
                 .id(selection)
             } else if projects.isEmpty {
                 EmptyDetail(
-                    symbol: "square.grid.2x2",
                     title: "No projects registered",
                     detail: "Add one with + at the bottom of the sidebar — an "
                         + "existing folder on the Loom host, a new one, or a repo to clone."
                 )
             } else {
                 EmptyDetail(
-                    symbol: "sidebar.left",
                     title: "Select a task",
                     detail: "Pick a task on the left to see its status and open it."
                 )
@@ -676,38 +674,39 @@ private struct OfflineDetail: View {
 }
 
 private struct EmptyDetail: View {
-    let symbol: String
     let title: String
     let detail: String
 
+    // The mark sits above the words rather than behind them. As a watermark
+    // it was 320pt of woven bars centred on a 300pt block of text, so every
+    // line was read against a stripe — the two were the same size and in the
+    // same place, which is the one arrangement where a backdrop cannot stay
+    // out of the way.
     var body: some View {
-        ZStack {
-            LoomWatermark()
-            VStack(spacing: 10) {
-                Image(systemName: symbol)
-                    .font(.system(size: 30))
-                    .foregroundColor(.secondary.opacity(0.7))
+        VStack(spacing: 16) {
+            LoomMark(size: 92, opacity: 0.55)
+            VStack(spacing: 6) {
                 Text(title)
                     .font(.system(size: 17, weight: .semibold))
                 Text(detail)
-                    .font(.system(size: 13.5))
+                    .font(.system(size: 13))
                     .foregroundColor(.secondary)
                     .multilineTextAlignment(.center)
-                    .padding(.horizontal, 40)
+                    .frame(maxWidth: 340)
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 }
 
-/// A ghost of the Loom mark behind an empty pane — enough to say whose
-/// window this is without competing with the text on top of it.
-struct LoomWatermark: View {
+/// The Loom weave, softened — what an empty pane shows instead of nothing.
+struct LoomMark: View {
     var size: CGFloat = 320
+    var opacity: Double = 0.14
 
     var body: some View {
         Group {
-            if let weave = LoomWatermark.weave {
+            if let weave = LoomMark.weave {
                 Image(nsImage: weave)
                     .resizable()
                     .scaledToFit()
@@ -725,7 +724,7 @@ struct LoomWatermark: View {
             }
         }
         .frame(width: size, height: size)
-        .opacity(0.14)
+        .opacity(opacity)
         .allowsHitTesting(false)
     }
 

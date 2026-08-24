@@ -551,12 +551,17 @@ private struct SidebarTaskRow: View {
             HStack(alignment: .top, spacing: 8) {
                 statusDot
                     .padding(.top, 2)
-                // Wrapping, not truncating: long research-paper titles are
-                // the ones you most need to read in full.
+                // Two lines, then the tooltip. Wrapping without a limit reads
+                // well for one title and badly for a list: a paper title runs
+                // to four lines, stands four times taller than its neighbours
+                // and pushes the rest of the project off the screen, so the
+                // one row you can read costs you the ones you were scanning
+                // for.
                 Text(meta.title ?? meta.slug)
                     .font(.system(size: 15))
                     .foregroundColor(.primary)
                     .multilineTextAlignment(.leading)
+                    .lineLimit(2)
                     .fixedSize(horizontal: false, vertical: true)
                     .frame(maxWidth: .infinity, alignment: .leading)
             }
@@ -582,6 +587,7 @@ private struct SidebarTaskRow: View {
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
+        .help(meta.title ?? meta.slug)
         .onHover { hovering = $0 }
         .simultaneousGesture(TapGesture(count: 2).onEnded { onOpen() })
         .contextMenu {

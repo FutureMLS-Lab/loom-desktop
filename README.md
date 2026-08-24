@@ -177,8 +177,9 @@ then the reply arrives and the pill blinks until you click it.
 - `LOOM_DESKTOP_WINDOW=940x640` — open the main window at that content size,
   to check cramped layouts. Without it the window clamps to its default, so
   a script cannot make it small.
-- `LOOM_DESKTOP_OPEN_WINDOWS=notes,settings` — open windows that otherwise
-  need a menu click, so a snapshot can include them.
+- `LOOM_DESKTOP_OPEN_WINDOWS=main,notes,settings` — open windows that
+  otherwise need a menu click, so a snapshot can include them. `main` selects
+  no task on the way in, so reviewing the UI never spends an unread flag.
 - `LOOM_DESKTOP_MOCK_PILLS=1` — fill the dock with a pill in each state and
   poll nothing, so the dock can be worked on and photographed without a
   reachable server and without leaving real tasks behind on someone's machine.

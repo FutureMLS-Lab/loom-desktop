@@ -19,6 +19,8 @@ enum MarkdownBlock: Equatable {
     case bullets([String])
     case code(String, language: String)
     case table(header: [String], rows: [[String]], alignments: [Alignment])
+    case quote(String)
+    case rule
 
     enum Alignment: Equatable { case leading, trailing, center }
 }
@@ -99,6 +101,32 @@ enum MarkdownBlockParser {
                 continue
             }
 
+            // A separator line — agents punctuate with these constantly, and
+            // it was coming out as a literal "---" paragraph. Only after a
+            // break though: butted against a paragraph, "---" is a setext
+            // underline for the line above, not a rule.
+            if paragraph.isEmpty, isRule(trimmed) {
+                flushAll()
+                blocks.append(.rule)
+                index += 1
+                continue
+            }
+
+            if trimmed.hasPrefix(">") {
+                flushAll()
+                var quoted: [String] = []
+                while index < lines.count {
+                    let quoteLine = lines[index].trimmingCharacters(in: .whitespaces)
+                    guard quoteLine.hasPrefix(">") else { break }
+                    quoted.append(
+                        String(quoteLine.dropFirst(quoteLine.hasPrefix("> ") ? 2 : 1))
+                    )
+                    index += 1
+                }
+                blocks.append(.quote(quoted.joined(separator: "\n")))
+                continue
+            }
+
             if let bullet = bulletBody(trimmed) {
                 flushParagraph()
                 bullets.append(bullet)
@@ -143,6 +171,13 @@ enum MarkdownBlockParser {
             return trimmed
         }
         return nil
+    }
+
+    /// Three or more of the same rule character and nothing else.
+    private static func isRule(_ trimmed: String) -> Bool {
+        guard trimmed.count >= 3, let first = trimmed.first,
+              first == "-" || first == "*" || first == "_" else { return false }
+        return trimmed.allSatisfy { $0 == first }
     }
 
     private static func isDelimiterRow(_ line: String) -> Bool {
@@ -259,6 +294,26 @@ struct MarkdownBody: View {
                         alignments: alignments,
                         fontSize: fontSize - 1
                     )
+
+                case .quote(let body):
+                    HStack(alignment: .top, spacing: 10) {
+                        RoundedRectangle(cornerRadius: 1.5)
+                            .fill(LoomColors.border)
+                            .frame(width: 3)
+                        Text(InlineMarkdown.text(body))
+                            .font(.system(size: fontSize - 0.5))
+                            .foregroundColor(.secondary)
+                            .lineSpacing(leading)
+                            .textSelection(.enabled)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+
+                case .rule:
+                    Rectangle()
+                        .fill(LoomColors.border)
+                        .frame(height: 1)
+                        .padding(.vertical, 3)
                 }
             }
         }

@@ -76,7 +76,7 @@ FEEDS = {
                               "input": "python profile_encoder.py --all-layers",
                               "output": "baseline PSNR: 41.3 dB\nlayers: 48\nparams: 2.1B"}),
             msg("event", text="Worktree zhongzhu/video2bit created"),
-            msg("assistant", text="Baseline is 41.3 dB. Now running the 2-bit sweep — this takes a while."),
+            msg("assistant", text="Baseline is 41.3 dB. Profiling notes:\n\n> PSNR holds above 38 up to layer 30; the tail layers are the fragile ones.\n\n---\n\nNow running the 2-bit sweep — this takes a while."),
             msg("tool", tool={"name": "Shell", "summary": "python quantize.py --bits 2 --distill",
                               "status": "running",
                               "input": "python quantize.py --bits 2 --distill"}),

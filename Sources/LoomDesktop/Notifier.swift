@@ -49,7 +49,7 @@ final class Notifier: NSObject, UNUserNotificationCenterDelegate {
         guard authorized, let center else { return }
         let content = UNMutableNotificationContent()
         content.title = pill.displayTitle
-        content.subtitle = pill.projectLabel
+        if !pill.projectPrefixIsNoise { content.subtitle = pill.projectLabel }
         content.body = "Finished and waiting for you."
         content.sound = .default
         content.userInfo = [Self.taskKey: pill.id]

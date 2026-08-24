@@ -37,7 +37,10 @@ final class StatusItemController: NSObject, NSMenuDelegate {
             menu.addItem(empty)
         } else {
             for pill in store.pills {
-                let title = "\(statePrefix(pill.state))  \(pill.projectLabel) · \(pill.displayTitle)"
+                let name = pill.projectPrefixIsNoise
+                    ? pill.displayTitle
+                    : "\(pill.projectLabel) · \(pill.displayTitle)"
+                let title = "\(statePrefix(pill.state))  \(name)"
                 let item = NSMenuItem(title: title, action: #selector(openPill(_:)), keyEquivalent: "")
                 item.target = self
                 item.representedObject = pill.id

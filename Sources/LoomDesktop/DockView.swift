@@ -497,7 +497,7 @@ struct TaskPillView: View {
                 Image(systemName: pill.symbolName)
                     .font(.system(size: DockScale.font(11), weight: .medium))
                     .foregroundColor(DockPalette.chipText.opacity(0.75))
-                if showProject {
+                if showProject && !pill.projectPrefixIsNoise {
                     Text(pill.projectLabel)
                         .font(.system(size: DockScale.font(12)))
                         .foregroundColor(DockPalette.chipText.opacity(0.66))

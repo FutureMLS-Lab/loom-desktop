@@ -23,6 +23,12 @@ struct TaskPill: Identifiable, Equatable {
 
     var displayTitle: String { title.isEmpty ? slug : title }
 
+    /// True when the project label would just repeat the title — a project
+    /// with a single task named after it. Nobody needs "tuneKV · tuneKV".
+    var projectPrefixIsNoise: Bool {
+        projectLabel.caseInsensitiveCompare(displayTitle) == .orderedSame
+    }
+
     /// SF Symbol per agent CLI, following session-dock's source icons.
     /// Static so the task header, which knows its agent by name rather than
     /// through a pill, draws the same icon for the same CLI.

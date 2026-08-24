@@ -39,6 +39,9 @@ struct SettingsView: View {
         .frame(width: 620)
     }
 
+    /// A bounded panel with the add/remove bar attached at its foot, the way
+    /// every macOS master list carries them — the bare List drew as one grey
+    /// chip adrift in the window, with a + and − floating loose below it.
     private var serverList: some View {
         VStack(spacing: 0) {
             List(selection: $selectedID) {
@@ -57,15 +60,19 @@ struct SettingsView: View {
                     .tag(server.id)
                 }
             }
-            .frame(width: 190, height: 176)
-            HStack(spacing: 0) {
+            .listStyle(.plain)
+            Divider()
+            HStack(spacing: 2) {
                 Button {
                     let fresh = LoomServer(name: "New server", baseURL: LoomSettings.defaultBaseURL, token: "")
                     servers.append(fresh)
                     selectedID = fresh.id
                 } label: {
                     Image(systemName: "plus")
+                        .frame(width: 22, height: 18)
+                        .contentShape(Rectangle())
                 }
+                .help("Add a server")
                 Button {
                     guard let index = selectedIndex, servers.count > 1 else { return }
                     let removed = servers.remove(at: index)
@@ -77,13 +84,23 @@ struct SettingsView: View {
                     selectedID = servers.first?.id ?? ""
                 } label: {
                     Image(systemName: "minus")
+                        .frame(width: 22, height: 18)
+                        .contentShape(Rectangle())
                 }
                 .disabled(servers.count <= 1)
+                .help("Remove the selected server")
                 Spacer()
             }
             .buttonStyle(.borderless)
-            .padding(.top, 4)
+            .padding(3)
+            .background(Color.primary.opacity(0.04))
         }
+        .frame(width: 190, height: 200)
+        .clipShape(RoundedRectangle(cornerRadius: 6))
+        .overlay(
+            RoundedRectangle(cornerRadius: 6)
+                .strokeBorder(Color.primary.opacity(0.12), lineWidth: 1)
+        )
     }
 
     @ViewBuilder

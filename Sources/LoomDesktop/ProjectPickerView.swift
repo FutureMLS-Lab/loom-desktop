@@ -210,7 +210,14 @@ struct ProjectPickerView: View {
     }
 
     private var sidebar: some View {
-        VStack(spacing: 0) {
+        // Looked up once per render, not scanned per row: every task row asked
+        // its state with a linear search of the pills, which made one sidebar
+        // pass cost rows × pills comparisons.
+        let stateByTask = Dictionary(
+            store.pills.map { ($0.id, $0.state) },
+            uniquingKeysWith: { first, _ in first }
+        )
+        return VStack(spacing: 0) {
             serverBar
 
             HStack(spacing: 8) {
@@ -249,11 +256,7 @@ struct ProjectPickerView: View {
                             counts: store.projectCounts(for: project.id),
                             collapsed: collapsed.contains(project.id),
                             selection: selection,
-                            stateFor: { slug in
-                                store.pills.first {
-                                    $0.projectId == project.id && $0.slug == slug
-                                }?.state
-                            },
+                            stateFor: { slug in stateByTask["\(project.id)/\(slug)"] },
                             onToggle: {
                                 withAnimation(.easeInOut(duration: 0.14)) {
                                     if collapsed.contains(project.id) {

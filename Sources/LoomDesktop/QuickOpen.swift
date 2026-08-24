@@ -23,12 +23,16 @@ struct QuickOpenView: View {
 
     private var matches: [Match] {
         var found: [Match] = []
+        // Re-scored on every keystroke, so the state lookup is a dictionary
+        // built once rather than a scan of the pills per task.
+        let stateByTask = Dictionary(
+            store.pills.map { ($0.id, $0.state) },
+            uniquingKeysWith: { first, _ in first }
+        )
         for project in store.projects {
             for meta in store.tasksByProject[project.id] ?? [] {
                 let title = meta.title ?? meta.slug
-                let state = store.pills.first {
-                    $0.projectId == project.id && $0.slug == meta.slug
-                }?.state
+                let state = stateByTask["\(project.id)/\(meta.slug)"]
                 guard let score = Self.score(
                     query: query,
                     title: title,

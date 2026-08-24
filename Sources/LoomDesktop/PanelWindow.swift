@@ -55,6 +55,12 @@ final class PanelWindow: NSPanel, NSWindowDelegate {
         becomesKeyOnlyIfNeeded = true
         backgroundColor = .clear
         isOpaque = false
+        // The card is dark whatever the system is set to, and the pills on it
+        // have always been dark chips with white titles. Pinning the panel to
+        // the dark appearance is what makes `.primary` and `.secondary` inside
+        // it resolve to something readable on that card — in light mode they
+        // are near-black, which on this card is nothing at all.
+        appearance = NSAppearance(named: .darkAqua)
         // The window is bigger than the visible card (see DockView.cardMargin),
         // so a window shadow would float detached around it; the card draws
         // its own instead.

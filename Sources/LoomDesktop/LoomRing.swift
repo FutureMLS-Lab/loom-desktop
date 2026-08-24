@@ -104,9 +104,9 @@ struct PillGlow: NSViewRepresentable {
 
     // Resolved once: reading these off `LoomColors` per use allocates an
     // NSColor each time, which showed up in a profile.
-    static let accent = NSColor(calibratedRed: 0.42, green: 0.40, blue: 0.98, alpha: 1)
-    static let green = NSColor(calibratedRed: 0.30, green: 0.86, blue: 0.58, alpha: 1)
-    static let cyan = NSColor(calibratedRed: 0.30, green: 0.85, blue: 0.95, alpha: 1)
+    static let accent = NSColor(calibratedRed: 0.35, green: 0.34, blue: 0.78, alpha: 1)
+    static let green = NSColor(calibratedRed: 0.26, green: 0.68, blue: 0.48, alpha: 1)
+    static let cyan = NSColor(calibratedRed: 0.26, green: 0.66, blue: 0.75, alpha: 1)
 }
 
 final class PillGlowView: NSView {
@@ -146,18 +146,18 @@ final class PillGlowView: NSView {
         case .working:
             light.type = .radial
             light.colors = [
-                NSColor.white.withAlphaComponent(0.92).cgColor,
-                PillGlow.cyan.withAlphaComponent(0.55).cgColor,
+                NSColor.white.withAlphaComponent(0.55).cgColor,
+                PillGlow.cyan.withAlphaComponent(0.28).cgColor,
                 PillGlow.cyan.withAlphaComponent(0).cgColor,
             ]
-            light.locations = [0, 0.4, 1]
+            light.locations = [0, 0.38, 1]
         case .finished:
             light.type = .axial
             light.startPoint = CGPoint(x: 0, y: 0.5)
             light.endPoint = CGPoint(x: 1, y: 0.5)
             light.colors = [
-                PillGlow.green.withAlphaComponent(0.30).cgColor,
-                PillGlow.cyan.withAlphaComponent(0.22).cgColor,
+                PillGlow.green.withAlphaComponent(0.20).cgColor,
+                PillGlow.cyan.withAlphaComponent(0.14).cgColor,
             ]
             light.locations = [0, 1]
         }
@@ -214,8 +214,8 @@ final class PillGlowView: NSView {
             // re-blends a layer it already holds rather than asking for new
             // pixels.
             let breathe = CABasicAnimation(keyPath: "opacity")
-            breathe.fromValue = 1.0
-            breathe.toValue = 0.1
+            breathe.fromValue = 0.9
+            breathe.toValue = 0.25
             breathe.duration = LoomBlink.half
             breathe.autoreverses = true
             breathe.repeatCount = .infinity
@@ -247,7 +247,7 @@ final class PillGlowView: NSView {
 
     private static let orbitStopCount = 36
 
-    private static let moteSize: CGFloat = 20
+    private static let moteSize: CGFloat = 15
 }
 
 

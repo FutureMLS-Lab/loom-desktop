@@ -6,6 +6,9 @@ one pill per **Loom** task that wants attention, and opens any of them. It
 speaks the same visual language as the
 [Loom web console](https://github.com/FutureMLS-Lab/Loom):
 
+The dock is a dark card whatever the system appearance is set to, so the panel
+is pinned to the dark appearance and everything on it reads against that.
+
 Each pill is a dark chip inside a lit rim. The rim's colour is the state:
 
 - **Working** — the agent is generating right now: the rim runs indigo through

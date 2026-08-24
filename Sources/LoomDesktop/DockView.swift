@@ -98,7 +98,7 @@ struct DockView: View {
         // machine drag whenever the dock was on screen.
         .background(
             Rectangle()
-                .fill(.ultraThinMaterial)
+                .fill(DockView.cardFill)
                 .shadow(color: .black.opacity(0.28), radius: 7, y: 2)
         )
         .overlay(
@@ -119,6 +119,12 @@ struct DockView: View {
     /// the system's window corner radius (larger on macOS 26 than the 10pt
     /// that still clipped the first and last pill). Not scaled: it answers to
     /// the system's corner, not to how big you like your pills.
+    /// A slab of dark glass, translucent but not blurred. Frosted material
+    /// was a live blur: it cost four points of WindowServer whenever a pill
+    /// animated over it, and it read as pale grey rather than as anything the
+    /// lit pills could sit on.
+    static let cardFill = Color(nsColor: NSColor(calibratedWhite: 0.085, alpha: 0.93))
+
     static let cardMargin: CGFloat = 16
     /// Every element on the dock is this tall, so a row reads as one band
     /// rather than a set of differently-sized chips.
@@ -381,7 +387,7 @@ struct TaskPillView: View {
     }
 
     /// Dark in both appearances, because the title on it is always white.
-    private static let chipFace = Color(nsColor: NSColor(calibratedWhite: 0.11, alpha: 1))
+    private static let chipFace = Color(nsColor: NSColor(calibratedWhite: 0.17, alpha: 1))
 
     /// A pill never gets wider than this. One 90-character research title
     /// would otherwise be the whole row (and force the panel wider than the

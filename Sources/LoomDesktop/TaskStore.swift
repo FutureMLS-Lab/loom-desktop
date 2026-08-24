@@ -264,8 +264,12 @@ final class TaskStore: ObservableObject {
                     )
                 )
             }
-            pills = next
-            reorderPills()
+            sortByConsoleOrder(&next)
+            // Publish only movement. An `@Published` fires on every
+            // assignment, same value or not, and this runs every four
+            // seconds — the dock was re-wrapping its pills and the sidebar
+            // re-rendering on every poll of a fleet where nothing changed.
+            if next != pills { pills = next }
             // The task already open in front of you is not one you need to be
             // called back to. Acknowledging only when the selection *changes*
             // missed the case that matters most: a task that finishes again
@@ -277,19 +281,20 @@ final class TaskStore: ObservableObject {
                next.first(where: { $0.id == selection })?.state == .finished {
                 markSeen(selection)
             }
-            connection = .online
+            if connection != .online { connection = .online }
             failureStreak = 0
             Notifier.shared.reconcile(pills: pills)
         } catch {
             failureStreak += 1
-            connection = .offline(error.localizedDescription)
+            let offline = ConnectionState.offline(error.localizedDescription)
+            if connection != offline { connection = offline }
         }
     }
 
     private func refreshLabels(projectIds: Set<String>) async {
         do {
             let all = try await api.projects()
-            projects = all
+            if all != projects { projects = all }
             // In parallel: one sequential round trip per project against a
             // remote gateway added up to seconds of stalling every refresh.
             let api = self.api
@@ -306,7 +311,7 @@ final class TaskStore: ObservableObject {
                 for await (id, metas) in group { result[id] = metas }
                 return result
             }
-            tasksByProject = fetched
+            if fetched != tasksByProject { tasksByProject = fetched }
             labelsFetchedAt = Date()
         } catch {
             // Labels are cosmetic; pills fall back to slugs until this works.
@@ -398,11 +403,19 @@ final class TaskStore: ObservableObject {
         reorderPills()
     }
 
+    /// Re-sort the published pills after a sidebar drag, publishing only if
+    /// the order actually moved.
+    private func reorderPills() {
+        var sorted = pills
+        sortByConsoleOrder(&sorted)
+        if sorted != pills { pills = sorted }
+    }
+
     /// Loom's own order, not alphabetical: the console lets you drag projects
     /// and tasks into the order you think in, and the API hands them back that
     /// way. Applied both when a poll rebuilds the pills and after a sidebar
     /// drag, so the dock never waits for the next poll to agree.
-    private func reorderPills() {
+    private func sortByConsoleOrder(_ list: inout [TaskPill]) {
         let projectRank = Dictionary(
             uniqueKeysWithValues: projects.enumerated().map { ($0.element.id, $0.offset) }
         )
@@ -412,7 +425,7 @@ final class TaskStore: ObservableObject {
                 taskRank["\(projectId)/\(meta.slug)"] = index
             }
         }
-        pills.sort { left, right in
+        list.sort { left, right in
             let lp = projectRank[left.projectId] ?? Int.max
             let rp = projectRank[right.projectId] ?? Int.max
             if lp != rp { return lp < rp }

@@ -172,10 +172,10 @@ final class ChatSession: ObservableObject, Identifiable {
         while !Task.isCancelled {
             do {
                 let detail = try await api.taskDetail(projectId: projectId, slug: slug)
-                paneTarget = detail.paneTarget
+                publish(\.paneTarget, detail.paneTarget)
                 serverPlanPath = detail.plan_path
-                if let t = detail.meta.title, !t.isEmpty { title = t }
-                detailError = ""
+                if let t = detail.meta.title, !t.isEmpty { publish(\.title, t) }
+                publish(\.detailError, "")
                 return
             } catch {
                 attempt += 1
@@ -204,7 +204,7 @@ final class ChatSession: ObservableObject, Identifiable {
                 limit: full ? limit : 20
             )
             apply(feed, updateOnly: !full)
-            error = ""
+            publish(\.error, "")
             failureStreak = 0
         } catch {
             failureStreak += 1
@@ -212,36 +212,56 @@ final class ChatSession: ObservableObject, Identifiable {
             // poll on a live feed is not worth a banner.
             if messages.isEmpty { self.error = error.localizedDescription }
         }
-        loading = false
+        publish(\.loading, false)
+    }
+
+    /// Assign only movement. An `@Published` fires objectWillChange on every
+    /// assignment, equal value or not, and `apply` runs on every poll — every
+    /// 1.5s while the agent works. Seven unconditional assignments per poll
+    /// had the whole task pane re-rendering a transcript that had not changed.
+    private func publish<Value: Equatable>(
+        _ keyPath: ReferenceWritableKeyPath<ChatSession, Value>,
+        _ value: Value
+    ) {
+        if self[keyPath: keyPath] != value {
+            self[keyPath: keyPath] = value
+        }
     }
 
     private func apply(_ feed: ConversationFeed, updateOnly: Bool) {
-        available = feed.available ?? true
-        online = feed.online ?? false
-        working = feed.working ?? false
-        agent = feed.agent ?? agent
-        total = feed.total ?? total
+        publish(\.available, feed.available ?? true)
+        publish(\.online, feed.online ?? false)
+        publish(\.working, feed.working ?? false)
+        publish(\.agent, feed.agent ?? agent)
+        publish(\.total, feed.total ?? total)
 
         let incoming = feed.messages ?? []
 
         if !updateOnly || sessionId != feed.session_id {
             sessionId = feed.session_id
-            messages = incoming
-            hasMore = feed.has_more ?? false
+            publish(\.messages, incoming)
+            publish(\.hasMore, feed.has_more ?? false)
         } else {
             // Merge the tail poll: update rows in place, append unseen ones.
+            // The merge already knows whether anything moved, so the array is
+            // republished only when it did.
             var merged = messages
+            var changed = false
             var index = [String: Int]()
             for (i, m) in merged.enumerated() { index[m.id] = i }
             for item in incoming {
                 if let i = index[item.id] {
-                    if merged[i] != item { merged[i] = item }
+                    if merged[i] != item {
+                        merged[i] = item
+                        changed = true
+                    }
                 } else {
                     merged.append(item)
+                    changed = true
                 }
             }
-            messages = merged
-            hasMore = hasMore || (feed.has_more ?? false)
+            if changed { messages = merged }
+            publish(\.hasMore, hasMore || (feed.has_more ?? false))
         }
 
         // Drop the optimistic echo once the server shows the message.
@@ -443,7 +463,7 @@ final class ChatSession: ObservableObject, Identifiable {
             guard let list = try? await api.sessions(projectId: projectId, slug: slug) else { return }
             // Newest first: resuming almost always means "the one I was just
             // in", and on-disk transcripts arrive in no useful order.
-            sessions = (list.sessions ?? []).sorted { ($0.mtime ?? 0) > ($1.mtime ?? 0) }
+            publish(\.sessions, (list.sessions ?? []).sorted { ($0.mtime ?? 0) > ($1.mtime ?? 0) })
         }
     }
 
@@ -460,7 +480,7 @@ final class ChatSession: ObservableObject, Identifiable {
         Task {
             guard let status = try? await api.monitor(projectId: projectId, slug: slug)
             else { return }
-            monitorOn = status.isOn
+            publish(\.monitorOn, status.isOn)
         }
     }
 

@@ -49,7 +49,7 @@ final class SessionCache: ObservableObject {
         order.append(key)
 
         if let existing = sessions[key] {
-            existing.title = title
+            if existing.title != title { existing.title = title }
             existing.start()
             return existing
         }

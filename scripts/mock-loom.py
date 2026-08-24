@@ -86,7 +86,7 @@ FEEDS = {
         "session_id": "sess-quant-eval",
         "messages": [
             msg("user", text="Build an eval harness comparing all quant levels."),
-            msg("assistant", text="Harness is done and the sweep finished. Results:\n\n- 8-bit: 41.1 dB\n- 4-bit: 40.2 dB\n- 2-bit: 38.4 dB\n\nOne decision left before I write the report."),
+            msg("assistant", text="Harness is done and the sweep finished. Results:\n\n- 8-bit: 41.1 dB\n  - attention layers: 41.3 dB\n  - mlp layers: 40.9 dB\n- 4-bit: 40.2 dB\n- 2-bit: 38.4 dB\n\nRemaining steps:\n\n1. Freeze the tail layers at 4-bit\n2. Re-run the sweep overnight\n\nOne decision left before I write the report."),
             msg("question", question={
                 "id": "q1", "title": "Report format", "status": "pending",
                 "questions": [{

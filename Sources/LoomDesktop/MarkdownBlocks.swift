@@ -16,13 +16,25 @@ import SwiftUI
 enum MarkdownBlock: Equatable {
     case paragraph(String)
     case heading(String, level: Int)
-    case bullets([String])
+    case bullets([Bullet])
     case code(String, language: String)
     case table(header: [String], rows: [[String]], alignments: [Alignment])
     case quote(String)
     case rule
 
     enum Alignment: Equatable { case leading, trailing, center }
+
+    struct Bullet: Equatable {
+        let depth: Int
+        let text: String
+
+        /// "1. " and friends carry their own marker; drawing a dot in front
+        /// of the number dressed every ordered list in two bullets.
+        var isNumbered: Bool {
+            let digits = text.prefix(while: \.isNumber)
+            return !digits.isEmpty && text.dropFirst(digits.count).hasPrefix(". ")
+        }
+    }
 }
 
 enum MarkdownBlockParser {
@@ -44,7 +56,7 @@ enum MarkdownBlockParser {
     private static func parse(_ raw: String) -> [MarkdownBlock] {
         var blocks: [MarkdownBlock] = []
         var paragraph: [String] = []
-        var bullets: [String] = []
+        var bullets: [MarkdownBlock.Bullet] = []
 
         func flushParagraph() {
             let text = paragraph.joined(separator: "\n").trimmingCharacters(in: .whitespacesAndNewlines)
@@ -129,7 +141,9 @@ enum MarkdownBlockParser {
 
             if let bullet = bulletBody(trimmed) {
                 flushParagraph()
-                bullets.append(bullet)
+                bullets.append(
+                    MarkdownBlock.Bullet(depth: bulletDepth(line), text: bullet)
+                )
                 index += 1
                 continue
             }
@@ -159,6 +173,17 @@ enum MarkdownBlockParser {
         }
         flushAll()
         return blocks
+    }
+
+    /// How deep the item sits, from the indentation the trim threw away.
+    /// Two columns per level is the common step; four-space nesting just
+    /// lands a level deeper, which still reads as "inside".
+    private static func bulletDepth(_ line: String) -> Int {
+        var columns = 0
+        for character in line {
+            if character == " " { columns += 1 } else if character == "\t" { columns += 4 } else { break }
+        }
+        return min(columns / 2, 4)
     }
 
     private static func bulletBody(_ trimmed: String) -> String? {
@@ -270,17 +295,29 @@ struct MarkdownBody: View {
                     VStack(alignment: .leading, spacing: 4) {
                         ForEach(Array(items.enumerated()), id: \.offset) { _, item in
                             HStack(alignment: .firstTextBaseline, spacing: 8) {
-                                Circle()
-                                    .fill(Color.secondary.opacity(0.45))
-                                    .frame(width: 4, height: 4)
-                                    .padding(.top, 6)
-                                Text(InlineMarkdown.text(item))
+                                if !item.isNumbered {
+                                    if item.depth == 0 {
+                                        Circle()
+                                            .fill(Color.secondary.opacity(0.45))
+                                            .frame(width: 4, height: 4)
+                                            .padding(.top, 6)
+                                    } else {
+                                        // Hollow at depth, the way lists mark
+                                        // their inner levels.
+                                        Circle()
+                                            .strokeBorder(Color.secondary.opacity(0.5), lineWidth: 1)
+                                            .frame(width: 4.5, height: 4.5)
+                                            .padding(.top, 6)
+                                    }
+                                }
+                                Text(InlineMarkdown.text(item.text))
                                     .font(.system(size: fontSize))
                                     .lineSpacing(leading)
                                     .textSelection(.enabled)
                                     .fixedSize(horizontal: false, vertical: true)
                                     .frame(maxWidth: .infinity, alignment: .leading)
                             }
+                            .padding(.leading, CGFloat(item.depth) * 15)
                         }
                     }
 

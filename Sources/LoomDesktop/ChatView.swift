@@ -705,6 +705,8 @@ private struct QuestionCard: View {
 
             if pending {
                 HStack(spacing: 8) {
+                    // The one thing this card wants from you, drawn like it:
+                    // accent-filled, not another grey bezel among the options.
                     Button {
                         session.answer(question: question, selected: selected, custom: custom)
                     } label: {
@@ -715,6 +717,8 @@ private struct QuestionCard: View {
                                 .font(.system(size: 12.5, weight: .semibold))
                         }
                     }
+                    .buttonStyle(.borderedProminent)
+                    .tint(LoomColors.accent)
                     .disabled(!complete || session.answering)
                     if !session.answerFeedback.isEmpty {
                         Text(session.answerFeedback)

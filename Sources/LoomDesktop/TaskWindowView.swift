@@ -84,9 +84,14 @@ struct TaskPane: View {
                     .truncationMode(.tail)
                 HStack(spacing: 5) {
                     Text(session.projectLabel)
-                    Text("·")
-                    Text(session.slug)
-                        .font(.system(size: 12, design: .monospaced))
+                    // The slug earns its spot only when it says something the
+                    // title does not — half the fleet is named after its slug,
+                    // and the header was reading "video2bit · video2bit".
+                    if session.title.caseInsensitiveCompare(session.slug) != .orderedSame {
+                        Text("·")
+                        Text(session.slug)
+                            .font(.system(size: 12, design: .monospaced))
+                    }
                 }
                 .font(.system(size: 12))
                 .foregroundColor(.secondary)
@@ -117,29 +122,7 @@ struct TaskPane: View {
     private func tabRow(compactActions: Bool) -> some View {
         HStack(spacing: 3) {
             ForEach(Tab.allCases) { item in
-                Button {
-                    tab = item
-                } label: {
-                    Label(item.label, systemImage: item.symbol)
-                        .font(.system(size: 13, weight: .medium))
-                        .fixedSize()
-                        .padding(.horizontal, 12)
-                        .padding(.vertical, 6)
-                        .background(
-                            tab == item ? LoomColors.accentSoft : Color.clear,
-                            in: Rectangle()
-                        )
-                        .overlay(
-                            Rectangle().strokeBorder(
-                                tab == item ? LoomColors.accent.opacity(0.30) : .clear,
-                                lineWidth: 1
-                            )
-                        )
-                        .foregroundColor(tab == item ? LoomColors.accent : .secondary)
-                        .contentShape(Rectangle())
-                }
-                .buttonStyle(.plain)
-                .keyboardShortcut(item.shortcut, modifiers: .command)
+                TabButton(item: item, selected: tab == item) { tab = item }
             }
 
             Spacer(minLength: 12)
@@ -149,29 +132,85 @@ struct TaskPane: View {
             // Quieter than the tabs on purpose: these are things you do
             // occasionally, the tabs are where you live.
             ForEach(ChatSession.FlowStep.allCases) { step in
-                Button {
-                    session.run(step)
-                } label: {
-                    Group {
-                        if compactActions {
-                            Image(systemName: step.symbol)
-                        } else {
-                            Label(step.label, systemImage: step.symbol)
-                        }
-                    }
-                    .font(.system(size: 11.5))
-                    .fixedSize()
-                    .frame(minWidth: compactActions ? 16 : nil)
-                    .padding(.horizontal, 9)
-                    .padding(.vertical, 4)
-                    .overlay(Rectangle().strokeBorder(LoomColors.border, lineWidth: 1))
-                    .foregroundColor(.secondary)
-                    .contentShape(Rectangle())
-                }
-                .buttonStyle(.plain)
-                .help(step.help)
-                .disabled(session.paneTarget.isEmpty || session.sending)
+                FlowButton(step: step, compact: compactActions) { session.run(step) }
+                    .disabled(session.paneTarget.isEmpty || session.sending)
             }
+        }
+    }
+
+    /// One tab. Its own view so hovering can answer — a row of flat
+    /// rectangles that ignores the pointer reads as labels, not buttons.
+    private struct TabButton: View {
+        let item: Tab
+        let selected: Bool
+        let action: () -> Void
+        @State private var hovering = false
+
+        var body: some View {
+            Button(action: action) {
+                Label(item.label, systemImage: item.symbol)
+                    .font(.system(size: 13, weight: .medium))
+                    .fixedSize()
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 6)
+                    .background(
+                        selected
+                            ? LoomColors.accentSoft
+                            : (hovering ? Color.primary.opacity(0.05) : Color.clear),
+                        in: Rectangle()
+                    )
+                    .overlay(
+                        Rectangle().strokeBorder(
+                            selected ? LoomColors.accent.opacity(0.30) : .clear,
+                            lineWidth: 1
+                        )
+                    )
+                    .foregroundColor(
+                        selected ? LoomColors.accent : (hovering ? .primary : .secondary)
+                    )
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .keyboardShortcut(item.shortcut, modifiers: .command)
+            .onHover { hovering = $0 }
+        }
+    }
+
+    /// One flow step, with the same hover answer as the tabs. Disabled state
+    /// comes through the environment, and a button that cannot be pressed
+    /// does not light up.
+    private struct FlowButton: View {
+        let step: ChatSession.FlowStep
+        let compact: Bool
+        let action: () -> Void
+        @State private var hovering = false
+        @Environment(\.isEnabled) private var isEnabled
+
+        var body: some View {
+            Button(action: action) {
+                Group {
+                    if compact {
+                        Image(systemName: step.symbol)
+                    } else {
+                        Label(step.label, systemImage: step.symbol)
+                    }
+                }
+                .font(.system(size: 11.5))
+                .fixedSize()
+                .frame(minWidth: compact ? 16 : nil)
+                .padding(.horizontal, 9)
+                .padding(.vertical, 4)
+                .background(
+                    isEnabled && hovering ? Color.primary.opacity(0.04) : Color.clear,
+                    in: Rectangle()
+                )
+                .overlay(Rectangle().strokeBorder(LoomColors.border, lineWidth: 1))
+                .foregroundColor(isEnabled && hovering ? .primary : .secondary)
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .help(step.help)
+            .onHover { hovering = $0 }
         }
     }
 

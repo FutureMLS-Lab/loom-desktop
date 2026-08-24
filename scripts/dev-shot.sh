@@ -57,7 +57,10 @@ codesign --force --deep -s - "$APP" 2>/dev/null
 # A mock on a port of its own, so nothing here can reach a real Loom.
 STARTED_MOCK=""
 if ! curl -s -m 1 "http://127.0.0.1:$MOCK_PORT/api/activity" >/dev/null 2>&1; then
-    echo "▸ starting mock loom on :$MOCK_PORT…"
+    # Braced because /bin/bash 3.2 misreads an unbraced name butted against a
+    # multibyte character (the ellipsis) as part of the name, and set -u then
+    # aborts on the "unbound" result.
+    echo "▸ starting mock loom on :${MOCK_PORT}…"
     python3 scripts/mock-loom.py "$MOCK_PORT" >/dev/null 2>&1 &
     STARTED_MOCK=$!
     sleep 1

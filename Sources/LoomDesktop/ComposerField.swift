@@ -23,6 +23,9 @@ struct ComposerField: NSViewRepresentable {
     var placeholder: String
     var fontSize: CGFloat = 14.5
     var focusOnAppear = false
+    /// Focus, reported out so the border around this box can say where typing
+    /// will land — the field itself is chromeless and cannot.
+    var onFocusChange: (Bool) -> Void = { _ in }
     var onSubmit: () -> Void
 
     static let minHeight: CGFloat = 22
@@ -40,6 +43,7 @@ struct ComposerField: NSViewRepresentable {
         let textView = ComposerTextView()
         textView.delegate = context.coordinator
         textView.onSubmit = { context.coordinator.parent.onSubmit() }
+        textView.onFocusChange = { context.coordinator.parent.onFocusChange($0) }
         textView.drawsBackground = false
         textView.isRichText = false
         textView.allowsUndo = true
@@ -127,9 +131,22 @@ struct ComposerField: NSViewRepresentable {
 
 final class ComposerTextView: NSTextView {
     var onSubmit: (() -> Void)?
+    var onFocusChange: ((Bool) -> Void)?
     var placeholder = ""
     var focusOnAppear = false
     private var hasFocused = false
+
+    override func becomeFirstResponder() -> Bool {
+        let accepted = super.becomeFirstResponder()
+        if accepted { onFocusChange?(true) }
+        return accepted
+    }
+
+    override func resignFirstResponder() -> Bool {
+        let accepted = super.resignFirstResponder()
+        if accepted { onFocusChange?(false) }
+        return accepted
+    }
 
     override func keyDown(with event: NSEvent) {
         let isReturn = event.keyCode == 36 || event.keyCode == 76

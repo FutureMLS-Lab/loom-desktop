@@ -9,6 +9,7 @@ struct ChatView: View {
     @State private var stickToLatest = true
     @State private var composerHeight = ComposerField.minHeight
     @State private var composerRevision = 0
+    @State private var composerFocused = false
     @State private var expandedRuns: Set<String> = []
 
     private static let bottomAnchor = "chat-bottom"
@@ -237,16 +238,31 @@ struct ChatView: View {
                 measuredHeight: $composerHeight,
                 contentRevision: composerRevision,
                 placeholder: "Message the agent… ⏎ send, ⇧⏎ newline",
+                onFocusChange: { focused in
+                    // Off the responder-chain callback before touching state:
+                    // focus can move as part of a view update, and setting
+                    // state inside one is an error SwiftUI only sometimes
+                    // forgives.
+                    DispatchQueue.main.async { composerFocused = focused }
+                },
                 onSubmit: sendDraft
             )
             .frame(height: composerHeight)
             .padding(.horizontal, 10)
             .padding(.vertical, 7)
             .background(LoomColors.bgElev1, in: Rectangle())
+            // The field is chromeless, so this border is what says where
+            // typing will land: accent while it has the keyboard.
             .overlay(
                 Rectangle()
-                    .strokeBorder(LoomColors.borderStrong, lineWidth: 1)
+                    .strokeBorder(
+                        composerFocused
+                            ? LoomColors.accent.opacity(0.55)
+                            : LoomColors.borderStrong,
+                        lineWidth: 1
+                    )
             )
+            .animation(.easeInOut(duration: 0.12), value: composerFocused)
 
             Button {
                 session.interrupt()

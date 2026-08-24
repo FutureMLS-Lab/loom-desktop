@@ -16,25 +16,41 @@ enum LoomBlink {
     static var half: CFTimeInterval { cycle / 2 }
 }
 
-/// The still colour of a dock pill's rim: indigo→cyan→green while the agent
-/// works, green→cyan once it has finished.
+/// A dock pill's rim: indigo→cyan→green while the agent works, green→cyan
+/// once it has finished, and on a finished one the rim blinks.
 ///
 /// Fills the pill. The pill's own face is laid over the middle of it, and what
 /// is left showing is the rim — a rim drawn as a rim would have to be masked,
 /// and a masked layer is redrawn offscreen on every frame it changes.
+///
+/// The blink lives here, on the rim, rather than on a tint over the pill. A
+/// finished pill used to pulse a wash of green across its whole face, which
+/// read as a slab flashing behind the title rather than as a pill asking to
+/// be looked at.
 struct PillBand: NSViewRepresentable {
-    let mode: PillGlow.Mode
+    enum Mode { case working, finished }
+
+    /// How much of the band the pill's face leaves showing.
+    static let rimWidth: CGFloat = 2.4
+
+    let mode: Mode
 
     func makeNSView(context: Context) -> PillBandView { PillBandView(mode: mode) }
 
     func updateNSView(_ view: PillBandView, context: Context) { view.apply(mode: mode) }
+
+    // Resolved once: reading these off `LoomColors` per use allocates an
+    // NSColor each time, which showed up in a profile.
+    static let accent = NSColor(calibratedRed: 0.35, green: 0.34, blue: 0.78, alpha: 1)
+    static let green = NSColor(calibratedRed: 0.26, green: 0.68, blue: 0.48, alpha: 1)
+    static let cyan = NSColor(calibratedRed: 0.26, green: 0.66, blue: 0.75, alpha: 1)
 }
 
 final class PillBandView: NSView {
     private let band = CAGradientLayer()
-    private var mode: PillGlow.Mode
+    private var mode: PillBand.Mode
 
-    init(mode: PillGlow.Mode) {
+    init(mode: PillBand.Mode) {
         self.mode = mode
         super.init(frame: .zero)
         wantsLayer = true
@@ -47,10 +63,11 @@ final class PillBandView: NSView {
     @available(*, unavailable)
     required init?(coder: NSCoder) { fatalError("not used") }
 
-    func apply(mode: PillGlow.Mode) {
+    func apply(mode: PillBand.Mode) {
         guard mode != self.mode else { return }
         self.mode = mode
         applyColors()
+        refreshBlink()
     }
 
     private func applyColors() {
@@ -59,11 +76,11 @@ final class PillBandView: NSView {
         switch mode {
         case .working:
             band.colors = [
-                PillGlow.accent.cgColor, PillGlow.cyan.cgColor, PillGlow.green.cgColor,
+                PillBand.accent.cgColor, PillBand.cyan.cgColor, PillBand.green.cgColor,
             ]
             band.locations = [0, 0.55, 1]
         case .finished:
-            band.colors = [PillGlow.green.cgColor, PillGlow.cyan.cgColor]
+            band.colors = [PillBand.green.cgColor, PillBand.cyan.cgColor]
             band.locations = [0, 1]
         }
         CATransaction.commit()
@@ -75,112 +92,91 @@ final class PillBandView: NSView {
         CATransaction.setDisableActions(true)
         band.frame = bounds
         CATransaction.commit()
+        refreshBlink()
+    }
+
+    override func viewDidMoveToWindow() {
+        super.viewDidMoveToWindow()
+        if window == nil {
+            band.removeAllAnimations()
+            blinking = false
+        } else {
+            refreshBlink()
+        }
+    }
+
+    private var blinking = false
+
+    private func refreshBlink() {
+        guard window != nil else { return }
+        let wanted = mode == .finished
+        guard wanted != blinking || (wanted && band.animation(forKey: "blink") == nil) else { return }
+        blinking = wanted
+        band.removeAnimation(forKey: "blink")
+        guard wanted else { return }
+        let blink = CABasicAnimation(keyPath: "opacity")
+        blink.fromValue = 1.0
+        blink.toValue = 0.28
+        blink.duration = LoomBlink.half
+        blink.autoreverses = true
+        blink.repeatCount = .infinity
+        blink.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
+        // Phase-locked to the wall clock so every finished pill, here and in
+        // the sidebar, is dark at the same moment. A dozen of these out of
+        // step reads as a fault rather than as a queue.
+        let now = band.convertTime(CACurrentMediaTime(), from: nil)
+        blink.beginTime = now - now.truncatingRemainder(dividingBy: LoomBlink.cycle)
+        band.add(blink, forKey: "blink")
     }
 }
 
-/// The part that moves: a mote of light running round the inside of a working
-/// pill, or a slow swell of colour over a finished one.
+/// The mote of light that runs round the inside of a working pill.
 ///
-/// Everything that animates in the dock lives in this one view, so there is a
-/// single place to look when the dock starts costing something. What it costs
-/// is not something the drawing predicts: measured against the same dock
-/// holding still, this mote and a full-pill rotating gradient came to the same
-/// 26 points of WindowServer, because the price was being paid by the card's
-/// drop shadow rather than by anything here (see `DockView`). With that fixed
-/// the same animation costs 9, about 4 of which is the card's frosted material
-/// re-blurring underneath it.
-struct PillGlow: NSViewRepresentable {
-    enum Mode { case working, finished }
+/// Everything that animates on a working pill is this one small layer, so
+/// there is a single place to look when the dock starts costing something.
+/// What it costs is not something the drawing predicts: measured against the
+/// same dock holding still, this mote and a full-pill rotating gradient came
+/// to the same 26 points of WindowServer, because the price was being paid by
+/// the card's drop shadow rather than by anything here (see `DockView`).
+struct PillMote: NSViewRepresentable {
+    func makeNSView(context: Context) -> PillMoteView { PillMoteView() }
 
-    /// How much of the band the pill's face leaves showing. Lives here because
-    /// the mote has to know where the rim is.
-    static let rimWidth: CGFloat = 2.4
-
-    let mode: Mode
-
-    func makeNSView(context: Context) -> PillGlowView { PillGlowView(mode: mode) }
-
-    func updateNSView(_ view: PillGlowView, context: Context) { view.apply(mode: mode) }
-
-    // Resolved once: reading these off `LoomColors` per use allocates an
-    // NSColor each time, which showed up in a profile.
-    static let accent = NSColor(calibratedRed: 0.35, green: 0.34, blue: 0.78, alpha: 1)
-    static let green = NSColor(calibratedRed: 0.26, green: 0.68, blue: 0.48, alpha: 1)
-    static let cyan = NSColor(calibratedRed: 0.26, green: 0.66, blue: 0.75, alpha: 1)
+    func updateNSView(_ view: PillMoteView, context: Context) {}
 }
 
-final class PillGlowView: NSView {
+final class PillMoteView: NSView {
     private let light = CAGradientLayer()
-    private var mode: PillGlow.Mode
-    /// What the animation was last built for. Rebuilding restarts it from the
-    /// top, and SwiftUI lays this view out often enough that the mote never
-    /// made it past the first corner.
-    private var builtFor: (mode: PillGlow.Mode, size: CGSize)?
+    /// What the orbit was last built for. Rebuilding restarts it from the top,
+    /// and SwiftUI lays this view out often enough that the mote never made it
+    /// past the first corner.
+    private var builtFor: CGSize?
 
-    init(mode: PillGlow.Mode) {
-        self.mode = mode
+    init() {
         super.init(frame: .zero)
         wantsLayer = true
         light.type = .radial
         light.startPoint = CGPoint(x: 0.5, y: 0.5)
         light.endPoint = CGPoint(x: 1, y: 1)
+        light.colors = [
+            NSColor.white.withAlphaComponent(0.55).cgColor,
+            PillBand.cyan.withAlphaComponent(0.28).cgColor,
+            PillBand.cyan.withAlphaComponent(0).cgColor,
+        ]
+        light.locations = [0, 0.38, 1]
         layer?.addSublayer(light)
-        applyColors()
     }
 
     @available(*, unavailable)
     required init?(coder: NSCoder) { fatalError("not used") }
 
-    func apply(mode: PillGlow.Mode) {
-        guard mode != self.mode else { return }
-        self.mode = mode
-        applyColors()
-        layoutLight()
-        refreshAnimation()
-    }
-
-    private func applyColors() {
-        CATransaction.begin()
-        CATransaction.setDisableActions(true)
-        switch mode {
-        case .working:
-            light.type = .radial
-            light.colors = [
-                NSColor.white.withAlphaComponent(0.55).cgColor,
-                PillGlow.cyan.withAlphaComponent(0.28).cgColor,
-                PillGlow.cyan.withAlphaComponent(0).cgColor,
-            ]
-            light.locations = [0, 0.38, 1]
-        case .finished:
-            light.type = .axial
-            light.startPoint = CGPoint(x: 0, y: 0.5)
-            light.endPoint = CGPoint(x: 1, y: 0.5)
-            light.colors = [
-                PillGlow.green.withAlphaComponent(0.20).cgColor,
-                PillGlow.cyan.withAlphaComponent(0.14).cgColor,
-            ]
-            light.locations = [0, 1]
-        }
-        CATransaction.commit()
-    }
-
     override func layout() {
         super.layout()
-        layoutLight()
-        refreshAnimation()
-    }
-
-    private func layoutLight() {
         CATransaction.begin()
         CATransaction.setDisableActions(true)
-        switch mode {
-        case .working:
-            light.bounds = CGRect(x: 0, y: 0, width: Self.moteSize, height: Self.moteSize)
-            light.position = CGPoint(x: bounds.minX + Self.moteSize / 2, y: bounds.midY)
-        case .finished:
-            light.frame = bounds
-        }
+        light.bounds = CGRect(x: 0, y: 0, width: Self.moteSize, height: Self.moteSize)
+        light.position = CGPoint(x: bounds.minX + Self.moteSize / 2, y: bounds.midY)
         CATransaction.commit()
+        refreshOrbit()
     }
 
     override func viewDidMoveToWindow() {
@@ -189,41 +185,21 @@ final class PillGlowView: NSView {
             light.removeAllAnimations()
             builtFor = nil
         } else {
-            refreshAnimation()
+            refreshOrbit()
         }
     }
 
-    private func refreshAnimation() {
+    private func refreshOrbit() {
         guard window != nil, bounds.width > 1, bounds.height > 1 else { return }
-        let key = mode == .working ? "orbit" : "breathe"
-        if let builtFor, builtFor == (mode, bounds.size), light.animation(forKey: key) != nil {
-            return
-        }
-        builtFor = (mode, bounds.size)
+        if builtFor == bounds.size, light.animation(forKey: "orbit") != nil { return }
+        builtFor = bounds.size
         light.removeAllAnimations()
-        switch mode {
-        case .working:
-            let orbit = CAKeyframeAnimation(keyPath: "position")
-            orbit.values = orbitStops()
-            orbit.duration = 2.8
-            orbit.repeatCount = .infinity
-            orbit.calculationMode = .paced
-            light.add(orbit, forKey: key)
-        case .finished:
-            // Breathing, not flashing, and on opacity — the compositor
-            // re-blends a layer it already holds rather than asking for new
-            // pixels.
-            let breathe = CABasicAnimation(keyPath: "opacity")
-            breathe.fromValue = 0.9
-            breathe.toValue = 0.25
-            breathe.duration = LoomBlink.half
-            breathe.autoreverses = true
-            breathe.repeatCount = .infinity
-            breathe.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
-            let now = light.convertTime(CACurrentMediaTime(), from: nil)
-            breathe.beginTime = now - now.truncatingRemainder(dividingBy: LoomBlink.cycle)
-            light.add(breathe, forKey: key)
-        }
+        let orbit = CAKeyframeAnimation(keyPath: "position")
+        orbit.values = orbitStops()
+        orbit.duration = 2.8
+        orbit.repeatCount = .infinity
+        orbit.calculationMode = .paced
+        light.add(orbit, forKey: "orbit")
     }
 
     /// Evenly spaced stops around the pill, inset by the mote's own radius so
@@ -246,7 +222,6 @@ final class PillGlowView: NSView {
     }
 
     private static let orbitStopCount = 36
-
     private static let moteSize: CGFloat = 15
 }
 

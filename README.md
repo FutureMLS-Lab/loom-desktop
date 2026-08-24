@@ -14,9 +14,9 @@ Each pill is a dark chip inside a lit rim. The rim's colour is the state:
 - **Working** — the agent is generating right now: the rim runs indigo through
   cyan to green, with a mote of light travelling round the inside of it.
 - **Finished, unseen** — the agent stopped while you were looking elsewhere:
-  a green rim that breathes, slowly, on the same 1.6 s cadence as the sidebar.
-  Clicking acknowledges it (locally and via `/api/activity/ack`) and opens the
-  task.
+  the rim goes green and blinks on the same 1.6 s cadence as the sidebar, in
+  step with every other finished pill. Clicking acknowledges it (locally and
+  via `/api/activity/ack`) and opens the task.
 - **Idle** — pane alive, agent waiting, nothing unseen. Idle tasks are left
   off the dock entirely; they are in the sidebar, the fleet menu and ⌘P.
 

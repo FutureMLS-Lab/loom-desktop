@@ -378,7 +378,7 @@ struct TaskPillView: View {
 
     @State private var isHovering = false
 
-    private var glowMode: PillGlow.Mode? {
+    private var bandMode: PillBand.Mode? {
         switch pill.state {
         case .working: return .working
         case .finished: return .finished
@@ -429,14 +429,14 @@ struct TaskPillView: View {
         // offscreen on every frame it changes.
         .background {
             ZStack {
-                if let glow = glowMode {
-                    PillBand(mode: glow)
+                if let bandMode {
+                    PillBand(mode: bandMode)
                 } else {
                     Color.secondary.opacity(0.5)
                 }
-                Self.chipFace.padding(PillGlow.rimWidth)
-                if let glow = glowMode {
-                    PillGlow(mode: glow).allowsHitTesting(false)
+                Self.chipFace.padding(PillBand.rimWidth)
+                if pill.state == .working {
+                    PillMote().allowsHitTesting(false)
                 }
             }
         }

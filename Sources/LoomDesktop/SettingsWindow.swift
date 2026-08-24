@@ -107,6 +107,7 @@ struct SettingsView: View {
                     Text("Sent as Authorization: Bearer. Leave empty when the gateway needs none.")
                         .font(.system(size: 10.5))
                         .foregroundColor(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
                 }
             }
             .frame(maxWidth: .infinity, alignment: .leading)

@@ -94,6 +94,7 @@ struct TaskPane: View {
                 .truncationMode(.middle)
 
                 Spacer(minLength: 8)
+                agentChip
                 statusChip
                 agentMenu
             }
@@ -222,6 +223,26 @@ struct TaskPane: View {
         let formatter = DateFormatter()
         formatter.dateFormat = "MMM d, HH:mm"
         return "\(formatter.string(from: date))  ·  \(shortID)"
+    }
+
+    /// Which CLI is in the pane. The dock and sidebar carry this on their
+    /// icons, but the open task itself never said — and "start the agent"
+    /// reads differently when you can see which agent that is.
+    @ViewBuilder
+    private var agentChip: some View {
+        if !session.agent.isEmpty {
+            HStack(spacing: 5) {
+                Image(systemName: TaskPill.agentSymbol(session.agent))
+                    .font(.system(size: 10.5, weight: .medium))
+                Text(session.agent.capitalized)
+                    .font(.system(size: 11.5, weight: .medium))
+            }
+            .foregroundColor(.secondary)
+            .padding(.horizontal, 8)
+            .padding(.vertical, 5)
+            .background(Color.primary.opacity(0.05), in: Rectangle())
+            .help("The CLI running this task's pane")
+        }
     }
 
     @ViewBuilder

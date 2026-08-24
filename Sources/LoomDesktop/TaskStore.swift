@@ -24,7 +24,9 @@ struct TaskPill: Identifiable, Equatable {
     var displayTitle: String { title.isEmpty ? slug : title }
 
     /// SF Symbol per agent CLI, following session-dock's source icons.
-    var symbolName: String {
+    /// Static so the task header, which knows its agent by name rather than
+    /// through a pill, draws the same icon for the same CLI.
+    static func agentSymbol(_ agent: String) -> String {
         switch agent.lowercased() {
         case "cursor": return "cursorarrow.rays"
         case "codex": return "chevron.left.forwardslash.chevron.right"
@@ -32,6 +34,8 @@ struct TaskPill: Identifiable, Equatable {
         default: return "sparkles"
         }
     }
+
+    var symbolName: String { Self.agentSymbol(agent) }
 }
 
 enum ConnectionState: Equatable {

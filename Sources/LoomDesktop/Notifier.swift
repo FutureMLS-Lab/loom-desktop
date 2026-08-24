@@ -8,7 +8,12 @@ import UserNotifications
 final class Notifier: NSObject, UNUserNotificationCenterDelegate {
     static let shared = Notifier()
 
-    private let center = UNUserNotificationCenter.current()
+    /// nil when running as a bare executable (swift run, .build/debug): the
+    /// notification center demands a real bundle and throws an ObjC exception
+    /// without one, which took the whole dev binary down at launch. The
+    /// bundled app always has one, so nothing changes for it.
+    private let center: UNUserNotificationCenter? =
+        Bundle.main.bundleIdentifier != nil ? .current() : nil
     private var authorized = false
     /// Tasks already announced, so a finish is not re-announced on every poll.
     private var announced: Set<String> = []
@@ -18,8 +23,8 @@ final class Notifier: NSObject, UNUserNotificationCenterDelegate {
 
     func start(store: TaskStore) {
         self.store = store
-        center.delegate = self
-        center.requestAuthorization(options: [.alert, .sound]) { [weak self] granted, _ in
+        center?.delegate = self
+        center?.requestAuthorization(options: [.alert, .sound]) { [weak self] granted, _ in
             Task { @MainActor in self?.authorized = granted }
         }
     }
@@ -41,7 +46,7 @@ final class Notifier: NSObject, UNUserNotificationCenterDelegate {
     }
 
     private func post(_ pill: TaskPill) {
-        guard authorized else { return }
+        guard authorized, let center else { return }
         let content = UNMutableNotificationContent()
         content.title = pill.displayTitle
         content.subtitle = pill.projectLabel

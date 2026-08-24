@@ -10,7 +10,6 @@ struct DockView: View {
     /// height to it.
     var onMeasure: (WrappingHStack.Metrics) -> Void = { _ in }
     var onHidePanel: () -> Void = {}
-    var onFitToContents: () -> Void = {}
 
     /// One row by default: the dock is a glance, not a list. Expanding shows
     /// every pill, and the choice sticks across launches.
@@ -61,7 +60,7 @@ struct DockView: View {
         ) {
             // Row 1: identity + controls. Always present — an empty fleet
             // collapses the panel to just this strip.
-            LoomMenuButton(store: store, onFitToContents: onFitToContents)
+            LoomMenuButton(store: store)
             DockStatus(store: store)
             if !activePills.isEmpty {
                 ExpandButton(
@@ -239,7 +238,6 @@ enum DockScale {
 /// Fleet menu — the loom knot on the left of the header.
 private struct LoomMenuButton: View {
     @ObservedObject var store: TaskStore
-    var onFitToContents: () -> Void = {}
     @AppStorage(DockScale.key) private var scale = 1.0
     @AppStorage(DockTheme.key) private var theme = DockTheme.light.rawValue
 

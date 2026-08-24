@@ -65,7 +65,11 @@ the window you are in now.
   at the top of the screen and draggable anywhere from there, polls
   `/api/activity` every 4 s (the Loom server's own watcher cadence) and turns
   the snapshot into pills. Task titles and project names refresh on a slower
-  cycle.
+  cycle. With the display asleep the cadence drops to 60 s — four seconds is
+  right for a dock somebody is watching and is nine hundred requests an hour
+  at a screen that is switched off — and a wake refreshes at once. Slowed
+  rather than stopped, so a task finishing overnight still raises its
+  notification then.
 - **Dock Size** in the loom menu draws the whole dock smaller or larger
   (`panelScale`, 0.85 / 1.0 / 1.2). It changes the real metrics rather than
   zooming, so the window shrinks with the pills and more of them fit a row.

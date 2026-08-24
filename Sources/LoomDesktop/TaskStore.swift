@@ -1,5 +1,6 @@
-import Foundation
+import AppKit
 import Combine
+import Foundation
 
 /// One pill on the dock: a Loom task with a live agent pane.
 struct TaskPill: Identifiable, Equatable {
@@ -79,15 +80,33 @@ final class TaskStore: ObservableObject {
     private static let maxBackoff: TimeInterval = 60
     private var failureStreak = 0
 
+    /// The cadence to keep while nobody can see the screen.
+    ///
+    /// Four seconds is the watcher's own cadence and the right one for a dock
+    /// somebody is watching; kept up overnight it is nine hundred requests an
+    /// hour asking whether anything changed on a display that is switched off.
+    /// Slowed rather than stopped, because a task that finishes at 3am should
+    /// still raise its notification then — a minute late is not a thing anyone
+    /// can measure, and being silent until the screen wakes is.
+    private static let asleepInterval: TimeInterval = 60
+
+    /// Asked of the system each time rather than tracked from the sleep and
+    /// wake notifications. A flag set by a notification is a flag that can be
+    /// left set — launch while the display is already off and no sleep
+    /// notification is ever coming — and the way that fails is a dock that
+    /// quietly stays a minute out of date for the rest of the session.
+    private var screensAsleep: Bool { CGDisplayIsAsleep(CGMainDisplayID()) != 0 }
+
     /// Polling a server that is down does not help it come back. Each attempt
     /// also ties up a connection for the length of its timeout, so a client
     /// that keeps its cadence through an outage is adding load to something
     /// already struggling — and with several clients doing it, keeping it
     /// down. Attempts spread out until it answers, then snap back.
     private var nextDelay: TimeInterval {
-        guard failureStreak > 0 else { return Self.activityInterval }
-        let backoff = Self.activityInterval * pow(2, Double(min(failureStreak, 5)))
-        return min(backoff, Self.maxBackoff)
+        let base = screensAsleep ? Self.asleepInterval : Self.activityInterval
+        guard failureStreak > 0 else { return base }
+        let backoff = base * pow(2, Double(min(failureStreak, 5)))
+        return min(backoff, max(Self.maxBackoff, base))
     }
 
     /// The current server, republished here because `LoomSettings` is plain
@@ -102,6 +121,19 @@ final class TaskStore: ObservableObject {
             forName: LoomSettings.serverDidChange, object: nil, queue: .main
         ) { [weak self] _ in
             Task { @MainActor in self?.serverChanged() }
+        }
+        // Waking is the moment the dock is looked at hardest, and the poll it
+        // is waiting on could be most of a minute away. The slow cadence needs
+        // no notification of its own — `screensAsleep` asks the display.
+        let workspace = NSWorkspace.shared.notificationCenter
+        let awake: [NSNotification.Name] = [
+            NSWorkspace.screensDidWakeNotification,
+            NSWorkspace.sessionDidBecomeActiveNotification,
+        ]
+        for name in awake {
+            workspace.addObserver(forName: name, object: nil, queue: .main) { [weak self] _ in
+                Task { @MainActor in self?.refreshNow() }
+            }
         }
     }
 

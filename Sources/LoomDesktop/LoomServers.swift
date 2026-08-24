@@ -52,7 +52,13 @@ enum LoomSettings {
                !list.isEmpty {
                 return list
             }
+            // A fixed id, not a fresh UUID per read: this getter runs once for
+            // the Settings list and again for the active-server check, and two
+            // random ids never match — so a fresh install opened Settings to
+            // "Select a server" with a server plainly on the list, and the
+            // active dot never lit.
             let migrated = LoomServer(
+                id: "migrated-legacy",
                 name: LoomServer.suggestedName(for: legacyBaseURL),
                 baseURL: legacyBaseURL,
                 token: defaults.string(forKey: tokenKey) ?? ""

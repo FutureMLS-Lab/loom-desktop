@@ -55,12 +55,15 @@ final class PanelWindow: NSPanel, NSWindowDelegate {
         becomesKeyOnlyIfNeeded = true
         backgroundColor = .clear
         isOpaque = false
-        // The card is dark whatever the system is set to, and the pills on it
-        // have always been dark chips with white titles. Pinning the panel to
-        // the dark appearance is what makes `.primary` and `.secondary` inside
-        // it resolve to something readable on that card — in light mode they
-        // are near-black, which on this card is nothing at all.
-        appearance = NSAppearance(named: .darkAqua)
+        // Light or dark is carried here rather than by two sets of colours in
+        // the views: everything on the card resolves against this, down to the
+        // `.primary` and `.secondary` the header's controls ask for.
+        appearance = DockTheme.current.appearance
+        NotificationCenter.default.addObserver(
+            forName: DockTheme.didChange, object: nil, queue: .main
+        ) { [weak self] _ in
+            self?.appearance = DockTheme.current.appearance
+        }
         // The window is bigger than the visible card (see DockView.cardMargin),
         // so a window shadow would float detached around it; the card draws
         // its own instead.

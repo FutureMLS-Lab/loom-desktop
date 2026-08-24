@@ -81,6 +81,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             }
         }
 
+        // Dev hook: LOOM_DESKTOP_THEME_FLIP=light|dark|system switches the
+        // dock's theme a few seconds in, which is the only way to see that
+        // flipping it on a running dock restyles everything — the layers hold
+        // colours they resolved once, and a card that only half changes is
+        // exactly what a launch-time setting would never show.
+        if let flip = ProcessInfo.processInfo.environment["LOOM_DESKTOP_THEME_FLIP"],
+           let theme = DockTheme(rawValue: flip) {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 8) {
+                DockTheme.set(theme)
+            }
+        }
+
         // Dev hook: LOOM_DESKTOP_DUMP_TERM=1 prints what each terminal is
         // showing, which a snapshot cannot capture.
         if ProcessInfo.processInfo.environment["LOOM_DESKTOP_DUMP_TERM"] != nil {

@@ -18,6 +18,7 @@ struct DockView: View {
     /// Read so the dock redraws when the size is changed; the metrics
     /// themselves come from `DockScale`.
     @AppStorage(DockScale.key) private var scale = 1.0
+    @AppStorage(DockTheme.key) private var theme = DockTheme.light.rawValue
     /// How many pills the collapsed row fits. Building the rest and hiding
     /// them offscreen still ran their animations — forty pills' worth of
     /// spinning and blinking for a dock showing three.
@@ -98,12 +99,12 @@ struct DockView: View {
         // machine drag whenever the dock was on screen.
         .background(
             Rectangle()
-                .fill(DockView.cardFill)
+                .fill(DockPalette.card)
                 .shadow(color: .black.opacity(0.28), radius: 7, y: 2)
         )
         .overlay(
             Rectangle()
-                .strokeBorder(Color.white.opacity(0.14), lineWidth: 0.5)
+                .strokeBorder(DockPalette.cardEdge, lineWidth: 0.5)
         )
         // The window's own corners are rounded by macOS and cannot be
         // squared off. Insetting the card by that radius means the curve
@@ -119,12 +120,6 @@ struct DockView: View {
     /// the system's window corner radius (larger on macOS 26 than the 10pt
     /// that still clipped the first and last pill). Not scaled: it answers to
     /// the system's corner, not to how big you like your pills.
-    /// A slab of dark glass, translucent but not blurred. Frosted material
-    /// was a live blur: it cost four points of WindowServer whenever a pill
-    /// animated over it, and it read as pale grey rather than as anything the
-    /// lit pills could sit on.
-    static let cardFill = Color(nsColor: NSColor(calibratedWhite: 0.085, alpha: 0.93))
-
     static let cardMargin: CGFloat = 16
     /// Every element on the dock is this tall, so a row reads as one band
     /// rather than a set of differently-sized chips.
@@ -137,6 +132,92 @@ struct DockView: View {
 /// sizes the window to fit, so scaling the metrics is what actually makes the
 /// dock smaller — a visual transform would leave the window the same size
 /// with the pills floating inside it.
+/// Whether the dock is a dark card or a light one.
+///
+/// Carried by the panel's `NSAppearance` rather than by two sets of hardcoded
+/// colours: everything on the card then follows, including the `.primary` and
+/// `.secondary` the header's own controls ask for, which no palette of ours
+/// would have reached.
+enum DockTheme: String, CaseIterable {
+    case light, dark, system
+
+    static let key = "panelTheme"
+    static let didChange = Notification.Name("loom.dockTheme.didChange")
+
+    static var current: DockTheme {
+        DockTheme(rawValue: UserDefaults.standard.string(forKey: key) ?? "") ?? .light
+    }
+
+    static func set(_ theme: DockTheme) {
+        UserDefaults.standard.set(theme.rawValue, forKey: key)
+        NotificationCenter.default.post(name: didChange, object: nil)
+    }
+
+    /// `nil` follows the system.
+    var appearance: NSAppearance? {
+        switch self {
+        case .light: return NSAppearance(named: .aqua)
+        case .dark: return NSAppearance(named: .darkAqua)
+        case .system: return nil
+        }
+    }
+
+    var label: String {
+        switch self {
+        case .light: return "Light"
+        case .dark: return "Dark"
+        case .system: return "Match System"
+        }
+    }
+}
+
+/// The dock's own surfaces. Each resolves against whichever appearance the
+/// panel is wearing, so one setting restyles the whole card.
+///
+/// Built once as `static let`. A colour rebuilt on every read is one SwiftUI
+/// cannot cache, and these are read on every pill of every pass.
+enum DockPalette {
+    private static func pair(light: NSColor, dark: NSColor) -> NSColor {
+        NSColor(name: nil) { appearance in
+            appearance.bestMatch(from: [.aqua, .darkAqua]) == .darkAqua ? dark : light
+        }
+    }
+
+    private static func warm(_ value: UInt32, _ alpha: Double = 1) -> NSColor {
+        NSColor(
+            red: Double((value >> 16) & 0xFF) / 255,
+            green: Double((value >> 8) & 0xFF) / 255,
+            blue: Double(value & 0xFF) / 255,
+            alpha: alpha
+        )
+    }
+
+    /// The card. Translucent but never blurred — a live blur costs the
+    /// compositor four points whenever a pill animates over it.
+    static let card = Color(nsColor: pair(light: warm(0xEFECE3, 0.94), dark: warm(0x16150F, 0.93)))
+    /// The pill's face, a step away from the card so a pill reads as a pill.
+    static let chipFace = Color(nsColor: pair(light: warm(0xFFFFFF), dark: warm(0x2C2A26)))
+    /// Text on that face.
+    static let chipText = Color(nsColor: pair(light: warm(0x1D1C17), dark: warm(0xFFFFFF)))
+    /// The hairline round the card.
+    static let cardEdge = Color(
+        nsColor: pair(light: warm(0x000000, 0.10), dark: warm(0xFFFFFF, 0.14))
+    )
+
+    /// The travelling light. White reads as a glow on a dark face and as
+    /// nothing at all on a white one, so on the light card it is the accent
+    /// instead — the same idea carried by colour rather than by brightness.
+    static let moteCore = pair(light: warm(0x4338CA, 0.62), dark: warm(0xFFFFFF, 0.55))
+    static let moteHalo = pair(light: warm(0x2AA8BF, 0.34), dark: warm(0x429AAB, 0.28))
+    static let moteEdge = pair(light: warm(0x2AA8BF, 0), dark: warm(0x429AAB, 0))
+
+    /// The rim, lifted a little on the light card: a mid-tone that carries
+    /// against near-black is quiet against near-white.
+    static let rimAccent = pair(light: warm(0x4F46E5), dark: warm(0x5957C7))
+    static let rimCyan = pair(light: warm(0x1E96AE), dark: warm(0x42A8BF))
+    static let rimGreen = pair(light: warm(0x18A06A), dark: warm(0x42AD7A))
+}
+
 enum DockScale {
     static let key = "panelScale"
 
@@ -160,6 +241,7 @@ private struct LoomMenuButton: View {
     @ObservedObject var store: TaskStore
     var onFitToContents: () -> Void = {}
     @AppStorage(DockScale.key) private var scale = 1.0
+    @AppStorage(DockTheme.key) private var theme = DockTheme.light.rawValue
 
     var body: some View {
         Menu {
@@ -175,6 +257,20 @@ private struct LoomMenuButton: View {
                         scale = choice.value
                     } label: {
                         if abs(scale - choice.value) < 0.01 {
+                            Label(choice.label, systemImage: "checkmark")
+                        } else {
+                            Text(choice.label)
+                        }
+                    }
+                }
+            }
+            Menu("Dock Theme") {
+                ForEach(DockTheme.allCases, id: \.rawValue) { choice in
+                    Button {
+                        DockTheme.set(choice)
+                        theme = choice.rawValue
+                    } label: {
+                        if theme == choice.rawValue {
                             Label(choice.label, systemImage: "checkmark")
                         } else {
                             Text(choice.label)
@@ -386,8 +482,7 @@ struct TaskPillView: View {
         }
     }
 
-    /// Dark in both appearances, because the title on it is always white.
-    private static let chipFace = Color(nsColor: NSColor(calibratedWhite: 0.17, alpha: 1))
+    private static let chipFace = DockPalette.chipFace
 
     /// A pill never gets wider than this. One 90-character research title
     /// would otherwise be the whole row (and force the panel wider than the
@@ -399,21 +494,21 @@ struct TaskPillView: View {
             HStack(spacing: 5) {
                 Image(systemName: pill.symbolName)
                     .font(.system(size: DockScale.font(11), weight: .medium))
-                    .foregroundColor(.white.opacity(0.8))
+                    .foregroundColor(DockPalette.chipText.opacity(0.75))
                 if showProject {
                     Text(pill.projectLabel)
                         .font(.system(size: DockScale.font(12)))
-                        .foregroundColor(.white.opacity(0.7))
+                        .foregroundColor(DockPalette.chipText.opacity(0.66))
                         .lineLimit(1)
                         .frame(maxWidth: (110 * DockScale.factor).rounded(), alignment: .leading)
                         .fixedSize(horizontal: true, vertical: false)
                     Text("·")
                         .font(.system(size: DockScale.font(12)))
-                        .foregroundColor(.white.opacity(0.45))
+                        .foregroundColor(DockPalette.chipText.opacity(0.4))
                 }
                 Text(pill.displayTitle)
                     .font(.system(size: DockScale.font(13), weight: .medium))
-                    .foregroundColor(.white)
+                    .foregroundColor(DockPalette.chipText)
                     .lineLimit(1)
                     .truncationMode(.tail)
                     .frame(maxWidth: Self.maxTitleWidth, alignment: .leading)

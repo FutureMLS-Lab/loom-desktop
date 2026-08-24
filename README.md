@@ -6,8 +6,11 @@ one pill per **Loom** task that wants attention, and opens any of them. It
 speaks the same visual language as the
 [Loom web console](https://github.com/FutureMLS-Lab/Loom):
 
-The dock is a dark card whatever the system appearance is set to, so the panel
-is pinned to the dark appearance and everything on it reads against that.
+**Dock Theme** in the loom menu makes the card light or dark, or has it follow
+the system (`panelTheme`, default light). It works by setting the panel's
+appearance rather than by swapping a palette, so everything on the card
+follows — including the header's own controls, which ask for `.primary` and
+`.secondary`.
 
 Each pill is a dark chip inside a lit rim. The rim's colour is the state:
 
@@ -180,6 +183,10 @@ then the reply arrives and the pill blinks until you click it.
 - `LOOM_DESKTOP_OPEN_WINDOWS=main,notes,settings` — open windows that
   otherwise need a menu click, so a snapshot can include them. `main` selects
   no task on the way in, so reviewing the UI never spends an unread flag.
+- `LOOM_DESKTOP_THEME_FLIP=dark` — switch the dock's theme eight seconds in.
+  Flipping a running dock is the case that breaks: layer colours are resolved
+  once and kept, so a card can half-change in a way a launch-time setting
+  would never show.
 - `LOOM_DESKTOP_MOCK_PILLS=1` — fill the dock with a pill in each state and
   poll nothing, so the dock can be worked on and photographed without a
   reachable server and without leaving real tasks behind on someone's machine.

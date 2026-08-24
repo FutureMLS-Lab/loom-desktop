@@ -39,11 +39,6 @@ struct PillBand: NSViewRepresentable {
 
     func updateNSView(_ view: PillBandView, context: Context) { view.apply(mode: mode) }
 
-    // Resolved once: reading these off `LoomColors` per use allocates an
-    // NSColor each time, which showed up in a profile.
-    static let accent = NSColor(calibratedRed: 0.35, green: 0.34, blue: 0.78, alpha: 1)
-    static let green = NSColor(calibratedRed: 0.26, green: 0.68, blue: 0.48, alpha: 1)
-    static let cyan = NSColor(calibratedRed: 0.26, green: 0.66, blue: 0.75, alpha: 1)
 }
 
 final class PillBandView: NSView {
@@ -76,11 +71,13 @@ final class PillBandView: NSView {
         switch mode {
         case .working:
             band.colors = [
-                PillBand.accent.cgColor, PillBand.cyan.cgColor, PillBand.green.cgColor,
+                DockPalette.rimAccent.cgColor,
+                DockPalette.rimCyan.cgColor,
+                DockPalette.rimGreen.cgColor,
             ]
             band.locations = [0, 0.55, 1]
         case .finished:
-            band.colors = [PillBand.green.cgColor, PillBand.cyan.cgColor]
+            band.colors = [DockPalette.rimGreen.cgColor, DockPalette.rimCyan.cgColor]
             band.locations = [0, 1]
         }
         CATransaction.commit()
@@ -93,6 +90,14 @@ final class PillBandView: NSView {
         band.frame = bounds
         CATransaction.commit()
         refreshBlink()
+    }
+
+    /// A `cgColor` is whatever the appearance was when it was read, so the
+    /// layer keeps the old palette when the card flips light or dark unless
+    /// it is poured in again.
+    override func viewDidChangeEffectiveAppearance() {
+        super.viewDidChangeEffectiveAppearance()
+        applyColors()
     }
 
     override func viewDidMoveToWindow() {
@@ -157,17 +162,29 @@ final class PillMoteView: NSView {
         light.type = .radial
         light.startPoint = CGPoint(x: 0.5, y: 0.5)
         light.endPoint = CGPoint(x: 1, y: 1)
-        light.colors = [
-            NSColor.white.withAlphaComponent(0.55).cgColor,
-            PillBand.cyan.withAlphaComponent(0.28).cgColor,
-            PillBand.cyan.withAlphaComponent(0).cgColor,
-        ]
         light.locations = [0, 0.38, 1]
         layer?.addSublayer(light)
+        applyColors()
     }
 
     @available(*, unavailable)
     required init?(coder: NSCoder) { fatalError("not used") }
+
+    override func viewDidChangeEffectiveAppearance() {
+        super.viewDidChangeEffectiveAppearance()
+        applyColors()
+    }
+
+    private func applyColors() {
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        light.colors = [
+            DockPalette.moteCore.cgColor,
+            DockPalette.moteHalo.cgColor,
+            DockPalette.moteEdge.cgColor,
+        ]
+        CATransaction.commit()
+    }
 
     override func layout() {
         super.layout()

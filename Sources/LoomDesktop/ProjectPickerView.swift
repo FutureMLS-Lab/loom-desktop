@@ -27,6 +27,9 @@ struct ProjectPickerView: View {
     @State private var codeRootDraft = ""
     @State private var projectToRemove: LoomProject?
     @State private var projectError = ""
+    /// The task whose title is being edited, and the text typed so far.
+    @State private var renameTarget: (projectId: String, meta: LoomTaskMeta)?
+    @State private var renameDraft = ""
 
     var body: some View {
         HStack(spacing: 0) {
@@ -98,13 +101,47 @@ struct ProjectPickerView: View {
             Text("Loom forgets the folder and its tasks disappear from this "
                  + "list. Nothing on disk is deleted.")
         }
-        .alert("Couldn't change the project", isPresented: Binding(
+        .alert(
+            "Rename task",
+            isPresented: Binding(
+                get: { renameTarget != nil },
+                set: { if !$0 { renameTarget = nil } }
+            )
+        ) {
+            TextField("Title", text: $renameDraft)
+            Button("Cancel", role: .cancel) { renameTarget = nil }
+            Button("Rename") { saveRename() }
+        } message: {
+            Text("Only the title changes. The slug and the task's directory "
+                 + "keep their names, so nothing running is disturbed.")
+        }
+        .alert("Couldn't make that change", isPresented: Binding(
             get: { !projectError.isEmpty },
             set: { if !$0 { projectError = "" } }
         )) {
             Button("OK") { projectError = "" }
         } message: {
             Text(projectError)
+        }
+    }
+
+    private func saveRename() {
+        guard let target = renameTarget else { return }
+        let title = renameDraft.trimmingCharacters(in: .whitespacesAndNewlines)
+        renameTarget = nil
+        // Nothing typed, or nothing changed: nothing to send.
+        guard !title.isEmpty, title != (target.meta.title ?? target.meta.slug) else { return }
+        Task {
+            do {
+                try await store.api.renameTask(
+                    projectId: target.projectId,
+                    slug: target.meta.slug,
+                    title: title
+                )
+                store.refreshNow()
+            } catch {
+                projectError = error.localizedDescription
+            }
         }
     }
 
@@ -269,6 +306,10 @@ struct ProjectPickerView: View {
                             },
                             onSelect: { slug in store.select(projectId: project.id, slug: slug) },
                             onOpen: { meta in store.select(projectId: project.id, slug: meta.slug) },
+                            onRename: { meta in
+                                renameDraft = meta.title ?? meta.slug
+                                renameTarget = (project.id, meta)
+                            },
                             onMoveTask: { slug, target in
                                 store.moveTask(projectId: project.id, slug: slug, above: target)
                             },
@@ -441,6 +482,7 @@ private struct ProjectCard: View {
     let onToggle: () -> Void
     let onSelect: (String) -> Void
     let onOpen: (LoomTaskMeta) -> Void
+    let onRename: (LoomTaskMeta) -> Void
     let onMoveTask: (String, String) -> Void
     let onSetCodeRoot: () -> Void
     let onRemove: () -> Void
@@ -504,7 +546,8 @@ private struct ProjectCard: View {
                             state: stateFor(meta.slug),
                             selected: selection == "\(project.id)/\(meta.slug)",
                             onSelect: { onSelect(meta.slug) },
-                            onOpen: { onOpen(meta) }
+                            onOpen: { onOpen(meta) },
+                            onRename: { onRename(meta) }
                         )
                         .draggable(DragPayload.task(project: project.id, slug: meta.slug).text)
                         .dropDestination(for: String.self) { items, _ in
@@ -550,6 +593,7 @@ private struct SidebarTaskRow: View {
     let selected: Bool
     let onSelect: () -> Void
     let onOpen: () -> Void
+    let onRename: () -> Void
 
     @State private var hovering = false
 
@@ -599,6 +643,7 @@ private struct SidebarTaskRow: View {
         .simultaneousGesture(TapGesture(count: 2).onEnded { onOpen() })
         .contextMenu {
             Button("Open Task") { onOpen() }
+            Button("Rename…") { onRename() }
             Button("Copy Slug") {
                 NSPasteboard.general.clearContents()
                 NSPasteboard.general.setString(meta.slug, forType: .string)

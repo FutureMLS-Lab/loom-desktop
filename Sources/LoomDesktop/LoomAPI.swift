@@ -321,6 +321,16 @@ struct LoomAPI {
         )
     }
 
+    /// Renames a task — the title only. The slug, and the directory named
+    /// after it, keep their names, so nothing running is disturbed.
+    func renameTask(projectId: String, slug: String, title: String) async throws {
+        let _: OkResponse = try await request(
+            scoped("/api/tasks/\(slugPath(slug))/meta", projectId),
+            method: "PUT",
+            body: ["title": title]
+        )
+    }
+
     /// Past agent sessions for this task, plus the live pane's status.
     func sessions(projectId: String, slug: String) async throws -> SessionList {
         try await request(

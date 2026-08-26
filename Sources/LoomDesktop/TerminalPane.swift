@@ -183,7 +183,7 @@ struct TerminalPane: View {
                     .help(key.help)
                 }
                 Spacer()
-                Text("点击终端即可直接输入 · 中文用下方输入框")
+                Text("Click the terminal to type straight into the pane")
                     .font(.system(size: 11))
                     .foregroundColor(TerminalTheme.dimText.opacity(0.85))
             }
@@ -195,7 +195,7 @@ struct TerminalPane: View {
                     text: $session.terminalDraft,
                     measuredHeight: $composerHeight,
                     contentRevision: composerRevision,
-                    placeholder: "输入文字发送到终端 · ⏎ 发送，⇧⏎ 换行",
+                    placeholder: "Send to the terminal… ⏎ send, ⇧⏎ newline",
                     focusOnAppear: true,
                     onSubmit: { sendDraft(submit: true) }
                 )

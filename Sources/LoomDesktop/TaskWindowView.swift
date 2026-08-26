@@ -77,26 +77,33 @@ struct TaskPane: View {
     // visible; the title does not need to be poster-sized to be the title.
     private var header: some View {
         VStack(alignment: .leading, spacing: 8) {
-            HStack(alignment: .firstTextBaseline, spacing: 10) {
-                Text(session.title)
-                    .font(.system(size: 17, weight: .semibold))
-                    .lineLimit(1)
-                    .truncationMode(.tail)
-                HStack(spacing: 5) {
-                    Text(session.projectLabel)
-                    // The slug earns its spot only when it says something the
-                    // title does not — half the fleet is named after its slug,
-                    // and the header was reading "video2bit · video2bit".
-                    if session.title.caseInsensitiveCompare(session.slug) != .orderedSame {
-                        Text("·")
-                        Text(session.slug)
-                            .font(.system(size: 12, design: .monospaced))
+            // Centred, not baseline-aligned: the right side of this row is
+            // boxes (chips, a menu glyph), and aligning boxes by the baseline
+            // of whatever happens to be inside them scattered each one to its
+            // own height. The title and its subtitle still share a baseline,
+            // in a group of their own — that rule is for running text.
+            HStack(spacing: 10) {
+                HStack(alignment: .firstTextBaseline, spacing: 10) {
+                    Text(session.title)
+                        .font(.system(size: 17, weight: .semibold))
+                        .lineLimit(1)
+                        .truncationMode(.tail)
+                    HStack(spacing: 5) {
+                        Text(session.projectLabel)
+                        // The slug earns its spot only when it says something the
+                        // title does not — half the fleet is named after its slug,
+                        // and the header was reading "video2bit · video2bit".
+                        if session.title.caseInsensitiveCompare(session.slug) != .orderedSame {
+                            Text("·")
+                            Text(session.slug)
+                                .font(.system(size: 12, design: .monospaced))
+                        }
                     }
+                    .font(.system(size: 12))
+                    .foregroundColor(.secondary)
+                    .lineLimit(1)
+                    .truncationMode(.middle)
                 }
-                .font(.system(size: 12))
-                .foregroundColor(.secondary)
-                .lineLimit(1)
-                .truncationMode(.middle)
 
                 Spacer(minLength: 8)
                 agentChip

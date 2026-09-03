@@ -77,6 +77,15 @@ final class TerminalSession: NSObject, ObservableObject {
     }
 
     private(set) lazy var webView: WKWebView = makeWebView()
+
+    /// ⌘F with the pane focused. The pane has no find of its own, but the
+    /// plan under it does; the tab points this at the plan's find bar while
+    /// it is on screen, so the shortcut lands somewhere useful instead of
+    /// dying in the terminal.
+    var onFindRequested: (() -> Void)? {
+        get { (webView as? TerminalWebViewHost)?.onFindRequested }
+        set { (webView as? TerminalWebViewHost)?.onFindRequested = newValue }
+    }
     private var streamTask: URLSessionDataTask?
     private var streamSession: URLSession?
     private(set) var streamID = ""
@@ -404,7 +413,7 @@ final class TerminalSession: NSObject, ObservableObject {
         let controller = WKUserContentController()
         let config = WKWebViewConfiguration()
         config.userContentController = controller
-        let web = WKWebView(frame: .zero, configuration: config)
+        let web = TerminalWebViewHost(frame: .zero, configuration: config)
         // Through a proxy, because a content controller retains its message
         // handlers: registering `self` here would close a loop back through
         // the web view this session owns, and the session — with its open
@@ -453,6 +462,24 @@ extension TerminalSession: WKNavigationDelegate {
         Task { @MainActor in
             self.ready = true
             self.restart()
+        }
+    }
+}
+
+/// The pane's web view, which answers Edit ▸ Find by handing it on. A plain
+/// WKWebView takes the menu's ⌘F — the responder chain stops at it — and
+/// does nothing with it, so the shortcut was dead whenever the pane had
+/// focus, which while reading a task it almost always does.
+final class TerminalWebViewHost: WKWebView {
+    var onFindRequested: (() -> Void)?
+
+    override func performTextFinderAction(_ sender: Any?) {
+        let tag = (sender as? NSMenuItem)?.tag ?? NSTextFinder.Action.showFindInterface.rawValue
+        switch NSTextFinder.Action(rawValue: tag) {
+        case .showFindInterface, .showReplaceInterface:
+            onFindRequested?()
+        default:
+            break
         }
     }
 }

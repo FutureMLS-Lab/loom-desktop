@@ -8,6 +8,9 @@ import SwiftUI
 /// Editing still belongs to the Files tab; this is the glance, not the desk.
 struct PlanDigest: View {
     @ObservedObject var session: ChatSession
+    /// Owned by the tab around this, which pins the find bar over its own
+    /// scrolling page — see `MarkdownFind`.
+    @ObservedObject var find: MarkdownFind
 
     @AppStorage("terminalPlanExpanded") private var expanded = true
     @AppStorage("taskTab") private var taskTabRaw = TaskPane.Tab.conversation.rawValue
@@ -27,7 +30,6 @@ struct PlanDigest: View {
     /// the digest on every switch before it sprang back to full height — a
     /// jolt through everything below it, several times a minute.
     @State private var contentHeight: CGFloat = DigestHeightMemory.last
-    @State private var findRequest = 0
 
     /// The plan changes on the timescale of an agent turn, not a keystroke.
     private static let refreshInterval: TimeInterval = 20
@@ -117,7 +119,7 @@ struct PlanDigest: View {
             // almost always still in the pane above it, and the shortcut goes
             // wherever focus is.
             Button {
-                findRequest += 1
+                find.show()
             } label: {
                 Image(systemName: "magnifyingglass")
                     .font(.system(size: 11, weight: .medium))
@@ -163,7 +165,7 @@ struct PlanDigest: View {
                 documentID: "\(session.id)/\(selected)",
                 compact: true,
                 measuredHeight: $contentHeight,
-                findRequest: findRequest,
+                find: find,
                 assetProject: session.projectId,
                 assetTask: session.slug
             )

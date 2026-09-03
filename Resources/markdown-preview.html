@@ -249,19 +249,22 @@
     // field to type into, so the whole thing lives in the page: wrap
     // matches in <mark>, step through them, and put the document back
     // exactly as it was on the way out.
-    var findHits = [], findAt = -1, findClean = null;
+    var findHits = [], findAt = -1, findClean = null, findActiveQuery = '';
     function findClear() {
       var root = document.getElementById('content');
       if (findClean !== null && root) { root.innerHTML = findClean; }
-      findClean = null; findHits = []; findAt = -1;
+      findClean = null; findHits = []; findAt = -1; findActiveQuery = '';
     }
-    function findRun(query) {
+    // `quiet` re-highlights after the document was rewritten under an open
+    // search, without pulling the reader back to the current match.
+    function findRun(query, quiet) {
       var root = document.getElementById('content');
       if (!root) return;
       if (findClean === null) { findClean = root.innerHTML; }
       else { root.innerHTML = findClean; }
       findHits = []; findAt = -1;
-      var needle = String(query || '').toLowerCase();
+      findActiveQuery = String(query || '');
+      var needle = findActiveQuery.toLowerCase();
       if (!needle) { findPaint(); return; }
       var walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT, null);
       var targets = [], node;
@@ -285,7 +288,7 @@
       });
       findHits = Array.prototype.slice.call(root.querySelectorAll('mark.loom-hit'));
       if (findHits.length) { findAt = 0; }
-      findPaint(true);
+      findPaint(!quiet);
     }
     function findPaint(scroll) {
       findHits.forEach(function (hit, i) {
@@ -295,10 +298,31 @@
       if (count) {
         count.textContent = findHits.length ? (findAt + 1) + '/' + findHits.length : '0';
       }
-      if (scroll && findAt >= 0 && findHits[findAt]) {
+      // Sized to its content, this page cannot scroll itself: the view
+      // around it does, and only the host can move that. So the match is
+      // reported rather than scrolled to, and the host brings it into view.
+      if (scroll && findAt >= 0 && findHits[findAt] && !autosize) {
         findHits[findAt].scrollIntoView({ block: 'center' });
       }
+      postFind(!!scroll);
     }
+    function postFind(reveal) {
+      var hit = findAt >= 0 ? findHits[findAt] : null;
+      var rect = hit ? hit.getBoundingClientRect() : null;
+      try {
+        window.webkit.messageHandlers.preview.postMessage({
+          type: 'find',
+          current: findHits.length ? findAt + 1 : 0,
+          total: findHits.length,
+          reveal: !!reveal && !!hit,
+          top: rect ? rect.top + window.scrollY : 0,
+          height: rect ? rect.height : 0
+        });
+      } catch (e) {}
+    }
+    // The host's own find bar drives these: a query to highlight, and
+    // steps through the highlights.
+    window.__loomFindQuery = function (query) { findRun(query); };
     window.__loomFindStep = function (delta) {
       if (!findHits.length) return;
       findAt = (findAt + delta + findHits.length) % findHits.length;
@@ -317,6 +341,7 @@
       var bar = document.getElementById('find');
       if (bar) { bar.classList.remove('on'); }
       findClear();
+      postFind();
     };
     document.addEventListener('DOMContentLoaded', function () {
       var input = document.getElementById('findInput');
@@ -337,8 +362,11 @@
     window.__loomRender = function(md, resetScroll) {
       var root = document.getElementById('content');
       // The find snapshot describes the document being replaced; kept,
-      // it would put the old text back the next time find closed.
+      // it would put the old text back the next time find closed. The
+      // query itself survives, and is run again over the new text below —
+      // the agent rewriting the plan should not empty the find bar.
       findClean = null; findHits = []; findAt = -1;
+      var rerun = findActiveQuery;
       if (!md || !String(md).trim()) {
         root.innerHTML = '<div id="empty">Nothing to preview</div>';
         return;
@@ -360,6 +388,7 @@
       linkAssets();
       window.scrollTo(0, keepY);
       reportHeight();
+      if (rerun) { findRun(rerun, true); }
     };
   </script>
 </body>

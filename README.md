@@ -193,6 +193,9 @@ then the reply arrives and the pill blinks until you click it.
   Flipping a running dock is the case that breaks: layer colours are resolved
   once and kept, so a card can half-change in a way a launch-time setting
   would never show.
+- `LOOM_DESKTOP_SHOW_FIND=PSNR` — open the plan's find bar with that query on
+  the Terminal tab; `PSNR:6` also steps forward six times a few seconds in,
+  so the page scrolling to a deep match can be photographed.
 - `LOOM_DESKTOP_MOCK_PILLS=1` — fill the dock with a pill in each state and
   poll nothing, so the dock can be worked on and photographed without a
   reachable server and without leaving real tasks behind on someone's machine.
@@ -258,6 +261,7 @@ binary somewhere else.
 | `PlainTextEditor.swift` | The plain source editor, shared by Files and Notes |
 | `MarkdownBlocks.swift` | Agent turns as blocks: tables, lists, code |
 | `MarkdownPreview.swift` | `marked` in a `WKWebView`, shared by the digest and notes. The page it hosts is `Resources/markdown-preview.html` |
+| `MarkdownFind.swift` | Find over the plan digest: a bar pinned over the terminal tab's page, driving highlights in the web view and scrolling the page to each match — the page cannot scroll itself, being laid out as part of the tab |
 | `LoomResource.swift` | Finds a bundled asset, whether the app is installed or run from a checkout |
 | `DiffView.swift` | The Changes tab: per-file diffs, and the task's worktrees |
 | `QuickOpen.swift` / `NewTaskView.swift` | ⌘P open by name, ⌘N create a task |

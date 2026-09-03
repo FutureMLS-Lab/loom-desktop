@@ -118,6 +118,28 @@ FEEDS = {
 }
 
 
+# The plan under the terminal: long enough to scroll, a table wider than the
+# digest so horizontal scrolling has something to do, and a word ("PSNR")
+# that recurs so find has matches to step through.
+PLAN_MD = "\n".join(
+    ["# Plan — video2bit", "", "## Goal", "",
+     "Quantize the video encoder to 2-bit while keeping PSNR above 38 dB on the "
+     "held-out clips. Progress, decisions and numbers live in this file.", "",
+     "## Sweep so far", "",
+     "| bits | layers | PSNR (dB) | SSIM | bitrate (kbps) | latency p50 (ms) | latency p99 (ms) | notes |",
+     "| --- | --- | --- | --- | --- | --- | --- | --- |",
+     "| 8 | all | 41.1 | 0.981 | 1840 | 12.4 | 19.8 | baseline |",
+     "| 4 | all | 40.2 | 0.976 | 960 | 11.9 | 18.7 | attention layers unaffected |",
+     "| 3 | all | 39.3 | 0.968 | 720 | 11.6 | 18.1 | tail layers start to wobble |",
+     "| 2 | all | 38.4 | 0.951 | 480 | 11.2 | 17.9 | PSNR at the floor |",
+     "| 2 | head+mlp only | 39.0 | 0.962 | 610 | 11.5 | 18.3 | best 2-bit candidate |",
+     ""]
+    + [f"## Notes {i}\n\nRun {i} held PSNR within 0.2 dB of the 4-bit reference on "
+       f"clip set {i % 3}; the tail layers remain the fragile ones. See the sweep "
+       f"table above for the per-layer split.\n" for i in range(1, 15)]
+)
+
+
 def feed_working(key):
     return bool(ACTIVITY.get(key, {}).get("working"))
 
@@ -177,6 +199,19 @@ class Handler(BaseHTTPRequestHandler):
             if path == "/api/activity":
                 return self._json({"ok": True, "tasks": ACTIVITY})
             parts = path.strip("/").split("/")
+            # /api/tasks/<slug>/files[?path=PLAN.md] — one directory, or one file
+            if len(parts) == 4 and parts[:2] == ["api", "tasks"] and parts[3] == "files":
+                path = parse_qs(parsed.query).get("path", [""])[0]
+                if not path:
+                    return self._json({"path": "", "dir": True, "entries": [
+                        {"name": "PLAN.md", "dir": False, "size": len(PLAN_MD)},
+                        {"name": "task.json", "dir": False, "size": 512},
+                        {"name": "work", "dir": True},
+                    ]})
+                if path == "PLAN.md":
+                    return self._json({"path": path, "dir": False, "body": PLAN_MD,
+                                       "size": len(PLAN_MD)})
+                return self._json({"path": path, "dir": False, "error": "not found"}, 404)
             # /api/tasks/<slug>/conversation
             if len(parts) == 4 and parts[:2] == ["api", "tasks"] and parts[3] == "conversation":
                 key, _ = self._key(parsed, parts[2])

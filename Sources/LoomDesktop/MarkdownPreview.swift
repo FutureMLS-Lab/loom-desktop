@@ -1,20 +1,49 @@
 import AppKit
+import Combine
 import SwiftUI
 import WebKit
 
 /// A web view that can hand the wheel to whatever is scrolling around it.
 final class PassThroughWebView: WKWebView {
     var forwardsScrollWheel = false
+    /// Set when a find bar outside the page owns ⌘F; otherwise the page's own.
+    var onFindRequested: (() -> Void)?
+    /// Whether the gesture in progress went to the page around us. Decided
+    /// once, at its first event, and held to its end: a two-finger swipe
+    /// is never perfectly on one axis, and re-deciding per event would split
+    /// a single scroll between two views.
+    private var forwardingGesture: Bool?
 
     override func scrollWheel(with event: NSEvent) {
-        if forwardsScrollWheel {
+        guard forwardsScrollWheel else {
+            super.scrollWheel(with: event)
+            return
+        }
+        // Vertical belongs to the page around us — sized to our content, we
+        // have nothing of our own to scroll that way. Horizontal stays here:
+        // a results table or a code block wider than the column scrolls
+        // sideways, and with every wheel event handed away they could not be
+        // scrolled at all.
+        let starting = event.phase.contains(.began) || event.phase.contains(.mayBegin)
+            || (event.phase.isEmpty && event.momentumPhase.isEmpty)
+        if starting || forwardingGesture == nil {
+            forwardingGesture = abs(event.scrollingDeltaY) >= abs(event.scrollingDeltaX)
+        }
+        let forward = forwardingGesture ?? true
+        if event.phase.contains(.ended) || event.phase.contains(.cancelled)
+            || event.momentumPhase.contains(.ended) {
+            forwardingGesture = nil
+        }
+        if forward {
             nextResponder?.scrollWheel(with: event)
         } else {
             super.scrollWheel(with: event)
         }
     }
 
-    /// ⌘F and friends, answered by the find bar inside the page.
+    /// ⌘F and friends. Answered by the find bar inside the page, unless a
+    /// host has one of its own — the digest under the terminal does, since a
+    /// bar inside a page that scrolls as part of another scrolls out of sight.
     ///
     /// The same Edit ▸ Find menu drives this and the source editor; whichever
     /// of them holds focus is the one the responder chain reaches.
@@ -22,7 +51,11 @@ final class PassThroughWebView: WKWebView {
         let tag = (sender as? NSMenuItem)?.tag ?? NSTextFinder.Action.showFindInterface.rawValue
         switch NSTextFinder.Action(rawValue: tag) {
         case .showFindInterface, .showReplaceInterface:
-            showFind()
+            if let onFindRequested {
+                onFindRequested()
+            } else {
+                showFind()
+            }
         case .nextMatch:
             evaluateJavaScript("window.__loomFindStep(1);", completionHandler: nil)
         case .previousMatch:
@@ -91,10 +124,9 @@ struct MarkdownPreview: NSViewRepresentable {
     /// so the plan can lay out as part of a page rather than as a box with its
     /// own scrollbar inside another scroll view.
     var measuredHeight: Binding<CGFloat>?
-    /// Bumped by the owner to open the find bar — for the digest under the
-    /// terminal, where focus is usually in the pane rather than in here, so
-    /// ⌘F alone would never reach this view.
-    var findRequest = 0
+    /// A find bar outside the page, when the host has one. The page then only
+    /// highlights and reports; the bar and the scrolling are the host's.
+    var find: MarkdownFind?
     /// Where a relative image path in the document resolves to. Figures live
     /// next to the markdown on the server, so they are fetched rather than
     /// read from disk; without a task the base is the project's `.RUD/`.
@@ -118,6 +150,10 @@ struct MarkdownPreview: NSViewRepresentable {
         // events regardless, which left the plan a dead zone: the page scrolled
         // everywhere except over the thing you were reading.
         web.forwardsScrollWheel = measuredHeight != nil
+        if let find {
+            web.onFindRequested = { find.show() }
+        }
+        context.coordinator.observe(find)
         controller.add(context.coordinator, name: "preview")
         #if DEBUG
         if #available(macOS 13.3, *) {
@@ -155,17 +191,13 @@ struct MarkdownPreview: NSViewRepresentable {
             context.coordinator.compact = compact
             context.coordinator.applyCompact()
         }
-        if context.coordinator.findRequest != findRequest {
-            context.coordinator.findRequest = findRequest
-            (webView as? PassThroughWebView)?.showFind()
-        }
+        context.coordinator.observe(find)
         context.coordinator.scheduleRender(markdown, force: docChanged)
     }
 
     final class Coordinator: NSObject, WKNavigationDelegate, WKScriptMessageHandler {
         weak var webView: WKWebView?
         var documentID = ""
-        var findRequest = 0
         var assetProject = ""
         var assetTask = ""
         var pendingMarkdown = ""
@@ -173,11 +205,39 @@ struct MarkdownPreview: NSViewRepresentable {
         var compact = false
         var autosize = false
         var measuredHeight: Binding<CGFloat>?
+        private(set) var find: MarkdownFind?
+        private var findSink: AnyCancellable?
+        /// What the page was last told, so a redraw of the host view for some
+        /// other reason does not re-run the search or step it again.
+        private var sentQuery = ""
+        private var sentVisible = false
+        private var sentNext = 0
+        private var sentPrev = 0
+
+        /// Follow the find state directly. Going through `updateNSView` is not
+        /// enough: a step changes nothing SwiftUI compares on this view — the
+        /// same object is still the same object — so the update is skipped and
+        /// the step never reaches the page.
+        func observe(_ find: MarkdownFind?) {
+            guard find !== self.find else { return }
+            self.find = find
+            findSink = find?.objectWillChange
+                // objectWillChange fires before the value lands; a hop later
+                // it has.
+                .receive(on: RunLoop.main)
+                .sink { [weak self] _ in self?.applyFind() }
+            applyFind()
+        }
 
         func userContentController(
             _ userContentController: WKUserContentController,
             didReceive message: WKScriptMessage
         ) {
+            if let report = message.body as? [String: Any],
+               report["type"] as? String == "find" {
+                DispatchQueue.main.async { self.receiveFind(report) }
+                return
+            }
             // A measurement taken mid-layout can come back implausibly small;
             // keeping the previous height is better than clipping the document
             // to something nothing can scroll past.
@@ -190,6 +250,80 @@ struct MarkdownPreview: NSViewRepresentable {
                     self.measuredHeight?.wrappedValue = rounded
                 }
             }
+        }
+
+        /// Push the host's find state into the page: the query when it
+        /// changes, a step per tick, and a clear when the bar closes.
+        func applyFind() {
+            guard let webView, ready, let find else { return }
+            if sentVisible != find.visible {
+                sentVisible = find.visible
+                if !find.visible {
+                    webView.evaluateJavaScript("window.__loomFindHide();", completionHandler: nil)
+                    sentQuery = ""
+                }
+            }
+            guard find.visible else { return }
+            if sentQuery != find.query {
+                sentQuery = find.query
+                if let data = try? JSONSerialization.data(withJSONObject: ["q": find.query]),
+                   let json = String(data: data, encoding: .utf8) {
+                    webView.evaluateJavaScript(
+                        "window.__loomFindQuery((\(json)).q);", completionHandler: nil
+                    )
+                }
+            }
+            // By the difference, not by one: two presses that land in the same
+            // update pass are still two steps.
+            let forward = find.nextRequests - sentNext
+            let back = find.prevRequests - sentPrev
+            sentNext = find.nextRequests
+            sentPrev = find.prevRequests
+            if forward - back != 0 {
+                webView.evaluateJavaScript(
+                    "window.__loomFindStep(\(forward - back));", completionHandler: nil
+                )
+            }
+        }
+
+        private func receiveFind(_ report: [String: Any]) {
+            guard let find else { return }
+            let current = (report["current"] as? Int) ?? 0
+            let total = (report["total"] as? Int) ?? 0
+            if find.current != current { find.current = current }
+            if find.total != total { find.total = total }
+            guard autosize, (report["reveal"] as? Bool) == true,
+                  let top = report["top"] as? Double,
+                  let height = report["height"] as? Double
+            else { return }
+            reveal(top: CGFloat(top), height: CGFloat(height))
+        }
+
+        /// Bring a match into view. The page cannot: sized to its content it
+        /// has no scrolling of its own, so the scroll view around it — the
+        /// terminal tab's page — is the thing to move.
+        private func reveal(top: CGFloat, height: CGFloat) {
+            guard let webView, let scroll = webView.enclosingScrollView,
+                  let document = scroll.documentView
+            else { return }
+            // Page coordinates run down from the top; only a flipped view
+            // agrees with that.
+            let y = webView.isFlipped ? top : webView.bounds.height - top - height
+            let inDocument = webView.convert(
+                CGRect(x: 0, y: y, width: 1, height: max(height, 1)), to: document
+            )
+            let clip = scroll.contentView
+            let visible = clip.bounds
+            // Already comfortably on screen: leave the reader where they are.
+            let margin: CGFloat = 40
+            if inDocument.minY >= visible.minY + margin && inDocument.maxY <= visible.maxY - margin {
+                return
+            }
+            var origin = visible.origin
+            origin.y = inDocument.midY - visible.height / 2
+            origin.y = max(0, min(origin.y, document.bounds.height - visible.height))
+            clip.scroll(to: origin)
+            scroll.reflectScrolledClipView(clip)
         }
         private var workItem: DispatchWorkItem?
         private var lastRendered = ""
@@ -205,6 +339,7 @@ struct MarkdownPreview: NSViewRepresentable {
             applyCompact()
             applyAssetScope()
             render(pendingMarkdown, immediate: true)
+            applyFind()
         }
 
         func applyAssetScope() {

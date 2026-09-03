@@ -14,6 +14,10 @@ struct TerminalPane: View {
     @AppStorage("terminalPlanExpanded") private var planExpanded = true
     @State private var composerHeight = ComposerField.minHeight
     @State private var composerRevision = 0
+    /// Find over the plan. Owned here, not by the digest, because the bar has
+    /// to stay put while the page scrolls under it — and the page is this
+    /// view's.
+    @StateObject private var find = MarkdownFind()
 
     var body: some View {
         // One scrolling page, the way the web console's agent tab reads: the
@@ -26,22 +30,55 @@ struct TerminalPane: View {
                     VStack(spacing: 0) {
                         terminalCard
                             .frame(height: max(340, geometry.size.height * 0.72))
-                        PlanDigest(session: session)
+                        PlanDigest(session: session, find: find)
                     }
                 }
             } else {
                 VStack(spacing: 0) {
                     terminalCard
-                    PlanDigest(session: session)
+                    PlanDigest(session: session, find: find)
                 }
             }
         }
+        // Pinned over the page rather than laid out in it: a find bar that
+        // scrolls away with the text it is searching is no use once the
+        // match is a screen further down.
+        .overlay(alignment: .bottomTrailing) {
+            if find.visible {
+                MarkdownFindBar(find: find)
+                    .padding(14)
+                    .transition(.opacity)
+            }
+        }
+        .background(
+            // ⌘F from anywhere in this tab that is not a text view, which the
+            // Edit ▸ Find menu would otherwise leave unanswered.
+            Button("") { find.show() }
+                .keyboardShortcut("f", modifiers: .command)
+                .opacity(0)
+        )
         .onAppear {
             terminal.adopt(owner: session.id, target: session.paneTarget)
             terminal.fontSize = fontSize
+            terminal.onFindRequested = { [find] in find.show() }
+            if let spec = ProcessInfo.processInfo.environment["LOOM_DESKTOP_SHOW_FIND"] {
+                // Dev hook: open the plan's find bar on arrival with this
+                // query — "PSNR", or "PSNR:6" to also step forward six
+                // times a few seconds in — so the bar, the highlights and
+                // the page scrolling to a match can all be photographed.
+                let parts = spec.split(separator: ":", maxSplits: 1)
+                find.query = String(parts.first ?? "")
+                find.show()
+                if parts.count == 2, let steps = Int(parts[1]), steps > 0 {
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 3) { [find] in
+                        find.nextRequests += steps
+                    }
+                }
+            }
         }
         .onDisappear {
             terminal.release(owner: session.id)
+            terminal.onFindRequested = nil
             session.persistTerminalDraft()
         }
         .onChange(of: session.paneTarget) { _, target in

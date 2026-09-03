@@ -147,6 +147,15 @@ final class TaskStore: ObservableObject {
         }
     }
 
+    /// Drops one task the server has just deleted, for the same reason as
+    /// `forget(projectId:)`: the row should go on the click, not a poll later.
+    func forget(projectId: String, slug: String) {
+        let key = "\(projectId)/\(slug)"
+        tasksByProject[projectId]?.removeAll { $0.slug == slug }
+        pills.removeAll { $0.id == key }
+        if selection == key { selection = nil }
+    }
+
     /// Drops a project the server no longer knows, so the sidebar empties on
     /// the click rather than at the next poll — and so a task inside it cannot
     /// stay selected in a pane that has nothing left to show.

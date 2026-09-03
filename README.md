@@ -44,7 +44,9 @@ existing folder on the Loom host, a new folder, or a repo to clone), refresh,
 and the search field that filters the sidebar as you type. Right-clicking a
 project sets its code root or removes it from Loom — removing unregisters the
 folder without deleting anything on disk — and right-clicking a task renames
-it.
+or deletes it. Deleting does remove the task's folder on the host (plan,
+notes, worktree checkout), after stopping its agent; branches and commits
+stay in the repository they came from.
 
 ⌘P opens any task by name, ⌘N creates one, ⌘0 brings the main window back,
 ⌘⇧N opens the project's notes (`<project>/.RUD/NOTES.md`, the same file the

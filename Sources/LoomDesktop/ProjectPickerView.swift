@@ -33,6 +33,8 @@ struct ProjectPickerView: View {
     /// The task whose title is being edited, and the text typed so far.
     @State private var renameTarget: (projectId: String, meta: LoomTaskMeta)?
     @State private var renameDraft = ""
+    /// The task awaiting a "yes, delete it".
+    @State private var deleteTarget: (projectId: String, meta: LoomTaskMeta)?
 
     var body: some View {
         HStack(spacing: 0) {
@@ -120,6 +122,22 @@ struct ProjectPickerView: View {
             Text("Only the title changes. The slug and the task's directory "
                  + "keep their names, so nothing running is disturbed.")
         }
+        .confirmationDialog(
+            "Delete \u{201C}\(deleteTarget.map { $0.meta.title ?? $0.meta.slug } ?? "")\u{201D}?",
+            isPresented: Binding(
+                get: { deleteTarget != nil },
+                set: { if !$0 { deleteTarget = nil } }
+            ),
+            titleVisibility: .visible
+        ) {
+            Button("Delete Task", role: .destructive) { confirmDeleteTask() }
+            Button("Cancel", role: .cancel) { deleteTarget = nil }
+        } message: {
+            Text("The task's folder on the Loom host is deleted — its plan, its "
+                 + "notes and its worktree checkout. A running agent is stopped "
+                 + "first. Branches and commits stay in the repository they came "
+                 + "from; push first if they only exist here.")
+        }
         .alert("Couldn't make that change", isPresented: Binding(
             get: { !projectError.isEmpty },
             set: { if !$0 { projectError = "" } }
@@ -127,6 +145,27 @@ struct ProjectPickerView: View {
             Button("OK") { projectError = "" }
         } message: {
             Text(projectError)
+        }
+    }
+
+    private func confirmDeleteTask() {
+        guard let target = deleteTarget else { return }
+        deleteTarget = nil
+        let hasPane = store.pills.contains { $0.id == "\(target.projectId)/\(target.meta.slug)" }
+        Task {
+            do {
+                // The server deletes the directory under a pane that is still
+                // running in it, so the pane goes first. Best effort: a pane
+                // that is already gone is not a reason to keep the task.
+                if hasPane {
+                    try? await store.api.stopAgent(projectId: target.projectId, slug: target.meta.slug)
+                }
+                try await store.api.deleteTask(projectId: target.projectId, slug: target.meta.slug)
+                store.forget(projectId: target.projectId, slug: target.meta.slug)
+                store.refreshNow()
+            } catch {
+                projectError = error.localizedDescription
+            }
         }
     }
 
@@ -285,6 +324,7 @@ struct ProjectPickerView: View {
                                 renameDraft = meta.title ?? meta.slug
                                 renameTarget = (project.id, meta)
                             },
+                            onDelete: { meta in deleteTarget = (project.id, meta) },
                             onMoveTask: { slug, target in
                                 store.moveTask(projectId: project.id, slug: slug, above: target)
                             },
@@ -425,6 +465,7 @@ private struct ProjectCard: View {
     let onSelect: (String) -> Void
     let onOpen: (LoomTaskMeta) -> Void
     let onRename: (LoomTaskMeta) -> Void
+    let onDelete: (LoomTaskMeta) -> Void
     let onMoveTask: (String, String) -> Void
     let onSetCodeRoot: () -> Void
     let onRemove: () -> Void
@@ -489,7 +530,8 @@ private struct ProjectCard: View {
                             selected: selection == "\(project.id)/\(meta.slug)",
                             onSelect: { onSelect(meta.slug) },
                             onOpen: { onOpen(meta) },
-                            onRename: { onRename(meta) }
+                            onRename: { onRename(meta) },
+                            onDelete: { onDelete(meta) }
                         )
                         .draggable(DragPayload.task(project: project.id, slug: meta.slug).text)
                         .dropDestination(for: String.self) { items, _ in
@@ -534,6 +576,7 @@ private struct SidebarTaskRow: View {
     let onSelect: () -> Void
     let onOpen: () -> Void
     let onRename: () -> Void
+    let onDelete: () -> Void
 
     @State private var hovering = false
 
@@ -586,6 +629,8 @@ private struct SidebarTaskRow: View {
                 NSPasteboard.general.clearContents()
                 NSPasteboard.general.setString(meta.slug, forType: .string)
             }
+            Divider()
+            Button("Delete Task…", role: .destructive) { onDelete() }
         }
     }
 

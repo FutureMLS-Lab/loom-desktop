@@ -331,6 +331,17 @@ struct LoomAPI {
         )
     }
 
+    /// Deletes a task: its directory under `.RUD/` goes, plan and worktree
+    /// checkout included, after the worktrees are unregistered from their
+    /// repositories. Branches and commits stay where they were pushed from.
+    /// The server does not stop a running pane first; callers should.
+    func deleteTask(projectId: String, slug: String) async throws {
+        let _: OkResponse = try await request(
+            scoped("/api/tasks/\(slugPath(slug))", projectId),
+            method: "DELETE"
+        )
+    }
+
     /// Past agent sessions for this task, plus the live pane's status.
     func sessions(projectId: String, slug: String) async throws -> SessionList {
         try await request(

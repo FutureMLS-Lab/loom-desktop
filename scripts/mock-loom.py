@@ -240,6 +240,22 @@ class Handler(BaseHTTPRequestHandler):
                 })
         self._json({"error": "unknown route"}, 404)
 
+    def do_DELETE(self):
+        parsed = urlparse(self.path)
+        parts = parsed.path.strip("/").split("/")
+        with LOCK:
+            # DELETE /api/tasks/<slug> — the task and everything under it
+            if len(parts) == 3 and parts[:2] == ["api", "tasks"]:
+                key, project = self._key(parsed, parts[2])
+                before = len(TASKS.get(project, []))
+                TASKS[project] = [t for t in TASKS.get(project, []) if t["slug"] != parts[2]]
+                if len(TASKS[project]) == before:
+                    return self._json({"error": "task not found"}, 404)
+                ACTIVITY.pop(key, None)
+                FEEDS.pop(key, None)
+                return self._json({"ok": True, "slug": parts[2]})
+        self._json({"error": "unknown route"}, 404)
+
     def do_POST(self):
         parsed = urlparse(self.path)
         path = parsed.path

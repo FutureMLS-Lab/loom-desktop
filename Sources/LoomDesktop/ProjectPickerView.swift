@@ -1,16 +1,19 @@
 import SwiftUI
 
-/// The main window, laid out like the Loom web console: a 320pt cream sidebar
-/// of card sections (one per project, tasks inside), and a content pane on the
-/// right. Task titles wrap instead of truncating — a slug like
-/// "Is Quantization Noise Really Exploration?…" is the only way to tell two
-/// tasks apart, so cutting it off defeats the list.
+/// The main window: a native sidebar — the system's translucent material, one
+/// section per project with its tasks beneath — and a content pane on the
+/// right. New, refresh and search live in the window's toolbar
+/// (`MainWindowController`). Task titles wrap to two lines instead of
+/// truncating — a slug like "Is Quantization Noise Really Exploration?…" is
+/// the only way to tell two tasks apart, so cutting it off defeats the list.
 struct ProjectPickerView: View {
     @ObservedObject var store: TaskStore
+    /// Shared with the window's toolbar: the filter text and the "new…"
+    /// requests arrive from AppKit through here.
+    @ObservedObject var windowState: MainWindowState
     @StateObject private var sessions = SessionCache()
     @State private var projectDropTarget: String?
     @State private var collapsed: Set<String> = []
-    @State private var search = ""
 
     /// Selection lives on the store so a dock pill and the sidebar drive this
     /// one view instead of opening windows.
@@ -41,6 +44,8 @@ struct ProjectPickerView: View {
         .background(LoomColors.bgBase)
         .frame(minWidth: 940, minHeight: 640)
         .onAppear { store.refreshNow() }
+        .onChange(of: windowState.newTaskRequests) { _, _ in newTask = true }
+        .onChange(of: windowState.addProjectRequests) { _, _ in addProject = true }
         .background(
             // Invisible shortcut hosts: a button is the simplest way to
             // register one that works wherever focus happens to be.
@@ -229,8 +234,8 @@ struct ProjectPickerView: View {
         .buttonStyle(.plain)
         .menuIndicator(.hidden)
         .padding(.horizontal, 12)
-        .padding(.top, 12)
-        .padding(.bottom, -4)
+        .padding(.top, 10)
+        .padding(.bottom, 4)
         .help(LoomSettings.baseURL)
     }
 
@@ -254,30 +259,6 @@ struct ProjectPickerView: View {
         )
         return VStack(spacing: 0) {
             serverBar
-
-            HStack(spacing: 8) {
-                Image(systemName: "magnifyingglass")
-                    .font(.system(size: 13))
-                    .foregroundColor(.secondary)
-                TextField("Filter tasks", text: $search)
-                    .textFieldStyle(.plain)
-                    .font(.system(size: 14))
-                if !search.isEmpty {
-                    Button {
-                        search = ""
-                    } label: {
-                        Image(systemName: "xmark.circle.fill")
-                            .font(.system(size: 13))
-                            .foregroundColor(.secondary)
-                    }
-                    .buttonStyle(.plain)
-                }
-            }
-            .padding(.horizontal, 10)
-            .padding(.vertical, 7)
-            .background(Color.primary.opacity(0.06), in: LoomShape.field)
-            .padding(.horizontal, 12)
-            .padding(.vertical, 10)
 
             ScrollView {
                 LazyVStack(alignment: .leading, spacing: 18) {
@@ -342,41 +323,9 @@ struct ProjectPickerView: View {
                     }
                 }
                 .padding(.horizontal, 12)
+                .padding(.top, 6)
                 .padding(.bottom, 16)
             }
-
-            Divider()
-            HStack(spacing: 8) {
-                ConnectionPill(connection: store.connection)
-                Spacer()
-                Menu {
-                    Button("New Task…") { newTask = true }
-                        .disabled(store.projects.isEmpty)
-                    Button("Add Project…") { addProject = true }
-                } label: {
-                    Image(systemName: "plus")
-                        .font(.system(size: 13, weight: .medium))
-                }
-                .menuStyle(.button)
-                .buttonStyle(.plain)
-                .menuIndicator(.hidden)
-                .fixedSize()
-                .help("New task (⌘N) or add a project")
-                Button { store.refreshNow() } label: {
-                    Image(systemName: "arrow.clockwise")
-                        .font(.system(size: 13, weight: .medium))
-                }
-                .buttonStyle(.plain)
-                .help("Refresh")
-                Button { SettingsWindowController.shared.show() } label: {
-                    Image(systemName: "gearshape")
-                        .font(.system(size: 13, weight: .medium))
-                }
-                .buttonStyle(.plain)
-                .help("Settings")
-            }
-            .padding(.horizontal, 14)
-            .padding(.vertical, 10)
         }
         .frame(width: 300)
         // The system's sidebar material — translucent, the desktop showing
@@ -384,6 +333,8 @@ struct ProjectPickerView: View {
         // is the one surface that says "Mac" before anything on it is read.
         .background(SidebarMaterial())
     }
+
+    private var search: String { windowState.filter }
 
     private var filteredProjects: [LoomProject] {
         guard !search.isEmpty else { return projects }
@@ -692,29 +643,6 @@ private struct SidebarMaterial: NSViewRepresentable {
     }
 
     func updateNSView(_ view: NSVisualEffectView, context: Context) {}
-}
-
-private struct ConnectionPill: View {
-    let connection: ConnectionState
-
-    var body: some View {
-        HStack(spacing: 5) {
-            Circle().fill(connection.dotColor).frame(width: 7, height: 7)
-            Text(label)
-                .font(.system(size: 12))
-                .foregroundColor(.secondary)
-                .lineLimit(1)
-        }
-        .help(LoomSettings.baseURL)
-    }
-
-    private var label: String {
-        switch connection {
-        case .connecting: return "Connecting…"
-        case .online: return "Connected"
-        case .offline: return "Offline"
-        }
-    }
 }
 
 private struct OfflineDetail: View {

@@ -1,13 +1,30 @@
 import AppKit
+import Combine
 import SwiftUI
+
+/// What the window's toolbar and its SwiftUI content share. The toolbar is
+/// AppKit — a unified toolbar is only had that way — and the view is SwiftUI;
+/// this is the one object both can see.
+@MainActor
+final class MainWindowState: ObservableObject {
+    /// The toolbar's search field, filtering the sidebar as it is typed.
+    @Published var filter = ""
+    /// Counters rather than flags: the view presents a sheet when one ticks
+    /// and does not have to reset anything afterwards.
+    @Published var newTaskRequests = 0
+    @Published var addProjectRequests = 0
+}
 
 /// The main window — the project/task browser. Created on demand and kept
 /// around; showing it again reuses the same window.
 @MainActor
-final class MainWindowController: NSObject, NSWindowDelegate {
+final class MainWindowController: NSObject, NSWindowDelegate, NSToolbarDelegate {
     static let shared = MainWindowController()
 
     private var window: NSWindow?
+    private weak var store: TaskStore?
+    private let windowState = MainWindowState()
+    private var subtitleSink: AnyCancellable?
 
     /// Whether the task on screen is actually on screen — the window is kept
     /// around after it closes, so its existence says nothing.
@@ -17,9 +34,10 @@ final class MainWindowController: NSObject, NSWindowDelegate {
     private static let defaultSize = NSSize(width: 1280, height: 860)
 
     func show(store: TaskStore) {
+        self.store = store
         if window == nil {
             // Sized like the web console in a browser window, not like a
-            // utility palette — the sidebar alone is 320pt.
+            // utility palette — the sidebar alone is 300pt.
             let window = NSWindow(
                 contentRect: NSRect(origin: .zero, size: Self.defaultSize),
                 styleMask: [.titled, .closable, .miniaturizable, .resizable],
@@ -27,7 +45,6 @@ final class MainWindowController: NSObject, NSWindowDelegate {
                 defer: false
             )
             window.title = "Loom"
-            window.subtitle = "projects"
             window.minSize = NSSize(width: 940, height: 640)
             window.isReleasedWhenClosed = false
             // Versioned: an autosaved frame from an older, much smaller
@@ -36,10 +53,13 @@ final class MainWindowController: NSObject, NSWindowDelegate {
             // sizingOptions = [] or the hosting view drives the window to the
             // content's *ideal* size, which for this layout is its minimum —
             // the window would open at 940×640 no matter what we ask for.
-            let hosting = NSHostingView(rootView: ProjectPickerView(store: store))
+            let hosting = NSHostingView(
+                rootView: ProjectPickerView(store: store, windowState: windowState)
+            )
             hosting.sizingOptions = []
             window.contentView = hosting
             window.delegate = self
+            installToolbar(on: window)
             // Fit the screen the pointer is on; 1280×860 overflows a laptop
             // display, and a window taller than the screen cannot be resized
             // back by dragging its (offscreen) bottom edge.
@@ -71,6 +91,23 @@ final class MainWindowController: NSObject, NSWindowDelegate {
                 window.center()
             }
             self.window = window
+            // The title bar names the task in front, the way Mail's names the
+            // mailbox: task as the title, its project underneath. With
+            // nothing selected it is the app's name over the fleet's size.
+            subtitleSink = store.$selection
+                .combineLatest(store.$tasksByProject)
+                .receive(on: RunLoop.main)
+                .sink { [weak self, weak store] selection, tasksByProject in
+                    guard let self, let store, let window = self.window else { return }
+                    if let selection, let (project, meta) = store.meta(forSelection: selection) {
+                        window.title = meta.title ?? meta.slug
+                        window.subtitle = project.label
+                    } else {
+                        window.title = "Loom"
+                        let count = tasksByProject.values.reduce(0) { $0 + $1.count }
+                        window.subtitle = count == 0 ? "" : (count == 1 ? "1 task" : "\(count) tasks")
+                    }
+                }
         }
         NSApp.activate()
         window?.makeKeyAndOrderFront(nil)
@@ -84,4 +121,89 @@ final class MainWindowController: NSObject, NSWindowDelegate {
         // the pane sized to it for everyone else, including the browser.
         TerminalSession.stopAll()
     }
+
+    // MARK: Toolbar
+
+    /// The window's own toolbar, in the title bar: new, refresh, search. These
+    /// used to sit at the foot of the sidebar with the search box inline
+    /// above the list, which is where a web page keeps them; a Mac window
+    /// keeps them up here.
+    private func installToolbar(on window: NSWindow) {
+        let toolbar = NSToolbar(identifier: "loom-main")
+        toolbar.delegate = self
+        toolbar.displayMode = .iconOnly
+        toolbar.allowsUserCustomization = false
+        window.toolbar = toolbar
+        window.toolbarStyle = .unified
+    }
+
+    func toolbarDefaultItemIdentifiers(_ toolbar: NSToolbar) -> [NSToolbarItem.Identifier] {
+        [.flexibleSpace, .loomNew, .loomRefresh, .loomSearch]
+    }
+
+    func toolbarAllowedItemIdentifiers(_ toolbar: NSToolbar) -> [NSToolbarItem.Identifier] {
+        toolbarDefaultItemIdentifiers(toolbar)
+    }
+
+    func toolbar(
+        _ toolbar: NSToolbar,
+        itemForItemIdentifier identifier: NSToolbarItem.Identifier,
+        willBeInsertedIntoToolbar flag: Bool
+    ) -> NSToolbarItem? {
+        switch identifier {
+        case .loomNew:
+            let item = NSMenuToolbarItem(itemIdentifier: identifier)
+            item.image = NSImage(systemSymbolName: "plus", accessibilityDescription: "New")
+            item.label = "New"
+            item.toolTip = "New task (⌘N) or add a project"
+            let menu = NSMenu()
+            let task = NSMenuItem(title: "New Task…", action: #selector(requestNewTask), keyEquivalent: "")
+            task.target = self
+            menu.addItem(task)
+            let project = NSMenuItem(title: "Add Project…", action: #selector(requestAddProject), keyEquivalent: "")
+            project.target = self
+            menu.addItem(project)
+            item.menu = menu
+            item.showsIndicator = true
+            return item
+        case .loomRefresh:
+            let item = NSToolbarItem(itemIdentifier: identifier)
+            item.image = NSImage(systemSymbolName: "arrow.clockwise", accessibilityDescription: "Refresh")
+            item.label = "Refresh"
+            item.toolTip = "Refresh (⌘R)"
+            item.target = self
+            item.action = #selector(refresh)
+            item.isBordered = true
+            return item
+        case .loomSearch:
+            let item = NSSearchToolbarItem(itemIdentifier: identifier)
+            item.label = "Filter"
+            item.preferredWidthForSearchField = 200
+            item.searchField.placeholderString = "Filter tasks"
+            // Live: the list narrows as you type, not on Return.
+            item.searchField.sendsSearchStringImmediately = true
+            item.searchField.sendsWholeSearchString = false
+            item.searchField.target = self
+            item.searchField.action = #selector(filterChanged(_:))
+            return item
+        default:
+            return nil
+        }
+    }
+
+    @objc private func requestNewTask() { windowState.newTaskRequests += 1 }
+    @objc private func requestAddProject() { windowState.addProjectRequests += 1 }
+    @objc private func refresh() { store?.refreshNow() }
+
+    @objc private func filterChanged(_ field: NSSearchField) {
+        if windowState.filter != field.stringValue {
+            windowState.filter = field.stringValue
+        }
+    }
+}
+
+private extension NSToolbarItem.Identifier {
+    static let loomNew = NSToolbarItem.Identifier("loom.new")
+    static let loomRefresh = NSToolbarItem.Identifier("loom.refresh")
+    static let loomSearch = NSToolbarItem.Identifier("loom.search")
 }

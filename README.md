@@ -39,10 +39,12 @@ Run `/goal`, Write result — and, under **⋯**, start / stop / resume for the
 agent session and *Notify when finished*, which has the server watch the pane
 for a finishing phrase whether or not the task is open.
 
-Projects are managed from the sidebar: **+** at the bottom adds one (an
-existing folder on the Loom host, a new folder, or a repo to clone), and
-right-clicking a project sets its code root or removes it from Loom — removing
-unregisters the folder without deleting anything on disk.
+The window's toolbar holds **+** (a new task, or a project to add — an
+existing folder on the Loom host, a new folder, or a repo to clone), refresh,
+and the search field that filters the sidebar as you type. Right-clicking a
+project sets its code root or removes it from Loom — removing unregisters the
+folder without deleting anything on disk — and right-clicking a task renames
+it.
 
 ⌘P opens any task by name, ⌘N creates one, ⌘0 brings the main window back,
 ⌘⇧N opens the project's notes (`<project>/.RUD/NOTES.md`, the same file the

@@ -77,6 +77,26 @@ enum LoomColors {
     static let sidebarWashBottom = dynamic(light: 0xEBE7DC, dark: 0x1B1A15)
 }
 
+/// One family of corners for the whole app, in the continuous curve the
+/// system draws its own controls with. Four sizes, by role, so a row, a
+/// field and a card each read as what they are — and so nothing is rounded
+/// by a number typed at the call site.
+///
+/// The app used to be square throughout, to sit close to the web console.
+/// On a Mac that read as a web page in a window: every native surface from
+/// the window down is rounded, and a square control is the one thing on the
+/// screen that is not.
+enum LoomShape {
+    /// Buttons, tabs, list rows, small chips.
+    static var control: RoundedRectangle { RoundedRectangle(cornerRadius: 6, style: .continuous) }
+    /// Text fields and compact boxes.
+    static var field: RoundedRectangle { RoundedRectangle(cornerRadius: 8, style: .continuous) }
+    /// Cards: tool calls, questions, the dock.
+    static var card: RoundedRectangle { RoundedRectangle(cornerRadius: 10, style: .continuous) }
+    /// A message bubble.
+    static var bubble: RoundedRectangle { RoundedRectangle(cornerRadius: 12, style: .continuous) }
+}
+
 extension ConnectionState {
     /// One colour for "can Loom be reached", so the server bar, the sidebar
     /// footer and the dock cannot disagree about what amber means. Lives here

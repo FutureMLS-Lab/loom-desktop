@@ -97,12 +97,12 @@ struct DockView: View {
         // shape that never changes. This, not the animation, was what made the
         // machine drag whenever the dock was on screen.
         .background(
-            Rectangle()
+            LoomShape.card
                 .fill(DockPalette.card)
                 .shadow(color: .black.opacity(0.28), radius: 7, y: 2)
         )
         .overlay(
-            Rectangle()
+            LoomShape.card
                 .strokeBorder(DockPalette.cardEdge, lineWidth: 0.5)
         )
         // The window's own corners are rounded by macOS and cannot be
@@ -339,8 +339,8 @@ private struct LoomMenuButton: View {
             }
             .padding(.horizontal, 10)
             .frame(height: DockView.rowHeight)
-            .background(Color.primary.opacity(0.07), in: Rectangle())
-            .contentShape(Rectangle())
+            .background(Color.primary.opacity(0.07), in: Capsule())
+            .contentShape(Capsule())
         }
         .menuStyle(.borderlessButton)
         .menuIndicator(.hidden)
@@ -400,7 +400,7 @@ private struct DockStatus: View {
         .background(
             (finished > 0 || working > 0 || isOffline)
                 ? AnyShapeStyle(Color.primary.opacity(0.06)) : AnyShapeStyle(Color.clear),
-            in: Rectangle()
+            in: Capsule()
         )
         .help("\(working) working · \(finished) finished and unseen")
     }
@@ -434,9 +434,9 @@ private struct ExpandButton: View {
             .padding(.horizontal, 10)
             .frame(height: DockView.rowHeight)
             .background(
-                Rectangle().fill(Color.primary.opacity(hovering ? 0.14 : 0.07))
+                Capsule().fill(Color.primary.opacity(hovering ? 0.14 : 0.07))
             )
-            .contentShape(Rectangle())
+            .contentShape(Capsule())
         }
         .buttonStyle(.plain)
         .help(expanded ? "Show one row" : "Show all \(hidden) hidden tasks")
@@ -529,16 +529,16 @@ struct TaskPillView: View {
                 if let bandMode {
                     PillBand(mode: bandMode)
                 } else {
-                    Color.secondary.opacity(0.5)
+                    Capsule().fill(Color.secondary.opacity(0.5))
                 }
-                Self.chipFace.padding(PillBand.rimWidth)
+                Capsule().fill(Self.chipFace).padding(PillBand.rimWidth)
                 if pill.state == .working {
                     PillMote().allowsHitTesting(false)
                 }
             }
         }
         .scaleEffect(isHovering ? 1.04 : 1)
-        .contentShape(Rectangle())
+        .contentShape(Capsule())
         .help("\(pill.projectLabel) / \(pill.slug)")
         .contextMenu {
             Button("Open") { action() }

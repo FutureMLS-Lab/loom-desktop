@@ -58,7 +58,7 @@ struct NewTaskView: View {
                         .font(.system(size: 14))
                         .frame(height: 96)
                         .padding(4)
-                        .overlay(Rectangle().strokeBorder(LoomColors.border, lineWidth: 1))
+                        .overlay(LoomShape.field.strokeBorder(LoomColors.border, lineWidth: 1))
                 }
 
                 field("Agent") {

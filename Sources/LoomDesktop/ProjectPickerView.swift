@@ -218,13 +218,11 @@ struct ProjectPickerView: View {
             }
             .padding(.horizontal, 11)
             .padding(.vertical, 7)
-            // Square, like the filter below it and the cards under that: the
-            // sidebar is one family of surfaces, not this plus a pill.
-            .background(LoomColors.bgElev1, in: Rectangle())
+            .background(LoomColors.bgElev1, in: LoomShape.field)
             .overlay(
-                Rectangle().strokeBorder(LoomColors.border, lineWidth: 1)
+                LoomShape.field.strokeBorder(LoomColors.border, lineWidth: 1)
             )
-            .contentShape(Rectangle())
+            .contentShape(LoomShape.field)
         }
         // `.borderlessButton` throws the custom label away and draws its own;
         // the button style keeps the row exactly as built.
@@ -278,9 +276,9 @@ struct ProjectPickerView: View {
             }
             .padding(.horizontal, 11)
             .padding(.vertical, 8)
-            .background(LoomColors.bgElev1, in: Rectangle())
+            .background(LoomColors.bgElev1, in: LoomShape.field)
             .overlay(
-                Rectangle()
+                LoomShape.field
                     .strokeBorder(LoomColors.border, lineWidth: 1)
             )
             .padding(12)
@@ -579,9 +577,9 @@ private struct ProjectCard: View {
             }
         }
         .padding(11)
-        .background(LoomColors.bgElev1.opacity(0.62), in: Rectangle())
+        .background(LoomColors.bgElev1.opacity(0.62), in: LoomShape.card)
         .overlay(
-            Rectangle()
+            LoomShape.card
                 .strokeBorder(LoomColors.border.opacity(0.78), lineWidth: 1)
         )
     }
@@ -618,24 +616,27 @@ private struct SidebarTaskRow: View {
             }
             .padding(.horizontal, 11)
             .padding(.vertical, 10)
-            .background(rowBackground, in: Rectangle())
+            .background(rowBackground, in: LoomShape.control)
             .overlay(alignment: .leading) {
                 // A standing edge on a task that finished unseen, so it
-                // is findable in a long list even between blinks.
+                // is findable in a long list even between blinks. Inset
+                // and rounded, so it sits inside the row's corners.
                 if state == .finished {
-                    Rectangle()
+                    Capsule()
                         .fill(LoomColors.attention)
                         .frame(width: 3)
+                        .padding(.vertical, 8)
+                        .padding(.leading, 3)
                 }
             }
             .overlay(
-                Rectangle()
+                LoomShape.control
                     .strokeBorder(
                         selected ? LoomColors.accent.opacity(0.28) : Color.clear,
                         lineWidth: 1
                     )
             )
-            .contentShape(Rectangle())
+            .contentShape(LoomShape.control)
         }
         .buttonStyle(.plain)
         .help(meta.title ?? meta.slug)

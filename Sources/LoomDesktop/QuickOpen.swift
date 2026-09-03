@@ -173,8 +173,8 @@ struct QuickOpenView: View {
         }
         .padding(.horizontal, 12)
         .padding(.vertical, 9)
-        .background(active ? LoomColors.accentSoft : Color.clear, in: Rectangle())
-        .contentShape(Rectangle())
+        .background(active ? LoomColors.accentSoft : Color.clear, in: LoomShape.control)
+        .contentShape(LoomShape.control)
     }
 
     private func openHighlighted() {

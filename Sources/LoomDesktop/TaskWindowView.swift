@@ -164,10 +164,10 @@ struct TaskPane: View {
                         selected
                             ? LoomColors.accentSoft
                             : (hovering ? Color.primary.opacity(0.05) : Color.clear),
-                        in: Rectangle()
+                        in: LoomShape.control
                     )
                     .overlay(
-                        Rectangle().strokeBorder(
+                        LoomShape.control.strokeBorder(
                             selected ? LoomColors.accent.opacity(0.30) : .clear,
                             lineWidth: 1
                         )
@@ -175,7 +175,7 @@ struct TaskPane: View {
                     .foregroundColor(
                         selected ? LoomColors.accent : (hovering ? .primary : .secondary)
                     )
-                    .contentShape(Rectangle())
+                    .contentShape(LoomShape.control)
             }
             .buttonStyle(.plain)
             .keyboardShortcut(item.shortcut, modifiers: .command)
@@ -209,11 +209,11 @@ struct TaskPane: View {
                 .padding(.vertical, 4)
                 .background(
                     isEnabled && hovering ? Color.primary.opacity(0.04) : Color.clear,
-                    in: Rectangle()
+                    in: LoomShape.control
                 )
-                .overlay(Rectangle().strokeBorder(LoomColors.border, lineWidth: 1))
+                .overlay(LoomShape.control.strokeBorder(LoomColors.border, lineWidth: 1))
                 .foregroundColor(isEnabled && hovering ? .primary : .secondary)
-                .contentShape(Rectangle())
+                .contentShape(LoomShape.control)
             }
             .buttonStyle(.plain)
             .help(step.help)
@@ -284,9 +284,9 @@ struct TaskPane: View {
                     .font(.system(size: 11.5, weight: .medium))
             }
             .foregroundColor(.secondary)
-            .padding(.horizontal, 8)
+            .padding(.horizontal, 9)
             .padding(.vertical, 5)
-            .background(Color.primary.opacity(0.05), in: Rectangle())
+            .background(Color.primary.opacity(0.05), in: Capsule())
             .help("The CLI running this task's pane")
         }
     }
@@ -325,9 +325,9 @@ struct TaskPane: View {
         HStack(spacing: 6) { content() }
             .font(.system(size: 13, weight: .medium))
             .foregroundColor(color)
-            .padding(.horizontal, 10)
+            .padding(.horizontal, 11)
             .padding(.vertical, 5)
-            .background(color.opacity(0.10), in: Rectangle())
+            .background(color.opacity(0.10), in: Capsule())
     }
 
     // MARK: Terminal

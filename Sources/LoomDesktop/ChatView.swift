@@ -140,9 +140,9 @@ struct ChatView: View {
                     } label: {
                         Label("Latest", systemImage: "arrow.down")
                             .font(.system(size: 12, weight: .semibold))
-                            .padding(.horizontal, 10)
+                            .padding(.horizontal, 11)
                             .padding(.vertical, 6)
-                            .background(LoomColors.accent, in: Rectangle())
+                            .background(LoomColors.accent, in: Capsule())
                             .foregroundColor(.white)
                     }
                     .buttonStyle(.plain)
@@ -248,13 +248,13 @@ struct ChatView: View {
                 onSubmit: sendDraft
             )
             .frame(height: composerHeight)
-            .padding(.horizontal, 10)
+            .padding(.horizontal, 12)
             .padding(.vertical, 7)
-            .background(LoomColors.bgElev1, in: Rectangle())
+            .background(LoomColors.bgElev1, in: LoomShape.card)
             // The field is chromeless, so this border is what says where
             // typing will land: accent while it has the keyboard.
             .overlay(
-                Rectangle()
+                LoomShape.card
                     .strokeBorder(
                         composerFocused
                             ? LoomColors.accent.opacity(0.55)
@@ -388,8 +388,8 @@ private struct ToolRunRow: View {
                 .foregroundColor(.secondary)
                 .padding(.horizontal, 10)
                 .padding(.vertical, 6)
-                .background(Color.primary.opacity(0.035), in: Rectangle())
-                .contentShape(Rectangle())
+                .background(Color.primary.opacity(0.035), in: LoomShape.control)
+                .contentShape(LoomShape.control)
             }
             .buttonStyle(.plain)
 
@@ -462,9 +462,9 @@ struct UserBubble: View {
                     .foregroundColor(.white)
                     .textSelection(.enabled)
                     .multilineTextAlignment(.leading)
-                    .padding(.horizontal, 13)
+                    .padding(.horizontal, 14)
                     .padding(.vertical, 9)
-                    .background(LoomColors.accent, in: Rectangle())
+                    .background(LoomColors.accent, in: LoomShape.bubble)
                     .fixedSize(horizontal: false, vertical: true)
                     .contextMenu {
                         Button("Copy Message") { copyToPasteboard(text) }
@@ -514,7 +514,7 @@ private func copyToPasteboard(_ text: String) {
 /// full of looping animations is both noisy and expensive.
 private struct LoomSpinningRingStatic: View {
     var body: some View {
-        Rectangle()
+        Capsule()
             .fill(
                 LinearGradient(
                     colors: [LoomColors.accent, LoomColors.green],
@@ -597,9 +597,9 @@ private struct ToolCard: View {
                 .padding(.bottom, 9)
             }
         }
-        .background(LoomColors.bgElev1, in: Rectangle())
+        .background(LoomColors.bgElev1, in: LoomShape.field)
         .overlay(
-            Rectangle()
+            LoomShape.field
                 .strokeBorder(LoomColors.border, lineWidth: 1)
         )
         .padding(.trailing, 30)
@@ -624,7 +624,7 @@ private struct ToolDetail: View {
         }
         .padding(7)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(LoomColors.bgElev1, in: Rectangle())
+        .background(LoomColors.bgElev2, in: LoomShape.control)
     }
 }
 
@@ -733,11 +733,11 @@ private struct QuestionCard: View {
                     .lineLimit(3)
             }
         }
-        .padding(11)
+        .padding(12)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(LoomColors.accent.opacity(0.05), in: Rectangle())
+        .background(LoomColors.accent.opacity(0.05), in: LoomShape.card)
         .overlay(
-            Rectangle()
+            LoomShape.card
                 .strokeBorder(LoomColors.accent.opacity(0.25), lineWidth: 1)
         )
         .padding(.trailing, 30)

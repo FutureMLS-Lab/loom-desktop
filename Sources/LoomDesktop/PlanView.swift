@@ -195,9 +195,9 @@ struct PlanView: View {
             .padding(.vertical, 4)
             .background(
                 isSelected ? LoomColors.accentSoft : Color.clear,
-                in: Rectangle()
+                in: LoomShape.control
             )
-            .contentShape(Rectangle())
+            .contentShape(LoomShape.control)
         }
         .buttonStyle(.plain)
         // Names truncate in the middle at this width, and inside a worktree
@@ -247,7 +247,7 @@ struct PlanView: View {
                         .foregroundColor(LoomColors.amber)
                         .padding(.horizontal, 7)
                         .padding(.vertical, 2)
-                        .background(LoomColors.amber.opacity(0.14), in: Rectangle())
+                        .background(LoomColors.amber.opacity(0.14), in: Capsule())
                 }
                 if !selected.isEmpty && !canEdit && unreadable.isEmpty {
                     Text("Read-only")

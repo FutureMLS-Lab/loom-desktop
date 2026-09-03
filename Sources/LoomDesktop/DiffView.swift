@@ -91,9 +91,9 @@ struct ChangesView: View {
                             .padding(.vertical, 7)
                             .background(
                                 selection == file.id ? LoomColors.accentSoft : Color.clear,
-                                in: Rectangle()
+                                in: LoomShape.control
                             )
-                            .contentShape(Rectangle())
+                            .contentShape(LoomShape.control)
                     }
                     .buttonStyle(.plain)
                 }
@@ -418,9 +418,9 @@ private struct WorktreeBar: View {
         Text(text)
             .font(.system(size: 10.5, weight: .medium))
             .foregroundColor(color)
-            .padding(.horizontal, 6)
+            .padding(.horizontal, 7)
             .padding(.vertical, 2)
-            .background(color.opacity(0.12), in: Rectangle())
+            .background(color.opacity(0.12), in: Capsule())
     }
 }
 

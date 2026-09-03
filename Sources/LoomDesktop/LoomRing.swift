@@ -88,6 +88,12 @@ final class PillBandView: NSView {
         CATransaction.begin()
         CATransaction.setDisableActions(true)
         band.frame = bounds
+        // A capsule, cut by the layer's own corner radius rather than a
+        // mask layer: `cornerRadius` clipping is the render server's cheap
+        // path, where a `mask` would send this animating layer offscreen on
+        // every frame (see the class comment).
+        layer?.cornerRadius = bounds.height / 2
+        layer?.masksToBounds = true
         CATransaction.commit()
         refreshBlink()
     }
@@ -192,6 +198,10 @@ final class PillMoteView: NSView {
         CATransaction.setDisableActions(true)
         light.bounds = CGRect(x: 0, y: 0, width: Self.moteSize, height: Self.moteSize)
         light.position = CGPoint(x: bounds.minX + Self.moteSize / 2, y: bounds.midY)
+        // Same capsule as the band beneath, so the mote rounds the corners
+        // with the rim instead of squaring them off as it passes.
+        layer?.cornerRadius = bounds.height / 2
+        layer?.masksToBounds = true
         CATransaction.commit()
         refreshOrbit()
     }

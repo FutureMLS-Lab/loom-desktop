@@ -216,12 +216,11 @@ struct ProjectPickerView: View {
                     .font(.system(size: 9, weight: .semibold))
                     .foregroundColor(.secondary)
             }
-            .padding(.horizontal, 11)
+            .padding(.horizontal, 10)
             .padding(.vertical, 7)
-            .background(LoomColors.bgElev1, in: LoomShape.field)
-            .overlay(
-                LoomShape.field.strokeBorder(LoomColors.border, lineWidth: 1)
-            )
+            // A tint on the material, not a white box on it: the sidebar is
+            // one translucent surface, and this is a row on it.
+            .background(Color.primary.opacity(0.05), in: LoomShape.field)
             .contentShape(LoomShape.field)
         }
         // `.borderlessButton` throws the custom label away and draws its own;
@@ -274,17 +273,14 @@ struct ProjectPickerView: View {
                     .buttonStyle(.plain)
                 }
             }
-            .padding(.horizontal, 11)
-            .padding(.vertical, 8)
-            .background(LoomColors.bgElev1, in: LoomShape.field)
-            .overlay(
-                LoomShape.field
-                    .strokeBorder(LoomColors.border, lineWidth: 1)
-            )
-            .padding(12)
+            .padding(.horizontal, 10)
+            .padding(.vertical, 7)
+            .background(Color.primary.opacity(0.06), in: LoomShape.field)
+            .padding(.horizontal, 12)
+            .padding(.vertical, 10)
 
             ScrollView {
-                LazyVStack(alignment: .leading, spacing: 12) {
+                LazyVStack(alignment: .leading, spacing: 18) {
                     ForEach(filteredProjects, id: \.id) { project in
                         ProjectCard(
                             project: project,
@@ -382,14 +378,11 @@ struct ProjectPickerView: View {
             .padding(.horizontal, 14)
             .padding(.vertical, 10)
         }
-        .frame(width: 320)
-        .background(
-            LinearGradient(
-                colors: [LoomColors.sidebarWashTop, LoomColors.sidebarWashBottom],
-                startPoint: .top,
-                endPoint: .bottom
-            )
-        )
+        .frame(width: 300)
+        // The system's sidebar material — translucent, the desktop showing
+        // through, dimming with the window — rather than a painted wash. It
+        // is the one surface that says "Mac" before anything on it is read.
+        .background(SidebarMaterial())
     }
 
     private var filteredProjects: [LoomProject] {
@@ -496,8 +489,8 @@ private struct ProjectCard: View {
                         .foregroundColor(.secondary)
                         .rotationEffect(.degrees(collapsed ? 0 : 90))
                     Text(project.label.uppercased())
-                        .font(.system(size: 12, weight: .semibold))
-                        .tracking(0.7)
+                        .font(.system(size: 11, weight: .semibold))
+                        .tracking(0.6)
                         .foregroundColor(.secondary)
                         .lineLimit(1)
                     Spacer(minLength: 4)
@@ -576,12 +569,10 @@ private struct ProjectCard: View {
                 }
             }
         }
-        .padding(11)
-        .background(LoomColors.bgElev1.opacity(0.62), in: LoomShape.card)
-        .overlay(
-            LoomShape.card
-                .strokeBorder(LoomColors.border.opacity(0.78), lineWidth: 1)
-        )
+        // A section, not a card: a native sidebar groups with a heading and
+        // air, and boxes around every group made the list read as a page of
+        // panels rather than a list.
+        .padding(.horizontal, 4)
     }
 }
 
@@ -607,15 +598,17 @@ private struct SidebarTaskRow: View {
                 // one row you can read costs you the ones you were scanning
                 // for.
                 Text(meta.title ?? meta.slug)
-                    .font(.system(size: 15))
-                    .foregroundColor(.primary)
+                    .font(.system(size: 14))
+                    .foregroundColor(selected ? .white : .primary)
                     .multilineTextAlignment(.leading)
                     .lineLimit(2)
                     .fixedSize(horizontal: false, vertical: true)
                     .frame(maxWidth: .infinity, alignment: .leading)
             }
-            .padding(.horizontal, 11)
-            .padding(.vertical, 10)
+            .padding(.horizontal, 10)
+            .padding(.vertical, 7)
+            // Selection the way a Mac sidebar selects: the accent, filled,
+            // with the row's text turned white — not a pale wash in a box.
             .background(rowBackground, in: LoomShape.control)
             .overlay(alignment: .leading) {
                 // A standing edge on a task that finished unseen, so it
@@ -623,19 +616,12 @@ private struct SidebarTaskRow: View {
                 // and rounded, so it sits inside the row's corners.
                 if state == .finished {
                     Capsule()
-                        .fill(LoomColors.attention)
+                        .fill(selected ? Color.white.opacity(0.8) : LoomColors.attention)
                         .frame(width: 3)
-                        .padding(.vertical, 8)
+                        .padding(.vertical, 7)
                         .padding(.leading, 3)
                 }
             }
-            .overlay(
-                LoomShape.control
-                    .strokeBorder(
-                        selected ? LoomColors.accent.opacity(0.28) : Color.clear,
-                        lineWidth: 1
-                    )
-            )
             .contentShape(LoomShape.control)
         }
         .buttonStyle(.plain)
@@ -653,28 +639,59 @@ private struct SidebarTaskRow: View {
     }
 
     private var rowBackground: Color {
-        if selected { return LoomColors.accentSoft }
-        if state == .finished { return LoomColors.attention.opacity(0.10) }
-        return hovering ? LoomColors.bgElev1 : LoomColors.bgElev1.opacity(0.72)
+        if selected { return LoomColors.accent }
+        if hovering { return Color.primary.opacity(0.06) }
+        if state == .finished { return LoomColors.attention.opacity(0.12) }
+        return .clear
     }
 
+    /// On the accent fill the coloured dots would vanish, so a selected row
+    /// draws its state in white. Static there, too: the selected task is the
+    /// one being looked at, so it has nothing to wave about.
     @ViewBuilder
     private var statusDot: some View {
         switch state {
         case .working:
-            LoomActivityDot(size: 12)
+            if selected {
+                Circle().fill(Color.white).frame(width: 8, height: 8)
+            } else {
+                LoomActivityDot(size: 12)
+            }
         case .finished:
-            LoomBlinkDot(size: 12)
+            if selected {
+                Image(systemName: "exclamationmark.circle.fill")
+                    .font(.system(size: 11))
+                    .foregroundColor(.white)
+            } else {
+                LoomBlinkDot(size: 12)
+            }
         case .idle:
             Circle()
-                .strokeBorder(Color.secondary.opacity(0.45), lineWidth: 1.2)
+                .strokeBorder(
+                    selected ? Color.white.opacity(0.75) : Color.secondary.opacity(0.45),
+                    lineWidth: 1.2
+                )
                 .frame(width: 9, height: 9)
         case nil:
             Circle()
-                .fill(Color.secondary.opacity(0.22))
+                .fill(selected ? Color.white.opacity(0.5) : Color.secondary.opacity(0.22))
                 .frame(width: 9, height: 9)
         }
     }
+}
+
+/// The system's sidebar material: translucent over whatever is behind the
+/// window, and dimming with it when the window is not in front.
+private struct SidebarMaterial: NSViewRepresentable {
+    func makeNSView(context: Context) -> NSVisualEffectView {
+        let view = NSVisualEffectView()
+        view.material = .sidebar
+        view.blendingMode = .behindWindow
+        view.state = .followsWindowActiveState
+        return view
+    }
+
+    func updateNSView(_ view: NSVisualEffectView, context: Context) {}
 }
 
 private struct ConnectionPill: View {

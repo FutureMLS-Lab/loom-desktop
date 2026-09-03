@@ -67,14 +67,6 @@ enum LoomColors {
     /// mistaken for the vivid green of a task that is running.
     static let attention = dynamic(light: 0x6F8C74, dark: 0x8CAB92)
     static let red = dynamic(light: 0xEF4444, dark: 0xF26D6D)
-
-    /// The sidebar's backing wash, top and bottom.
-    ///
-    /// Here rather than inline in the gradient that uses them: built in a
-    /// view body, each pass made two more colours, and a colour that is a
-    /// new object every render is one SwiftUI redraws for.
-    static let sidebarWashTop = dynamic(light: 0xF8F6F0, dark: 0x22211B)
-    static let sidebarWashBottom = dynamic(light: 0xEBE7DC, dark: 0x1B1A15)
 }
 
 /// One family of corners for the whole app, in the continuous curve the

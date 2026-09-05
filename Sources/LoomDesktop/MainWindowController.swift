@@ -15,6 +15,8 @@ final class MainWindowState: ObservableObject {
     @Published var addProjectRequests = 0
     @Published var toggleSidebarRequests = 0
     @Published var quickOpenRequests = 0
+    /// Secondary context beneath the persistent wordmark in the title bar.
+    @Published var titleContext = "Workspace"
 }
 
 /// The main window — the project/task browser. Created on demand and kept
@@ -47,6 +49,9 @@ final class MainWindowController: NSObject, NSWindowDelegate, NSToolbarDelegate 
                 defer: false
             )
             window.title = "Loom"
+            // Keep the semantic window title for the Window menu and
+            // accessibility; the toolbar draws a larger, consistent wordmark.
+            window.titleVisibility = .hidden
             window.minSize = NSSize(width: 940, height: 640)
             window.isReleasedWhenClosed = false
             // Versioned: an autosaved frame from an older, much smaller
@@ -104,10 +109,12 @@ final class MainWindowController: NSObject, NSWindowDelegate, NSToolbarDelegate 
                     if let selection, let (project, meta) = store.meta(forSelection: selection) {
                         window.title = meta.title ?? meta.slug
                         window.subtitle = project.label
+                        self.windowState.titleContext = project.label
                     } else {
                         window.title = "Loom"
                         let count = tasksByProject.values.reduce(0) { $0 + $1.count }
                         window.subtitle = count == 0 ? "" : (count == 1 ? "1 task" : "\(count) tasks")
+                        self.windowState.titleContext = count == 0 ? "Workspace" : "Workspace · \(count) tasks"
                     }
                 }
         }
@@ -140,7 +147,7 @@ final class MainWindowController: NSObject, NSWindowDelegate, NSToolbarDelegate 
     }
 
     func toolbarDefaultItemIdentifiers(_ toolbar: NSToolbar) -> [NSToolbarItem.Identifier] {
-        [.loomSidebar, .loomHome, .flexibleSpace, .loomQuickOpen, .loomNew, .loomRefresh, .loomSearch]
+        [.loomBrand, .flexibleSpace, .loomSidebar, .loomQuickOpen, .loomNew, .loomRefresh, .loomSearch]
     }
 
     func toolbarAllowedItemIdentifiers(_ toolbar: NSToolbar) -> [NSToolbarItem.Identifier] {
@@ -153,15 +160,30 @@ final class MainWindowController: NSObject, NSWindowDelegate, NSToolbarDelegate 
         willBeInsertedIntoToolbar flag: Bool
     ) -> NSToolbarItem? {
         switch identifier {
-        case .loomSidebar, .loomHome, .loomQuickOpen:
+        case .loomBrand:
+            let item = NSToolbarItem(itemIdentifier: identifier)
+            item.label = "Loom"
+            item.toolTip = "Workspace overview (⇧⌘H)"
+            item.visibilityPriority = .high
+            let brand = NSHostingView(rootView: WindowBrandView(state: windowState) { [weak self] in
+                self?.showOverview()
+            })
+            brand.sizingOptions = []
+            brand.frame = NSRect(x: 0, y: 0, width: 184, height: 40)
+            NSLayoutConstraint.activate([
+                brand.widthAnchor.constraint(equalToConstant: 184),
+                brand.heightAnchor.constraint(equalToConstant: 40),
+            ])
+            item.view = brand
+            return item
+        case .loomSidebar, .loomQuickOpen:
             let item = NSToolbarItem(itemIdentifier: identifier)
             let sidebar = identifier == .loomSidebar
-            let home = identifier == .loomHome
-            item.label = sidebar ? "Toggle Sidebar" : home ? "Workspace" : "Quick Switch"
-            item.image = NSImage(systemSymbolName: sidebar ? "sidebar.left" : home ? "square.grid.2x2" : "command", accessibilityDescription: item.label)
-            item.toolTip = sidebar ? "Toggle sidebar (⌃⌘S)" : home ? "Workspace overview (⇧⌘H)" : "Quick switch tasks (⌘K or ⌘P)"
+            item.label = sidebar ? "Toggle Sidebar" : "Quick Switch"
+            item.image = NSImage(systemSymbolName: sidebar ? "sidebar.left" : "command", accessibilityDescription: item.label)
+            item.toolTip = sidebar ? "Toggle sidebar (⌃⌘S)" : "Quick switch tasks (⌘K or ⌘P)"
             item.target = self
-            item.action = sidebar ? #selector(toggleSidebar) : home ? #selector(showOverview) : #selector(requestQuickOpen)
+            item.action = sidebar ? #selector(toggleSidebar) : #selector(requestQuickOpen)
             item.isBordered = true
             return item
         case .loomNew:
@@ -219,10 +241,38 @@ final class MainWindowController: NSObject, NSWindowDelegate, NSToolbarDelegate 
 }
 
 private extension NSToolbarItem.Identifier {
+    static let loomBrand = NSToolbarItem.Identifier("loom.brand")
     static let loomSidebar = NSToolbarItem.Identifier("loom.sidebar")
-    static let loomHome = NSToolbarItem.Identifier("loom.home")
     static let loomQuickOpen = NSToolbarItem.Identifier("loom.quickOpen")
     static let loomNew = NSToolbarItem.Identifier("loom.new")
     static let loomRefresh = NSToolbarItem.Identifier("loom.refresh")
     static let loomSearch = NSToolbarItem.Identifier("loom.search")
+}
+
+private struct WindowBrandView: View {
+    @ObservedObject var state: MainWindowState
+    let onOpenWorkspace: () -> Void
+
+    var body: some View {
+        Button(action: onOpenWorkspace) {
+            HStack(spacing: 9) {
+                LoomMark(size: 30, opacity: 1)
+                VStack(alignment: .leading, spacing: 0) {
+                    Text("Loom")
+                        .font(.system(size: 22, weight: .semibold, design: .rounded))
+                        .tracking(-0.6)
+                        .foregroundStyle(.primary)
+                    Text(state.titleContext)
+                        .font(.system(size: 10.5, weight: .medium))
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                        .truncationMode(.tail)
+                }
+            }
+            .frame(width: 184, height: 40, alignment: .leading)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel("Loom, \(state.titleContext), open workspace")
+    }
 }

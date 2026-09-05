@@ -299,6 +299,10 @@ has buttons for showing or hiding the sidebar, returning to the overview, and
 quick switching. The sidebar footer also exposes the overview, quick switch, and
 new task actions.
 
+The title bar keeps a larger Loom wordmark and woven mark on the left, with
+workspace or project context beneath. Clicking the wordmark returns to the
+workspace overview. The system's Window menu still identifies the current task.
+
 - **⌘K** or **⌘P**: search tasks across projects; ↑/↓ to navigate, Return to open.
 - **⌃⌘S**: show or hide the sidebar (visibility is remembered).
 - **⇧⌘H**: return to the workspace overview.

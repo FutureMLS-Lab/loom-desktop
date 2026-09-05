@@ -9,6 +9,9 @@ struct WrappingHStack: Layout {
     /// Show at most this many rows; the rest are left unplaced and counted in
     /// `Metrics.overflow`. `nil` means every row.
     var maxRows: Int?
+    /// A compact strip measures all controls on one intrinsic-width row.
+    /// Its window can then fit that row without changing the wrapping limit.
+    var measuresIntrinsicWidth = false
     /// Reports what the panel needs to know about the current content.
     /// Delivered asynchronously — this fires from inside a layout pass, which is
     /// no place to be resizing a window.
@@ -48,7 +51,7 @@ struct WrappingHStack: Layout {
 
         // Skip speculative passes that propose no real width: the rows they
         // produce are not the ones that end up on screen.
-        if let onMeasure = onMeasure, limit.isFinite {
+        if let onMeasure = onMeasure, limit.isFinite || measuresIntrinsicWidth {
             let widestSubview = subviews
                 .map { $0.sizeThatFits(.unspecified).width }
                 .max() ?? 0

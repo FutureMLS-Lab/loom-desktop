@@ -12,7 +12,11 @@ appearance rather than by swapping a palette, so everything on the card
 follows — including the header's own controls, which ask for `.primary` and
 `.secondary`.
 
-Each pill is a dark chip inside a lit rim. The rim's colour is the state:
+The floating dock starts as a compact **loom + status counts** strip. Its width
+fits those controls even if an older version saved a very wide panel. The chevron
+expands it to show task pills; when there is no active work it contracts again.
+
+Each pill is a chip inside a lit rim. The rim's colour is the state:
 
 - **Working** — the agent is generating right now: the rim runs indigo through
   cyan to green, with a mote of light travelling round the inside of it.
@@ -77,16 +81,11 @@ the window you are in now.
 - **Dock Size** in the loom menu draws the whole dock smaller or larger
   (`panelScale`, 0.85 / 1.0 / 1.2). It changes the real metrics rather than
   zooming, so the window shrinks with the pills and more of them fit a row.
-- Drag any **edge or corner** to size the panel. Dragging the height also
-  fixes it: the dock stays that tall and the rows scroll inside it, instead of
-  growing down the screen as tasks appear. *Fit Height to Contents* in the
-  loom menu hands that back. Both are remembered (`panelWidth`, `panelHeight`;
-  a height of 0 means "follow the contents").
-- The panel has a fixed width you set by dragging its **left or right edge**;
-  pills wrap onto as many rows as that width needs, and the height follows the
-  rows, growing downward. The width is remembered across restarts
-  (`defaults read com.loom.desktop panelWidth`) and cannot be dragged narrower
-  than the widest single pill. (Geometry adapted from session-dock.)
+- Drag an **expanded** panel's left or right edge to choose its width, up to
+  720 points. Pills wrap and height follows the rows. Expansion stays centred
+  around the compact strip and inside the screen. The expanded width is saved
+  as `panelWidth`; it does not stretch the compact strip, whose controls are
+  measured on one line. Collapsed task pills are not rendered or animated.
 - The **loom** capsule on the left is the fleet menu: browse every registered
   project/task and open any of them (active or not), refresh, settings, quit.
   The dot shows connection state (green/yellow/red). The same menu lives in

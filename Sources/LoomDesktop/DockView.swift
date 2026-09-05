@@ -8,20 +8,16 @@ struct DockView: View {
     @ObservedObject var store: TaskStore
     /// What the wrapped content came to. `PanelWindow` owns width and matches
     /// height to it.
-    var onMeasure: (WrappingHStack.Metrics) -> Void = { _ in }
+    var onMeasure: (WrappingHStack.Metrics, Bool) -> Void = { _, _ in }
     var onHidePanel: () -> Void = {}
 
-    /// One row by default: the dock is a glance, not a list. Expanding shows
-    /// every pill, and the choice sticks across launches.
+    /// A compact status strip by default. Task titles appear on expansion;
+    /// the strip's width never depends on how wide the expanded dock was.
     @AppStorage("panelExpanded") private var expanded = false
     /// Read so the dock redraws when the size is changed; the metrics
     /// themselves come from `DockScale`.
     @AppStorage(DockScale.key) private var scale = 1.0
     @AppStorage(DockTheme.key) private var theme = DockTheme.light.rawValue
-    /// How many pills the collapsed row fits. Building the rest and hiding
-    /// them offscreen still ran their animations — forty pills' worth of
-    /// spinning and blinking for a dock showing three.
-    @State private var fitCount = 0
 
     /// Only what is asking for something: running, or finished and unseen.
     ///
@@ -32,47 +28,31 @@ struct DockView: View {
         store.pills.filter { $0.state != .idle }
     }
 
-    /// One more than fits, so a widened panel can discover the extra room;
-    /// the probe converges upward a pill at a time.
-    private var shownPills: [TaskPill] {
-        expanded ? activePills : Array(activePills.prefix(fitCount + 1))
-    }
-
-    private var overflow: Int {
-        max(0, activePills.count - shownPills.count)
-    }
-
-    /// loom menu, counts, expand, hide.
-    private static let headerItemCount = 4
-
     var body: some View {
-        WrappingHStack(
-            horizontalSpacing: 10,
+        let isExpanded = expanded && !activePills.isEmpty
+        return WrappingHStack(
+            horizontalSpacing: 8,
             verticalSpacing: 8,
-            maxRows: expanded ? nil : 1,
-            onMeasure: { metrics in
-                if !expanded {
-                    let fit = max(0, metrics.visibleSubviews - Self.headerItemCount)
-                    if fit != fitCount { fitCount = fit }
-                }
-                onMeasure(metrics)
-            }
+            measuresIntrinsicWidth: !isExpanded,
+            onMeasure: { onMeasure($0, isExpanded) }
         ) {
             // Row 1: identity + controls. Always present — an empty fleet
             // collapses the panel to just this strip.
             LoomMenuButton(store: store)
-            DockStatus(store: store)
+            if !activePills.isEmpty || store.connection != .online {
+                DockStatus(store: store)
+            }
             if !activePills.isEmpty {
                 ExpandButton(
-                    expanded: expanded,
-                    hidden: overflow,
-                    action: { withAnimation(.easeInOut(duration: 0.16)) { expanded.toggle() } }
+                    expanded: isExpanded,
+                    taskCount: activePills.count,
+                    action: { expanded.toggle() }
                 )
             }
             HideButton(action: onHidePanel)
 
-            if !activePills.isEmpty {
-                ForEach(shownPills) { pill in
+            if isExpanded {
+                ForEach(activePills) { pill in
                     TaskPillView(
                         pill: pill,
                         showProject: store.showsProjectPrefix,
@@ -86,6 +66,9 @@ struct DockView: View {
                 }
             }
         }
+        // Compact measurement is independent of the window's previous width.
+        // No hidden probe pills or iterative shrink-to-fit feedback loop.
+        .fixedSize(horizontal: !isExpanded, vertical: true)
         .padding(.horizontal, DockView.contentInset)
         .padding(.vertical, DockView.contentInset)
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -111,7 +94,6 @@ struct DockView: View {
         // nothing on it gets sliced.
         .padding(DockView.cardMargin)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-        .animation(.easeInOut, value: store.pills)
     }
 
     static var contentInset: CGFloat { (8 * DockScale.factor).rounded() }
@@ -342,7 +324,8 @@ private struct LoomMenuButton: View {
             .background(Color.primary.opacity(0.07), in: Capsule())
             .contentShape(Capsule())
         }
-        .menuStyle(.borderlessButton)
+        .menuStyle(.button)
+        .buttonStyle(.plain)
         .menuIndicator(.hidden)
         .fixedSize()
     }
@@ -411,22 +394,16 @@ private struct DockStatus: View {
     }
 }
 
-/// Show every row, or fold back to one. Carries the count of what is hidden,
-/// so a single-row dock still says how much it is not showing.
+/// Show task titles, or return to the compact status strip.
 private struct ExpandButton: View {
     let expanded: Bool
-    let hidden: Int
+    let taskCount: Int
     let action: () -> Void
     @State private var hovering = false
 
     var body: some View {
         Button(action: action) {
             HStack(spacing: 4) {
-                if !expanded && hidden > 0 {
-                    Text("+\(hidden)")
-                        .font(.system(size: 12, weight: .bold))
-                        .monospacedDigit()
-                }
                 Image(systemName: expanded ? "chevron.up" : "chevron.down")
                     .font(.system(size: 10, weight: .bold))
             }
@@ -439,7 +416,8 @@ private struct ExpandButton: View {
             .contentShape(Capsule())
         }
         .buttonStyle(.plain)
-        .help(expanded ? "Show one row" : "Show all \(hidden) hidden tasks")
+        .accessibilityLabel(expanded ? "Collapse dock" : "Show \(taskCount) active tasks")
+        .help(expanded ? "Collapse to status strip" : "Show \(taskCount) active tasks")
         .onHover { hovering = $0 }
     }
 }

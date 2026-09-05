@@ -18,8 +18,8 @@ final class FirstMouseHostingView<Content: View>: NSHostingView<Content> {
 final class PanelWindow: NSPanel, NSWindowDelegate {
     private static let widthDefaultsKey = "panelWidth"
     private static let defaultWidth: CGFloat = 560
-    /// Floor for a drag before any pill has been measured; once there is
-    /// content the real limit is the widest single row (header or pill).
+    private static let maximumExpandedWidth: CGFloat = 720
+    /// Expanded width can be dragged, with enough room for one whole pill.
     private static let minimumWidth: CGFloat = 240
 
     private var hosting: NSHostingView<DockView>!
@@ -30,11 +30,12 @@ final class PanelWindow: NSPanel, NSWindowDelegate {
     /// the chosen width once that pill goes away.
     private var userWidth: CGFloat = PanelWindow.savedWidth
     private var metrics = WrappingHStack.Metrics(contentSize: .zero, widestSubview: 0)
+    private var expanded = UserDefaults.standard.bool(forKey: "panelExpanded")
 
     init(store: TaskStore) {
         self.store = store
         super.init(
-            contentRect: NSRect(x: 0, y: 0, width: Self.savedWidth, height: 64),
+            contentRect: NSRect(x: 0, y: 0, width: expanded ? Self.savedWidth : 280, height: 76),
             styleMask: [.titled, .fullSizeContentView, .nonactivatingPanel, .resizable],
             backing: .buffered,
             defer: false
@@ -73,7 +74,7 @@ final class PanelWindow: NSPanel, NSWindowDelegate {
         for buttonType in [NSWindow.ButtonType.closeButton, .miniaturizeButton, .zoomButton] {
             standardWindowButton(buttonType)?.isHidden = true
         }
-        minSize = NSSize(width: Self.minimumWidth, height: 1)
+        minSize = NSSize(width: 120, height: 1)
         // A height fixed by an earlier build (drags used to lock it, and the
         // lock was saved) would keep clipping the rows forever now that
         // nothing scrolls; clear it so those installs heal on launch.
@@ -86,12 +87,14 @@ final class PanelWindow: NSPanel, NSWindowDelegate {
         hosting.sizingOptions = []
         contentView = hosting
 
-        hosting.rootView.onMeasure = { [weak self] metrics in
-            guard let self = self, metrics.contentSize.height > 0, metrics != self.metrics else { return }
+        hosting.rootView.onMeasure = { [weak self] metrics, expanded in
+            guard let self = self, metrics.contentSize.height > 0,
+                  metrics != self.metrics || expanded != self.expanded else { return }
             if ProcessInfo.processInfo.environment["LOOM_DESKTOP_TRACE_LAYOUT"] == "1" {
                 loomBoot("measure content=\(metrics.contentSize) widest=\(metrics.widestSubview) overflow=\(metrics.overflow) -> height \(self.contentHeight)")
             }
             self.metrics = metrics
+            self.expanded = expanded
             self.applyGeometry()
         }
         hosting.rootView.onHidePanel = { [weak self] in
@@ -111,8 +114,10 @@ final class PanelWindow: NSPanel, NSWindowDelegate {
     /// mid-row. A dock scaled up then came back with its bottom cut clean
     /// off. If scrolling returns, height drags can return with it.
     func windowWillResize(_ sender: NSWindow, to frameSize: NSSize) -> NSSize {
-        userWidth = max(Self.minimumWidth, frameSize.width)
-        persistWidth()
+        if expanded {
+            userWidth = min(Self.maximumExpandedWidth, max(Self.minimumWidth, frameSize.width))
+            persistWidth()
+        }
         // Answer in frame coordinates — the content is shorter than the frame
         // by the (hidden but still present) title bar.
         return frameSizeFitting(content: NSSize(width: clampedWidth, height: contentHeight))
@@ -122,9 +127,8 @@ final class PanelWindow: NSPanel, NSWindowDelegate {
         frameRect(forContentRect: NSRect(origin: .zero, size: content)).size
     }
 
-    /// Width is the user's choice, only widened when a single pill cannot fit
-    /// (pills are never broken mid-way). Height follows the wrapped rows plus
-    /// the header strip, growing downward from a fixed top edge.
+    /// Compact width follows the intrinsic header. Expanded width is the
+    /// user's choice. Height follows the rows, growing from a fixed top edge.
     private func applyGeometry() {
         // Sizes here are the *content* size; the window frame is taller by the
         // title bar, and setting the frame to a content height is what clipped
@@ -135,23 +139,31 @@ final class PanelWindow: NSPanel, NSWindowDelegate {
 
         var updated = frame
         updated.size = target
+        // Expansion opens around the same centre as the small status strip.
+        updated.origin.x = frame.midX - target.width / 2
+        if let screen = NSScreen.screens.first(where: { $0.frame.contains(NSPoint(x: frame.midX, y: frame.midY)) }) ?? screen {
+            updated.origin.x = min(max(updated.minX, screen.visibleFrame.minX + 12), screen.visibleFrame.maxX - target.width - 12)
+        }
         // Grow downward from a fixed top edge, so the dock never creeps up
         // off the screen as rows appear.
         updated.origin.y = frame.maxY - target.height
         setFrame(updated, display: true)
     }
 
-    /// The width the user dragged to, never narrower than a single pill and
-    /// never wider than the screen. Deliberately *not* derived from the
-    /// measured row: sizing the window to the content it just packed shrinks
-    /// the limit, which drops a pill, which shrinks it again — a ratchet down
-    /// to the minimum. The content fits the width, not the other way round.
+    /// Only the intrinsic, unwrapped header may determine the compact width.
+    /// Expanded width stays independent of packed rows to avoid feedback
+    /// between wrapping and window size.
     private var clampedWidth: CGFloat {
         let screenLimit = (NSScreen.screens.first { $0.frame.contains(frame.origin) }
             ?? NSScreen.main)?.visibleFrame.width ?? 1440
+        let insets = 2 * DockView.contentInset + 2 * DockView.cardMargin
+        if !expanded {
+            guard metrics.contentSize.width > 0 else { return 280 }
+            return ceil(min(metrics.contentSize.width + insets, screenLimit - 40))
+        }
         let floorWidth = max(
             Self.minimumWidth,
-            metrics.widestSubview + 2 * DockView.contentInset + 2 * DockView.cardMargin
+            metrics.widestSubview + insets
         )
         return ceil(min(max(userWidth, floorWidth), screenLimit - 40))
     }
@@ -204,7 +216,7 @@ final class PanelWindow: NSPanel, NSWindowDelegate {
 
     private static var savedWidth: CGFloat {
         let saved = UserDefaults.standard.double(forKey: widthDefaultsKey)
-        return saved >= minimumWidth ? saved : defaultWidth
+        return saved >= minimumWidth ? min(saved, maximumExpandedWidth) : defaultWidth
     }
 
     private func persistWidth() {

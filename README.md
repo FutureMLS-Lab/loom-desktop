@@ -302,6 +302,8 @@ new task actions.
 The title bar keeps a larger Loom wordmark and woven mark on the left, with
 workspace or project context beneath. Clicking the wordmark returns to the
 workspace overview. The system's Window menu still identifies the current task.
+The wordmark sits directly in the title bar, without a toolbar button background;
+its width follows the text, with long project names truncated to keep controls visible.
 
 - **⌘K** or **⌘P**: search tasks across projects; ↑/↓ to navigate, Return to open.
 - **⌃⌘S**: show or hide the sidebar (visibility is remembered).

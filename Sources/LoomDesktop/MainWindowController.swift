@@ -29,6 +29,8 @@ final class MainWindowController: NSObject, NSWindowDelegate, NSToolbarDelegate 
     private weak var store: TaskStore?
     private let windowState = MainWindowState()
     private var subtitleSink: AnyCancellable?
+    private var brandSizeSink: AnyCancellable?
+    private var brandController: NSHostingController<WindowBrandView>?
 
     /// Whether the task on screen is actually on screen — the window is kept
     /// around after it closes, so its existence says nothing.
@@ -50,7 +52,7 @@ final class MainWindowController: NSObject, NSWindowDelegate, NSToolbarDelegate 
             )
             window.title = "Loom"
             // Keep the semantic window title for the Window menu and
-            // accessibility; the toolbar draws a larger, consistent wordmark.
+            // accessibility; the title bar draws a larger, consistent wordmark.
             window.titleVisibility = .hidden
             window.minSize = NSSize(width: 940, height: 640)
             window.isReleasedWhenClosed = false
@@ -67,6 +69,7 @@ final class MainWindowController: NSObject, NSWindowDelegate, NSToolbarDelegate 
             window.contentView = hosting
             window.delegate = self
             installToolbar(on: window)
+            installBrandTitle(on: window)
             // Fit the screen the pointer is on; 1280×860 overflows a laptop
             // display, and a window taller than the screen cannot be resized
             // back by dragging its (offscreen) bottom edge.
@@ -133,6 +136,34 @@ final class MainWindowController: NSObject, NSWindowDelegate, NSToolbarDelegate 
 
     // MARK: Toolbar
 
+    private func installBrandTitle(on window: NSWindow) {
+        // A toolbar item receives a system glass background on macOS 26.
+        // The wordmark belongs beside the window controls, outside that group.
+        let hosting = NSHostingController(rootView: WindowBrandView(context: windowState.titleContext) { [weak self] in
+            self?.showOverview()
+        })
+        hosting.sizingOptions = []
+        hosting.view.setFrameSize(hosting.sizeThatFits(in: NSSize(width: 220, height: 40)))
+        let accessory = NSTitlebarAccessoryViewController()
+        accessory.layoutAttribute = .leading
+        accessory.addChild(hosting)
+        accessory.view = hosting.view
+        window.addTitlebarAccessoryViewController(accessory)
+        brandController = hosting
+
+        brandSizeSink = windowState.$titleContext
+            .removeDuplicates()
+            .receive(on: RunLoop.main)
+            .sink { [weak self] context in
+                guard let self, let hosting = self.brandController else { return }
+                hosting.rootView = WindowBrandView(context: context) { [weak self] in self?.showOverview() }
+                // The unconstrained row measures its own text; changing a
+                // project name never leaves a fixed-width empty tail behind.
+                let size = hosting.sizeThatFits(in: NSSize(width: 220, height: 40))
+                if hosting.view.frame.size != size { hosting.view.setFrameSize(size) }
+            }
+    }
+
     /// The window's own toolbar, in the title bar: new, refresh, search. These
     /// used to sit at the foot of the sidebar with the search box inline
     /// above the list, which is where a web page keeps them; a Mac window
@@ -147,7 +178,7 @@ final class MainWindowController: NSObject, NSWindowDelegate, NSToolbarDelegate 
     }
 
     func toolbarDefaultItemIdentifiers(_ toolbar: NSToolbar) -> [NSToolbarItem.Identifier] {
-        [.loomBrand, .flexibleSpace, .loomSidebar, .loomQuickOpen, .loomNew, .loomRefresh, .loomSearch]
+        [.flexibleSpace, .loomSidebar, .loomQuickOpen, .loomNew, .loomRefresh, .loomSearch]
     }
 
     func toolbarAllowedItemIdentifiers(_ toolbar: NSToolbar) -> [NSToolbarItem.Identifier] {
@@ -160,22 +191,6 @@ final class MainWindowController: NSObject, NSWindowDelegate, NSToolbarDelegate 
         willBeInsertedIntoToolbar flag: Bool
     ) -> NSToolbarItem? {
         switch identifier {
-        case .loomBrand:
-            let item = NSToolbarItem(itemIdentifier: identifier)
-            item.label = "Loom"
-            item.toolTip = "Workspace overview (⇧⌘H)"
-            item.visibilityPriority = .high
-            let brand = NSHostingView(rootView: WindowBrandView(state: windowState) { [weak self] in
-                self?.showOverview()
-            })
-            brand.sizingOptions = []
-            brand.frame = NSRect(x: 0, y: 0, width: 184, height: 40)
-            NSLayoutConstraint.activate([
-                brand.widthAnchor.constraint(equalToConstant: 184),
-                brand.heightAnchor.constraint(equalToConstant: 40),
-            ])
-            item.view = brand
-            return item
         case .loomSidebar, .loomQuickOpen:
             let item = NSToolbarItem(itemIdentifier: identifier)
             let sidebar = identifier == .loomSidebar
@@ -241,7 +256,6 @@ final class MainWindowController: NSObject, NSWindowDelegate, NSToolbarDelegate 
 }
 
 private extension NSToolbarItem.Identifier {
-    static let loomBrand = NSToolbarItem.Identifier("loom.brand")
     static let loomSidebar = NSToolbarItem.Identifier("loom.sidebar")
     static let loomQuickOpen = NSToolbarItem.Identifier("loom.quickOpen")
     static let loomNew = NSToolbarItem.Identifier("loom.new")
@@ -250,7 +264,7 @@ private extension NSToolbarItem.Identifier {
 }
 
 private struct WindowBrandView: View {
-    @ObservedObject var state: MainWindowState
+    let context: String
     let onOpenWorkspace: () -> Void
 
     var body: some View {
@@ -262,17 +276,21 @@ private struct WindowBrandView: View {
                         .font(.system(size: 22, weight: .semibold, design: .rounded))
                         .tracking(-0.6)
                         .foregroundStyle(.primary)
-                    Text(state.titleContext)
+                    Text(context)
                         .font(.system(size: 10.5, weight: .medium))
                         .foregroundStyle(.secondary)
                         .lineLimit(1)
                         .truncationMode(.tail)
+                        .frame(maxWidth: 156, alignment: .leading)
                 }
             }
-            .frame(width: 184, height: 40, alignment: .leading)
+            .fixedSize(horizontal: true, vertical: false)
+            .padding(.horizontal, 8)
+            .frame(height: 40)
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
-        .accessibilityLabel("Loom, \(state.titleContext), open workspace")
+        .help("Workspace overview (⇧⌘H)")
+        .accessibilityLabel("Loom, \(context), open workspace")
     }
 }

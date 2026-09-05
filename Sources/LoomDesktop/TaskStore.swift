@@ -80,7 +80,8 @@ final class TaskStore: ObservableObject {
 
     /// Finishes acknowledged locally, so the blink stops immediately instead
     /// of waiting for the next poll round-trip (mirrors the iOS app).
-    private var acked: Set<String> = []
+    private var acked: [String: Double] = [:]
+    private var finishByTask: [String: Double] = [:]
     private var labelsFetchedAt: Date = .distantPast
     private var pollTask: Task<Void, Never>?
 
@@ -179,7 +180,8 @@ final class TaskStore: ObservableObject {
         pills = []
         projects = []
         tasksByProject = [:]
-        acked = []
+        acked = [:]
+        finishByTask = [:]
         labelsFetchedAt = .distantPast
         failureStreak = 0
         selection = nil
@@ -252,8 +254,10 @@ final class TaskStore: ObservableObject {
     }
 
     private func tick() async {
+        let serverID = activeServerID
         do {
             let snapshot = try await api.activity()
+            guard serverID == activeServerID else { return }
             let entries = snapshot.tasks ?? [:]
 
             let unknown = entries.keys.contains { labelFor(key: $0) == nil }
@@ -261,15 +265,14 @@ final class TaskStore: ObservableObject {
                 await refreshLabels(projectIds: Set(entries.values.map(\.project)))
             }
 
+            guard serverID == activeServerID else { return }
+            finishByTask = entries.mapValues { $0.finished_at ?? 0 }
             var next: [TaskPill] = []
             for (key, entry) in entries {
-                let finished = (entry.finished_at ?? 0) > 0 && !acked.contains(key)
+                let finished = (entry.finished_at ?? 0) > (acked[key] ?? 0)
                 let state: TaskPill.State = entry.working
                     ? .working
                     : (finished ? .finished : .idle)
-                // Working again supersedes a locally-acked finish; drop the
-                // ack so the next real finish blinks again.
-                if entry.working { acked.remove(key) }
                 let label = labelFor(key: key)
                 next.append(
                     TaskPill(
@@ -373,17 +376,23 @@ final class TaskStore: ObservableObject {
     }
 
     private func markSeen(_ key: String) {
-        guard let slash = key.firstIndex(of: "/") else { return }
-        // Already seen: nothing to stop blinking, and no need to tell the
-        // server twice. The ack is dropped again if the task starts working.
-        guard acked.insert(key).inserted else { return }
-        if let idx = pills.firstIndex(where: { $0.id == key }),
-           pills[idx].state == .finished {
-            pills[idx].state = .idle
-        }
+        guard let slash = key.firstIndex(of: "/"),
+              let finish = finishByTask[key], finish > (acked[key] ?? 0),
+              let idx = pills.firstIndex(where: { $0.id == key && $0.state == .finished }) else { return }
+        acked[key] = finish
+        pills[idx].state = .idle
         let projectId = String(key[..<slash])
         let slug = String(key[key.index(after: slash)...])
-        Task { try? await api.ackActivity(projectId: projectId, slug: slug) }
+        let serverID = activeServerID
+        Task {
+            guard serverID == activeServerID else { return }
+            do { try await api.ackActivity(projectId: projectId, slug: slug) }
+            catch {
+                guard serverID == activeServerID, acked[key] == finish else { return }
+                acked.removeValue(forKey: key)
+                refreshNow()
+            }
+        }
     }
 
     /// More than one project on the dock → prefix pills with the project so

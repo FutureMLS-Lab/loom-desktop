@@ -286,3 +286,24 @@ Noncommercial use only, under the
 [PolyForm Noncommercial 1.0.0](https://polyformproject.org/licenses/noncommercial/1.0.0)
 terms in [`LICENSE`](LICENSE). Commercial use needs a separate licence from
 FutureMLS-Lab.
+
+## Workspace overview and quick navigation
+
+The main window now opens to a workspace overview with running agents and unseen
+results. **All tasks / Working / To review** filter the sidebar; search also
+matches project names, agent names, and goals. Filtering reveals matching tasks
+even inside collapsed projects. To review indicates an unseen finish, not an
+approval request.
+
+Drag the sidebar divider to choose a width between 240 and 340 points. The toolbar
+has buttons for showing or hiding the sidebar, returning to the overview, and
+quick switching. The sidebar footer also exposes the overview, quick switch, and
+new task actions.
+
+- **⌘K** or **⌘P**: search tasks across projects; ↑/↓ to navigate, Return to open.
+- **⌃⌘S**: show or hide the sidebar (visibility is remembered).
+- **⇧⌘H**: return to the workspace overview.
+
+Finish acknowledgments track each completion timestamp. A task that finishes
+again between polls still becomes visible, and a failed acknowledgment is retried.
+The development mock allows the local Expo preview on port 18081 to connect.

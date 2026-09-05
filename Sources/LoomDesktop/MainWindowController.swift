@@ -13,6 +13,8 @@ final class MainWindowState: ObservableObject {
     /// and does not have to reset anything afterwards.
     @Published var newTaskRequests = 0
     @Published var addProjectRequests = 0
+    @Published var toggleSidebarRequests = 0
+    @Published var quickOpenRequests = 0
 }
 
 /// The main window — the project/task browser. Created on demand and kept
@@ -138,7 +140,7 @@ final class MainWindowController: NSObject, NSWindowDelegate, NSToolbarDelegate 
     }
 
     func toolbarDefaultItemIdentifiers(_ toolbar: NSToolbar) -> [NSToolbarItem.Identifier] {
-        [.flexibleSpace, .loomNew, .loomRefresh, .loomSearch]
+        [.loomSidebar, .loomHome, .flexibleSpace, .loomQuickOpen, .loomNew, .loomRefresh, .loomSearch]
     }
 
     func toolbarAllowedItemIdentifiers(_ toolbar: NSToolbar) -> [NSToolbarItem.Identifier] {
@@ -151,6 +153,17 @@ final class MainWindowController: NSObject, NSWindowDelegate, NSToolbarDelegate 
         willBeInsertedIntoToolbar flag: Bool
     ) -> NSToolbarItem? {
         switch identifier {
+        case .loomSidebar, .loomHome, .loomQuickOpen:
+            let item = NSToolbarItem(itemIdentifier: identifier)
+            let sidebar = identifier == .loomSidebar
+            let home = identifier == .loomHome
+            item.label = sidebar ? "Toggle Sidebar" : home ? "Workspace" : "Quick Switch"
+            item.image = NSImage(systemSymbolName: sidebar ? "sidebar.left" : home ? "square.grid.2x2" : "command", accessibilityDescription: item.label)
+            item.toolTip = sidebar ? "Toggle sidebar (⌃⌘S)" : home ? "Workspace overview (⇧⌘H)" : "Quick switch tasks (⌘K or ⌘P)"
+            item.target = self
+            item.action = sidebar ? #selector(toggleSidebar) : home ? #selector(showOverview) : #selector(requestQuickOpen)
+            item.isBordered = true
+            return item
         case .loomNew:
             let item = NSMenuToolbarItem(itemIdentifier: identifier)
             item.image = NSImage(systemSymbolName: "plus", accessibilityDescription: "New")
@@ -191,6 +204,9 @@ final class MainWindowController: NSObject, NSWindowDelegate, NSToolbarDelegate 
         }
     }
 
+    @objc private func toggleSidebar() { windowState.toggleSidebarRequests += 1 }
+    @objc private func showOverview() { store?.selection = nil }
+    @objc private func requestQuickOpen() { windowState.quickOpenRequests += 1 }
     @objc private func requestNewTask() { windowState.newTaskRequests += 1 }
     @objc private func requestAddProject() { windowState.addProjectRequests += 1 }
     @objc private func refresh() { store?.refreshNow() }
@@ -203,6 +219,9 @@ final class MainWindowController: NSObject, NSWindowDelegate, NSToolbarDelegate 
 }
 
 private extension NSToolbarItem.Identifier {
+    static let loomSidebar = NSToolbarItem.Identifier("loom.sidebar")
+    static let loomHome = NSToolbarItem.Identifier("loom.home")
+    static let loomQuickOpen = NSToolbarItem.Identifier("loom.quickOpen")
     static let loomNew = NSToolbarItem.Identifier("loom.new")
     static let loomRefresh = NSToolbarItem.Identifier("loom.refresh")
     static let loomSearch = NSToolbarItem.Identifier("loom.search")

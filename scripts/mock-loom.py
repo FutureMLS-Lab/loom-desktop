@@ -172,6 +172,19 @@ def schedule_reply(key, text):
 
 
 class Handler(BaseHTTPRequestHandler):
+    def end_headers(self):
+        origin = self.headers.get("Origin", "")
+        if origin in ("http://localhost:18081", "http://127.0.0.1:18081"):
+            self.send_header("Access-Control-Allow-Origin", origin)
+            self.send_header("Access-Control-Allow-Headers", "Content-Type, Authorization")
+            self.send_header("Access-Control-Allow-Methods", "GET, POST, DELETE, OPTIONS")
+            self.send_header("Vary", "Origin")
+        super().end_headers()
+
+    def do_OPTIONS(self):
+        self.send_response(204)
+        self.end_headers()
+
     def _json(self, payload, status=200):
         body = json.dumps(payload).encode()
         self.send_response(status)
@@ -191,6 +204,15 @@ class Handler(BaseHTTPRequestHandler):
         parsed = urlparse(self.path)
         path = parsed.path
         with LOCK:
+            if path == "/health":
+                return self._json({"ok": True})
+            if path == "/api/tmux/capture":
+                target = parse_qs(parsed.query).get("target", [""])[0]
+                working = any(
+                    t.get("tmux_interview_target") == target and feed_working(f"{project}/{t['slug']}")
+                    for project, tasks in TASKS.items() for t in tasks
+                )
+                return self._json({"ok": True, "text": "Working · esc to interrupt" if working else "Ready for a follow-up."})
             if path == "/api/projects":
                 return self._json({"projects": PROJECTS})
             if path == "/api/tasks":
@@ -199,6 +221,13 @@ class Handler(BaseHTTPRequestHandler):
             if path == "/api/activity":
                 return self._json({"ok": True, "tasks": ACTIVITY})
             parts = path.strip("/").split("/")
+            if len(parts) == 4 and parts[:2] == ["api", "tasks"] and parts[3] == "claude-sessions":
+                key, project = self._key(parsed, parts[2])
+                meta = next((t for t in TASKS.get(project, []) if t["slug"] == parts[2]), {})
+                return self._json({"sessions": [], "tracked": [], "tmux_alive": feed_online(key),
+                                   "agent_running": feed_online(key), "tmux_target": meta.get("tmux_interview_target", "")})
+            if len(parts) == 4 and parts[:2] == ["api", "tasks"] and parts[3] == "diff":
+                return self._json({"slug": parts[2], "worktrees": []})
             # /api/tasks/<slug>/files[?path=PLAN.md] — one directory, or one file
             if len(parts) == 4 and parts[:2] == ["api", "tasks"] and parts[3] == "files":
                 path = parse_qs(parsed.query).get("path", [""])[0]
@@ -232,6 +261,7 @@ class Handler(BaseHTTPRequestHandler):
                     return self._json({"error": "not found"}, 404)
                 return self._json({
                     "meta": meta,
+                    "templates": {"PLAN.md": PLAN_MD},
                     "claude": {
                         "tmux_target": meta.get("tmux_interview_target", ""),
                         "tmux_alive": feed_online(key),

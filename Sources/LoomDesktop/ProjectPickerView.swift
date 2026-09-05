@@ -14,6 +14,8 @@ struct ProjectPickerView: View {
     @StateObject private var sessions = SessionCache()
     @State private var projectDropTarget: String?
     @State private var collapsed: Set<String> = []
+    @State private var activityFilter = WorkspaceFilter.all
+    @AppStorage("workspaceSidebarVisible") private var sidebarVisible = true
 
     /// Selection lives on the store so a dock pill and the sidebar drive this
     /// one view instead of opening windows.
@@ -37,15 +39,16 @@ struct ProjectPickerView: View {
     @State private var deleteTarget: (projectId: String, meta: LoomTaskMeta)?
 
     var body: some View {
-        HStack(spacing: 0) {
-            sidebar
-            Divider()
+        HSplitView {
+            if sidebarVisible { sidebar }
             detail
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .frame(minWidth: 540, maxWidth: .infinity, maxHeight: .infinity)
         }
         .background(LoomColors.bgBase)
         .frame(minWidth: 940, minHeight: 640)
         .onAppear { store.refreshNow() }
+        .onChange(of: windowState.toggleSidebarRequests) { _, _ in sidebarVisible.toggle() }
+        .onChange(of: windowState.quickOpenRequests) { _, _ in quickOpen = true }
         .onChange(of: windowState.newTaskRequests) { _, _ in newTask = true }
         .onChange(of: windowState.addProjectRequests) { _, _ in addProject = true }
         .background(
@@ -56,6 +59,12 @@ struct ProjectPickerView: View {
                     .keyboardShortcut("p", modifiers: .command)
                 Button("New Task…") { newTask = true }
                     .keyboardShortcut("n", modifiers: .command)
+                Button("Quick Switch…") { quickOpen = true }
+                    .keyboardShortcut("k", modifiers: .command)
+                Button("Toggle Sidebar") { sidebarVisible.toggle() }
+                    .keyboardShortcut("s", modifiers: [.command, .control])
+                Button("Workspace Overview") { store.selection = nil }
+                    .keyboardShortcut("h", modifiers: [.command, .shift])
             }
             .opacity(0)
         )
@@ -281,7 +290,7 @@ struct ProjectPickerView: View {
     private var serverSubtitle: String {
         switch store.connection {
         case .online:
-            let count = store.pills.count
+            let count = store.tasksByProject.values.reduce(0) { $0 + $1.count }
             return count == 1 ? "1 task" : "\(count) tasks"
         case .connecting: return "Connecting…"
         case .offline: return "Can't reach this Loom"
@@ -296,17 +305,53 @@ struct ProjectPickerView: View {
             store.pills.map { ($0.id, $0.state) },
             uniquingKeysWith: { first, _ in first }
         )
+        let visibleProjects = projects.filter {
+            (search.isEmpty && activityFilter == .all) || !filteredTasks(for: $0.id, states: stateByTask).isEmpty
+        }
         return VStack(spacing: 0) {
             serverBar
+            HStack(spacing: 5) {
+                ForEach(WorkspaceFilter.allCases) { filter in
+                    let count = filter == .all
+                        ? store.tasksByProject.values.reduce(0) { $0 + $1.count }
+                        : stateByTask.values.filter { filter.matches($0) }.count
+                    Button { activityFilter = filter } label: {
+                        VStack(alignment: .leading, spacing: 5) {
+                            HStack(spacing: 5) {
+                                Image(systemName: filter.symbol).font(.system(size: 10))
+                                Text("\(count)").font(.system(size: 18, weight: .semibold, design: .rounded)).monospacedDigit()
+                            }
+                            .foregroundStyle(filter.color)
+                            Text(filter.rawValue).font(.system(size: 10.5, weight: .medium)).foregroundStyle(.secondary)
+                        }
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .padding(9)
+                        .background(activityFilter == filter ? LoomColors.bgElev1 : Color.primary.opacity(0.025), in: LoomShape.field)
+                        .overlay(LoomShape.field.strokeBorder(activityFilter == filter ? LoomColors.accent.opacity(0.3) : Color.clear))
+                        .contentShape(LoomShape.field)
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel("\(filter.rawValue), \(count) tasks")
+                    .accessibilityAddTraits(activityFilter == filter ? [.isSelected] : [])
+                    .help(filter == .finished ? "Finished tasks you haven't opened yet" : "Show \(filter.rawValue.lowercased())")
+                }
+            }
+            .padding(.horizontal, 12)
+            .padding(.vertical, 10)
 
             ScrollView {
-                LazyVStack(alignment: .leading, spacing: 18) {
-                    ForEach(filteredProjects, id: \.id) { project in
+                // Project sections have variable heights as titles wrap and
+                // groups collapse. A lazy stack inside the resizable split
+                // view can continually revise its estimates while scrolling,
+                // trapping the main thread in layout. Measure these small
+                // sidebar sections eagerly so scrolling uses stable heights.
+                VStack(alignment: .leading, spacing: 18) {
+                    ForEach(visibleProjects, id: \.id) { project in
                         ProjectCard(
                             project: project,
-                            tasks: filteredTasks(for: project.id),
+                            tasks: filteredTasks(for: project.id, states: stateByTask),
                             counts: store.projectCounts(for: project.id),
-                            collapsed: collapsed.contains(project.id),
+                            collapsed: collapsed.contains(project.id) && search.isEmpty && activityFilter == .all,
                             selection: selection,
                             stateFor: { slug in stateByTask["\(project.id)/\(slug)"] },
                             onToggle: {
@@ -354,40 +399,61 @@ struct ProjectPickerView: View {
                             }
                         }
                     }
-                    if filteredProjects.isEmpty {
-                        Text(emptyListMessage)
-                            .font(.system(size: 13))
-                            .foregroundColor(.secondary)
-                            .frame(maxWidth: .infinity)
-                            .padding(.top, 24)
+                    if visibleProjects.isEmpty {
+                        VStack(spacing: 8) {
+                            Image(systemName: activityFilter == .finished ? "checkmark.circle" : "magnifyingglass")
+                                .font(.system(size: 22)).foregroundStyle(.secondary)
+                            Text(emptyListMessage).font(.system(size: 13))
+                            if !projects.isEmpty {
+                                Button("Show all tasks") { activityFilter = .all; windowState.filter = "" }
+                                    .font(.system(size: 12)).buttonStyle(.link)
+                            }
+                        }
+                        .frame(maxWidth: .infinity).padding(.vertical, 24)
                     }
                 }
                 .padding(.horizontal, 12)
                 .padding(.top, 6)
                 .padding(.bottom, 16)
             }
+            Divider().padding(.horizontal, 12)
+            VStack(spacing: 2) {
+                sidebarAction("Workspace", symbol: "square.grid.2x2", shortcut: "⇧⌘H") { store.selection = nil }
+                sidebarAction("Quick switch", symbol: "magnifyingglass", shortcut: "⌘K") { quickOpen = true }
+                sidebarAction("New task", symbol: "plus", shortcut: "⌘N") { newTask = true }
+            }
+            .padding(10)
         }
-        .frame(width: 300)
+        .frame(minWidth: 240, idealWidth: 300, maxWidth: 340)
         // The system's sidebar material — translucent, the desktop showing
         // through, dimming with the window — rather than a painted wash. It
         // is the one surface that says "Mac" before anything on it is read.
         .background(SidebarMaterial())
     }
 
-    private var search: String { windowState.filter }
-
-    private var filteredProjects: [LoomProject] {
-        guard !search.isEmpty else { return projects }
-        return projects.filter { !filteredTasks(for: $0.id).isEmpty }
+    private func sidebarAction(_ title: String, symbol: String, shortcut: String, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            HStack {
+                Label(title, systemImage: symbol).font(.system(size: 12, weight: .medium))
+                Spacer()
+                Text(shortcut).font(.system(size: 10)).foregroundStyle(.tertiary)
+            }
+            .foregroundStyle(.secondary)
+            .padding(.horizontal, 8).padding(.vertical, 7)
+            .contentShape(LoomShape.control)
+        }
+        .buttonStyle(.plain)
     }
 
-    private func filteredTasks(for projectId: String) -> [LoomTaskMeta] {
-        let all = store.tasksByProject[projectId] ?? []
-        guard !search.isEmpty else { return all }
-        let needle = search.lowercased()
-        return all.filter {
-            ($0.title ?? "").lowercased().contains(needle)
-                || $0.slug.lowercased().contains(needle)
+    private var search: String { windowState.filter.trimmingCharacters(in: .whitespacesAndNewlines) }
+
+    private func filteredTasks(for projectId: String, states: [String: TaskPill.State]) -> [LoomTaskMeta] {
+        let projectName = projects.first { $0.id == projectId }?.label ?? ""
+        let terms = search.lowercased().split(whereSeparator: { $0.isWhitespace })
+        return (store.tasksByProject[projectId] ?? []).filter { task in
+            let text = "\(projectName) \(task.title ?? "") \(task.slug) \(task.general_goal ?? "") \(task.agent ?? "")".lowercased()
+            return activityFilter.matches(states["\(projectId)/\(task.slug)"])
+                && terms.allSatisfy { text.contains($0) }
         }
     }
 
@@ -395,7 +461,7 @@ struct ProjectPickerView: View {
     /// yet" for all of them tells someone whose gateway is down that their
     /// work is gone.
     private var emptyListMessage: String {
-        guard store.projects.isEmpty else { return "No matches" }
+        guard store.projects.isEmpty else { return activityFilter == .finished && search.isEmpty ? "You’re all caught up" : "No matching tasks" }
         switch store.connection {
         case .offline: return "Can't reach Loom"
         case .connecting: return "Connecting…"
@@ -430,17 +496,8 @@ struct ProjectPickerView: View {
                     )
                 )
                 .id(selection)
-            } else if projects.isEmpty {
-                EmptyDetail(
-                    title: "No projects registered",
-                    detail: "Add one with + at the bottom of the sidebar — an "
-                        + "existing folder on the Loom host, a new one, or a repo to clone."
-                )
             } else {
-                EmptyDetail(
-                    title: "Select a task",
-                    detail: "Pick a task on the left to see its status and open it."
-                )
+                WorkspaceOverview(store: store, onNewTask: { newTask = true }, onAddProject: { addProject = true }, onQuickOpen: { quickOpen = true })
             }
         }
     }

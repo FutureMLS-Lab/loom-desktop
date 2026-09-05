@@ -102,7 +102,7 @@ struct QuickOpenView: View {
                 Image(systemName: "magnifyingglass")
                     .font(.system(size: 15))
                     .foregroundColor(.secondary)
-                TextField("Open task…", text: $query)
+                TextField("Search tasks or projects…", text: $query)
                     .textFieldStyle(.plain)
                     .font(.system(size: 17))
                     .focused($searchFocused)
@@ -118,9 +118,12 @@ struct QuickOpenView: View {
                 ScrollView {
                     LazyVStack(spacing: 1) {
                         ForEach(Array(matches.enumerated()), id: \.element.id) { index, match in
-                            row(match, active: index == highlighted)
-                                .id(match.id)
-                                .onTapGesture { open(match) }
+                            Button { open(match) } label: {
+                                row(match, active: index == highlighted)
+                            }
+                            .buttonStyle(.plain)
+                            .accessibilityLabel("\(match.meta.title ?? match.meta.slug), \(match.project.label)")
+                            .id(match.id)
                         }
                         if matches.isEmpty {
                             Text("No matching task")
@@ -138,7 +141,17 @@ struct QuickOpenView: View {
                 }
             }
         }
-        .frame(width: 560, height: 420)
+        .safeAreaInset(edge: .bottom, spacing: 0) {
+            HStack {
+                Text("↑ ↓ navigate"); Text("↵ open")
+                Spacer()
+                Text("esc close")
+            }
+            .font(.system(size: 11)).foregroundStyle(.secondary)
+            .padding(.horizontal, 16).padding(.vertical, 10)
+            .background(LoomColors.bgElev2)
+        }
+        .frame(width: 560, height: 440)
         .background(LoomColors.bgElev1)
         .onAppear { searchFocused = true }
         .onExitCommand(perform: onDismiss)
@@ -147,7 +160,7 @@ struct QuickOpenView: View {
             // text field, which keeps typing and navigating on one keyboard.
             KeyCaptureView(
                 onUp: { highlighted = max(0, highlighted - 1) },
-                onDown: { highlighted = min(matches.count - 1, highlighted + 1) }
+                onDown: { highlighted = max(0, min(matches.count - 1, highlighted + 1)) }
             )
         )
     }

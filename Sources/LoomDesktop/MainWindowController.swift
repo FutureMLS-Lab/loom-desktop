@@ -143,7 +143,7 @@ final class MainWindowController: NSObject, NSWindowDelegate, NSToolbarDelegate 
             self?.showOverview()
         })
         hosting.sizingOptions = []
-        hosting.view.setFrameSize(hosting.sizeThatFits(in: NSSize(width: 220, height: 40)))
+        hosting.view.setFrameSize(hosting.sizeThatFits(in: NSSize(width: 220, height: WindowBrandView.height)))
         let accessory = NSTitlebarAccessoryViewController()
         accessory.layoutAttribute = .leading
         accessory.addChild(hosting)
@@ -159,7 +159,7 @@ final class MainWindowController: NSObject, NSWindowDelegate, NSToolbarDelegate 
                 hosting.rootView = WindowBrandView(context: context) { [weak self] in self?.showOverview() }
                 // The unconstrained row measures its own text; changing a
                 // project name never leaves a fixed-width empty tail behind.
-                let size = hosting.sizeThatFits(in: NSSize(width: 220, height: 40))
+                let size = hosting.sizeThatFits(in: NSSize(width: 220, height: WindowBrandView.height))
                 if hosting.view.frame.size != size { hosting.view.setFrameSize(size) }
             }
     }
@@ -264,6 +264,9 @@ private extension NSToolbarItem.Identifier {
 }
 
 private struct WindowBrandView: View {
+    // Leading accessories sit at the top of the unified title bar. Matching
+    // its height centers the whole mark and caption beside the window buttons.
+    static let height: CGFloat = 52
     let context: String
     let onOpenWorkspace: () -> Void
 
@@ -286,7 +289,7 @@ private struct WindowBrandView: View {
             }
             .fixedSize(horizontal: true, vertical: false)
             .padding(.horizontal, 8)
-            .frame(height: 40)
+            .frame(height: Self.height)
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)

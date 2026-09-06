@@ -3,7 +3,7 @@ import SwiftUI
 
 /// The Files tab: the whole task directory as a small editor. A folder tree on
 /// the left, folders before files as the server lists them, and the selected
-/// file's source on the right; `PLAN.md` is the one opened on arrival. Loom
+/// file on the right. Markdown can be read or edited; `PLAN.md` opens on arrival. Loom
 /// writes back only `PLAN.md` and `WIKI.md`, so everything else is read-only.
 struct PlanView: View {
     @ObservedObject var session: ChatSession
@@ -29,6 +29,7 @@ struct PlanView: View {
     /// Bumped when the editor must accept an external buffer (load / file switch).
     @State private var editorRevision = 0
     @State private var autosaveTask: Task<Void, Never>?
+    @AppStorage("markdownFilePreview") private var showPreview = true
 
     /// What the gateway's template API accepts, and only at the task root: a
     /// `PLAN.md` further down inside a worktree is a different file, and saving
@@ -255,6 +256,15 @@ struct PlanView: View {
                         .foregroundColor(.secondary)
                 }
                 Spacer()
+                if selected.lowercased().hasSuffix(".md") {
+                    Picker("Markdown display", selection: $showPreview) {
+                        Text("Read").tag(true)
+                        Text("Source").tag(false)
+                    }
+                    .pickerStyle(.segmented)
+                    .frame(width: 125)
+                    .help("Read with collapsible headings, or edit the Markdown source")
+                }
                 if !status.isEmpty {
                     Text(status)
                         .font(.system(size: 11.5))
@@ -302,6 +312,13 @@ struct PlanView: View {
                     symbol: "doc.text",
                     title: "No file open",
                     detail: "Pick one from the tree on the left."
+                )
+            } else if showPreview && selected.lowercased().hasSuffix(".md") {
+                MarkdownPreview(
+                    markdown: draft,
+                    documentID: "\(session.id)/\(selected)",
+                    assetProject: session.projectId,
+                    assetTask: session.slug
                 )
             } else {
                 PlainTextEditor(

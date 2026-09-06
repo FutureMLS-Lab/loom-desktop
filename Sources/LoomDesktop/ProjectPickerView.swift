@@ -434,7 +434,7 @@ struct ProjectPickerView: View {
     private func sidebarAction(_ title: String, symbol: String, shortcut: String, action: @escaping () -> Void) -> some View {
         Button(action: action) {
             HStack {
-                Label(title, systemImage: symbol).font(.system(size: 12, weight: .medium))
+                Label(title, systemImage: symbol).font(.system(size: 13, weight: .medium))
                 Spacer()
                 Text(shortcut).font(.system(size: 10)).foregroundStyle(.tertiary)
             }
@@ -537,9 +537,8 @@ private struct ProjectCard: View {
                         .font(.system(size: 9, weight: .bold))
                         .foregroundColor(.secondary)
                         .rotationEffect(.degrees(collapsed ? 0 : 90))
-                    Text(project.label.uppercased())
-                        .font(.system(size: 11, weight: .semibold))
-                        .tracking(0.6)
+                    Text(project.label)
+                        .font(.system(size: 12, weight: .semibold))
                         .foregroundColor(.secondary)
                         .lineLimit(1)
                     Spacer(minLength: 4)
@@ -649,7 +648,8 @@ private struct SidebarTaskRow: View {
                 // one row you can read costs you the ones you were scanning
                 // for.
                 Text(meta.title ?? meta.slug)
-                    .font(.system(size: 14))
+                    .font(.system(size: 14, weight: selected ? .medium : .regular))
+                    .lineSpacing(2)
                     .foregroundColor(selected ? .white : .primary)
                     .multilineTextAlignment(.leading)
                     .lineLimit(2)

@@ -309,6 +309,20 @@ its width follows the text, with long project names truncated to keep controls v
 - **⌃⌘S**: show or hide the sidebar (visibility is remembered).
 - **⇧⌘H**: return to the workspace overview.
 
+Rendered Markdown has a disclosure arrow beside each heading (H1–H6).
+Click to fold its section; Option-click includes nested sections. **Collapse all**
+keeps a single document title open so its chapters remain visible; **Expand all**
+restores everything. Search reveals folded matches. Fold choices survive refreshes
+and task switches during the app session, independently for each server/document.
+The Files tab offers **Read / Source** for Markdown, including PLAN.md and WIKI.md.
+Reading and folding never modify the source file.
+
+The compact plan uses 14pt body text with more line spacing. Preview updates are
+coalesced only when the source changes, so unrelated view updates cannot postpone
+the render. Run `swift scripts/test-markdown-preview.swift` from the repository
+root to check folding, search, refreshes and large plans in WebKit without opening
+a window or connecting to a gateway.
+
 Finish acknowledgments track each completion timestamp. A task that finishes
 again between polls still becomes visible, and a failed acknowledgment is retried.
 The development mock allows the local Expo preview on port 18081 to connect.

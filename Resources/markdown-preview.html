@@ -55,8 +55,8 @@
     padding: 28px 36px 64px;
   }
   #content > :first-child { margin-top: 0; }
-  h1, h2, h3, h4 {
-    line-height: 1.25;
+  h1, h2, h3, h4, h5, h6 {
+    line-height: 1.35;
     font-weight: 650;
     letter-spacing: -0.015em;
     margin: 1.6em 0 0.55em;
@@ -67,6 +67,7 @@
   h1 { font-size: 1.85em; border-bottom: 1px solid var(--rule); padding-bottom: 0.35em; }
   h2 { font-size: 1.4em; border-bottom: 1px solid var(--rule); padding-bottom: 0.25em; }
   h3 { font-size: 1.15em; }
+  h4, h5, h6 { font-size: 1em; }
   p, ul, ol, blockquote, pre, table { margin: 0.85em 0; }
   ul, ol { padding-left: 1.4em; }
   li { margin: 0.25em 0; }
@@ -133,8 +134,8 @@
   /* Leading stays generous even here. Chinese sets a solid block of glyphs
      with no ascenders or descenders to open the line up, so the 1.55 that
      reads fine in English closed up into a wall. */
-  body.compact { font-size: 13px; line-height: 1.68; }
-  body.compact #wrap { max-width: none; padding: 14px 20px 30px; }
+  body.compact { font-size: 14px; line-height: 1.72; }
+  body.compact #wrap { max-width: none; padding: 12px 26px 30px; }
   body.compact h1 { font-size: 1.5em; }
   body.compact h2 { font-size: 1.22em; }
   body.compact h3 { font-size: 1.05em; }
@@ -173,6 +174,38 @@
   #findCount { color: var(--muted); min-width: 34px; text-align: right; }
   mark.loom-hit { background: var(--hit); color: inherit; padding: 0; }
   mark.loom-hit.current { background: var(--hit-current); color: var(--hit-current-ink); }
+  /* Fold controls are part of the rendered document, leaving heading text
+     selectable and its links usable. No animation or height-measure loop. */
+  #reading-tools {
+    display: flex; align-items: center; gap: 4px;
+    margin: 0 0 14px; padding-bottom: 8px; border-bottom: 1px solid var(--rule);
+    color: var(--muted); font-size: 11px; line-height: 1.4;
+  }
+  #reading-tools[hidden] { display: none; }
+  #reading-tools span { flex: 1; }
+  #reading-tools button {
+    font: inherit; color: var(--muted); background: transparent; border: 0;
+    border-radius: 5px; padding: 5px 7px; cursor: pointer;
+  }
+  #reading-tools button:hover { background: var(--code-bg); color: var(--ink); }
+  button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  .loom-section { display: flow-root; }
+  .loom-section > :is(h1,h2,h3,h4,h5,h6) { position: relative; }
+  #content > .loom-section:first-child > :first-child { margin-top: 0; }
+  .section-body[hidden] { display: none; }
+  .fold-toggle {
+    position: absolute; right: calc(100% + 3px); top: 0.12em;
+    width: 20px; height: 24px; padding: 0; border: 0; border-radius: 4px;
+    background: transparent; color: var(--muted); cursor: pointer;
+    display: inline-flex; align-items: center; justify-content: center;
+  }
+  .fold-toggle::before {
+    content: ''; width: 5px; height: 5px; border-right: 1.5px solid currentColor;
+    border-bottom: 1.5px solid currentColor; transform: translateY(-2px) rotate(45deg);
+  }
+  .fold-toggle[aria-expanded="false"]::before { transform: rotate(-45deg); }
+  .fold-toggle:hover { color: var(--accent); background: var(--code-bg); }
+  .loom-section.collapsed > :first-child { color: var(--muted); margin-top: 0.8em; margin-bottom: 0.35em; }
 </style>
 </head>
 <body>
@@ -183,7 +216,14 @@
     <button id="findNext" title="Next (⌘G)">›</button>
     <button id="findDone" title="Done (esc)">Done</button>
   </div>
-  <div id="wrap"><div id="content"><div id="empty">Nothing to preview</div></div></div>
+  <div id="wrap">
+    <nav id="reading-tools" aria-label="Document sections" hidden>
+      <span>Sections</span>
+      <button id="fold-all" type="button">Collapse all</button>
+      <button id="unfold-all" type="button">Expand all</button>
+    </nav>
+    <div id="content"><div id="empty">Nothing to preview</div></div>
+  </div>
   <!--marked-->
   <script>
     function escapeHtml(s) {
@@ -201,11 +241,13 @@
       document.body.classList.toggle('autosize', autosize);
       reportHeight();
     };
+    var heightFrame = 0;
     function reportHeight() {
-      if (!autosize) return;
+      if (!autosize || heightFrame) return;
       // Measure after layout settles, or the first reading is of a
       // half-built document.
-      requestAnimationFrame(function () {
+      heightFrame = requestAnimationFrame(function () {
+        heightFrame = 0;
         // The content's own box, not the document's: scrollHeight is
         // floored at the viewport, so once the view had been sized to
         // a long plan it could never report a shorter one again.
@@ -217,6 +259,94 @@
       });
     }
     window.addEventListener('resize', reportHeight);
+
+    var foldDocument = '', collapsedKeys = new Set(), sections = [];
+    function postFolds() {
+      try {
+        window.webkit.messageHandlers.preview.postMessage({
+          type: 'folds', document: foldDocument, collapsed: Array.from(collapsedKeys)
+        });
+      } catch (e) {}
+      reportHeight();
+    }
+    function setFold(section, collapsed) {
+      var key = section.dataset.foldKey;
+      var button = section.firstElementChild.querySelector('.fold-toggle');
+      section.classList.toggle('collapsed', collapsed);
+      section.lastElementChild.hidden = collapsed;
+      button.setAttribute('aria-expanded', String(!collapsed));
+      button.setAttribute('aria-label', (collapsed ? 'Expand ' : 'Collapse ') + section.dataset.title);
+      button.title = (collapsed ? 'Expand section' : 'Collapse section') + ' · Option-click includes subsections';
+      if (collapsed) collapsedKeys.add(key); else collapsedKeys.delete(key);
+    }
+    function buildSections() {
+      var root = document.getElementById('content');
+      var nodes = Array.from(root.childNodes), stack = [], counts = new Map();
+      sections = [];
+      nodes.forEach(function (node) {
+        var heading = node.nodeType === 1 && /^H[1-6]$/.test(node.tagName);
+        if (heading) {
+          var level = Number(node.tagName.slice(1));
+          while (stack.length && stack[stack.length - 1].level >= level) stack.pop();
+          var parent = stack.length ? stack[stack.length - 1] : null;
+          var title = node.textContent.trim();
+          node.setAttribute('aria-label', title);
+          var path = (parent ? parent.key : '') + '/' + level + ':' + encodeURIComponent(title);
+          var occurrence = (counts.get(path) || 0) + 1;
+          counts.set(path, occurrence);
+          var key = path + ':' + occurrence;
+          var section = document.createElement('section');
+          section.className = 'loom-section';
+          section.dataset.foldKey = key;
+          section.dataset.title = title;
+          var body = document.createElement('div');
+          body.className = 'section-body';
+          body.id = 'loom-section-body-' + sections.length;
+          var toggle = document.createElement('button');
+          toggle.type = 'button'; toggle.className = 'fold-toggle';
+          toggle.setAttribute('aria-controls', body.id);
+          node.prepend(toggle);
+          section.append(node, body);
+          (parent ? parent.body : root).append(section);
+          sections.push(section);
+          stack.push({ level: level, key: key, body: body });
+          setFold(section, collapsedKeys.has(key));
+        } else if (stack.length) {
+          stack[stack.length - 1].body.append(node);
+        }
+      });
+      var current = new Set(sections.map(function (s) { return s.dataset.foldKey; }));
+      collapsedKeys = new Set(Array.from(collapsedKeys).filter(function (key) { return current.has(key); }));
+      document.getElementById('reading-tools').hidden = sections.length === 0;
+    }
+    document.addEventListener('click', function (event) {
+      var toggle = event.target.closest('.fold-toggle');
+      if (toggle) {
+        var section = toggle.closest('.loom-section');
+        var collapse = toggle.getAttribute('aria-expanded') === 'true';
+        setFold(section, collapse);
+        if (event.altKey) section.querySelectorAll('.loom-section').forEach(function (child) { setFold(child, collapse); });
+        postFolds();
+      } else if (event.target.id === 'fold-all' || event.target.id === 'unfold-all') {
+        var collapse = event.target.id === 'fold-all';
+        // Keep a sole document-title container open so Collapse all exposes
+        // its chapter headings, rather than hiding the entire plan.
+        var roots = document.querySelectorAll('#content > .loom-section');
+        sections.forEach(function (section) {
+          var title = roots.length === 1 && section === roots[0] && section.querySelector('.loom-section');
+          setFold(section, collapse && !title);
+        });
+        postFolds();
+      }
+    });
+    function revealSection(node) {
+      var section = node.closest('.loom-section'), changed = false;
+      while (section) {
+        if (section.classList.contains('collapsed')) { setFold(section, false); changed = true; }
+        section = section.parentElement.closest('.loom-section');
+      }
+      if (changed) postFolds();
+    }
 
     // Figures. A relative path in the document means "next to this
     // file on the server", which the page cannot read for itself, so
@@ -249,26 +379,28 @@
     // field to type into, so the whole thing lives in the page: wrap
     // matches in <mark>, step through them, and put the document back
     // exactly as it was on the way out.
-    var findHits = [], findAt = -1, findClean = null, findActiveQuery = '';
+    var findHits = [], findAt = -1, findActiveQuery = '';
     function findClear() {
       var root = document.getElementById('content');
-      if (findClean !== null && root) { root.innerHTML = findClean; }
-      findClean = null; findHits = []; findAt = -1; findActiveQuery = '';
+      root.querySelectorAll('mark.loom-hit').forEach(function (mark) {
+        mark.replaceWith(document.createTextNode(mark.textContent));
+      });
+      root.normalize();
+      findHits = []; findAt = -1; findActiveQuery = '';
     }
     // `quiet` re-highlights after the document was rewritten under an open
     // search, without pulling the reader back to the current match.
     function findRun(query, quiet) {
       var root = document.getElementById('content');
       if (!root) return;
-      if (findClean === null) { findClean = root.innerHTML; }
-      else { root.innerHTML = findClean; }
-      findHits = []; findAt = -1;
+      findClear();
       findActiveQuery = String(query || '');
       var needle = findActiveQuery.toLowerCase();
       if (!needle) { findPaint(); return; }
       var walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT, null);
       var targets = [], node;
       while ((node = walker.nextNode())) {
+        if (node.parentElement.closest('button, script, style')) continue;
         if (node.nodeValue.toLowerCase().indexOf(needle) !== -1) { targets.push(node); }
       }
       targets.forEach(function (text) {
@@ -301,8 +433,9 @@
       // Sized to its content, this page cannot scroll itself: the view
       // around it does, and only the host can move that. So the match is
       // reported rather than scrolled to, and the host brings it into view.
-      if (scroll && findAt >= 0 && findHits[findAt] && !autosize) {
-        findHits[findAt].scrollIntoView({ block: 'center' });
+      if (scroll && findAt >= 0 && findHits[findAt]) {
+        revealSection(findHits[findAt]);
+        if (!autosize) findHits[findAt].scrollIntoView({ block: 'center' });
       }
       postFind(!!scroll);
     }
@@ -359,16 +492,21 @@
       document.getElementById('findPrev').onclick = function () { window.__loomFindStep(-1); };
       document.getElementById('findDone').onclick = function () { window.__loomFindHide(); };
     });
-    window.__loomRender = function(md, resetScroll) {
+    window.__loomRender = function(md, resetScroll, documentID, savedFolds) {
       var root = document.getElementById('content');
-      // The find snapshot describes the document being replaced; kept,
-      // it would put the old text back the next time find closed. The
-      // query itself survives, and is run again over the new text below —
-      // the agent rewriting the plan should not empty the find bar.
-      findClean = null; findHits = []; findAt = -1;
+      // The query survives a document update, but its old DOM matches do not.
+      findHits = []; findAt = -1;
       var rerun = findActiveQuery;
+      if (foldDocument !== documentID) {
+        foldDocument = documentID || '';
+        collapsedKeys = new Set(savedFolds || []);
+      }
       if (!md || !String(md).trim()) {
         root.innerHTML = '<div id="empty">Nothing to preview</div>';
+        sections = [];
+        document.getElementById('reading-tools').hidden = true;
+        reportHeight();
+        postFind();
         return;
       }
       var keepY = resetScroll ? 0 : window.scrollY;
@@ -385,6 +523,7 @@
       } catch (e) {
         root.innerHTML = '<pre>' + escapeHtml(md) + '</pre>';
       }
+      buildSections();
       linkAssets();
       window.scrollTo(0, keepY);
       reportHeight();

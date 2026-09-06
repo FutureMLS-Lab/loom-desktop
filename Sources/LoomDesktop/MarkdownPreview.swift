@@ -196,6 +196,11 @@ struct MarkdownPreview: NSViewRepresentable {
     }
 
     final class Coordinator: NSObject, WKNavigationDelegate, WKScriptMessageHandler {
+        /// Reading state survives view recreation and task switches. Kept in
+        /// memory and bounded; it never changes the underlying Markdown.
+        private static var foldMemory: [String: [String]] = [:]
+        private static var foldOrder: [String] = []
+        private var foldDocumentID: String { "\(LoomSettings.activeServerID)/\(documentID)" }
         weak var webView: WKWebView?
         var documentID = ""
         var assetProject = ""
@@ -233,6 +238,19 @@ struct MarkdownPreview: NSViewRepresentable {
             _ userContentController: WKUserContentController,
             didReceive message: WKScriptMessage
         ) {
+            if let report = message.body as? [String: Any],
+               report["type"] as? String == "folds",
+               let document = report["document"] as? String,
+               document == foldDocumentID,
+               let collapsed = report["collapsed"] as? [String] {
+                Self.foldMemory[document] = collapsed
+                Self.foldOrder.removeAll { $0 == document }
+                Self.foldOrder.append(document)
+                if Self.foldOrder.count > 64 {
+                    Self.foldMemory.removeValue(forKey: Self.foldOrder.removeFirst())
+                }
+                return
+            }
             if let report = message.body as? [String: Any],
                report["type"] as? String == "find" {
                 DispatchQueue.main.async { self.receiveFind(report) }
@@ -361,6 +379,9 @@ struct MarkdownPreview: NSViewRepresentable {
         }
 
         func scheduleRender(_ markdown: String, force: Bool) {
+            // A host redraw (typing, status, hover) must not keep postponing
+            // the same pending document or schedule a redundant JS round trip.
+            guard force || markdown != pendingMarkdown else { return }
             pendingMarkdown = markdown
             guard ready else { return }
             workItem?.cancel()
@@ -368,11 +389,12 @@ struct MarkdownPreview: NSViewRepresentable {
                 render(markdown, immediate: true)
                 return
             }
+            guard markdown != lastRendered else { return }
             let item = DispatchWorkItem { [weak self] in
                 self?.render(markdown, immediate: false)
             }
             workItem = item
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.28, execute: item)
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.16, execute: item)
         }
 
         private func render(_ markdown: String, immediate: Bool) {
@@ -386,11 +408,15 @@ struct MarkdownPreview: NSViewRepresentable {
             renderedDocumentID = documentID
             // NSJSONSerialization rejects a bare String as the top-level value
             // (throws NSInvalidArgumentException → app abort). Wrap it.
-            guard let data = try? JSONSerialization.data(withJSONObject: ["md": markdown]),
+            guard let data = try? JSONSerialization.data(withJSONObject: [
+                "md": markdown,
+                "document": foldDocumentID,
+                "folds": Self.foldMemory[foldDocumentID] ?? []
+            ]),
                   let json = String(data: data, encoding: .utf8)
             else { return }
             webView.evaluateJavaScript(
-                "window.__loomRender((\(json)).md, \(resetScroll));",
+                "{ const data = \(json); window.__loomRender(data.md, \(resetScroll), data.document, data.folds); }",
                 completionHandler: nil
             )
         }

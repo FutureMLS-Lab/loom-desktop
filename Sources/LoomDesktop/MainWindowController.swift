@@ -178,7 +178,7 @@ final class MainWindowController: NSObject, NSWindowDelegate, NSToolbarDelegate 
     }
 
     func toolbarDefaultItemIdentifiers(_ toolbar: NSToolbar) -> [NSToolbarItem.Identifier] {
-        [.flexibleSpace, .loomSidebar, .loomQuickOpen, .loomNew, .loomRefresh, .loomSearch]
+        [.flexibleSpace, .loomSidebar, .loomQuickOpen, .loomNotes, .loomNew, .loomRefresh, .loomSearch]
     }
 
     func toolbarAllowedItemIdentifiers(_ toolbar: NSToolbar) -> [NSToolbarItem.Identifier] {
@@ -199,6 +199,17 @@ final class MainWindowController: NSObject, NSWindowDelegate, NSToolbarDelegate 
             item.toolTip = sidebar ? "Toggle sidebar (⌃⌘S)" : "Quick switch tasks (⌘K or ⌘P)"
             item.target = self
             item.action = sidebar ? #selector(toggleSidebar) : #selector(requestQuickOpen)
+            item.isBordered = true
+            return item
+        case .loomNotes:
+            // The project scratchpad had ⌘⇧N and a menu-bar entry and no
+            // face in the window, which is where people looked for it.
+            let item = NSToolbarItem(itemIdentifier: identifier)
+            item.label = "Notes"
+            item.image = NSImage(systemSymbolName: "note.text", accessibilityDescription: "Project notes")
+            item.toolTip = "Project notes (⇧⌘N) — the project of the task in front"
+            item.target = self
+            item.action = #selector(openNotes)
             item.isBordered = true
             return item
         case .loomNew:
@@ -248,6 +259,12 @@ final class MainWindowController: NSObject, NSWindowDelegate, NSToolbarDelegate 
     @objc private func requestAddProject() { windowState.addProjectRequests += 1 }
     @objc private func refresh() { store?.refreshNow() }
 
+    @objc private func openNotes() {
+        guard let store else { return }
+        let projectId = store.selection.flatMap { ProjectPickerView.split($0)?.0 }
+        NotesWindowController.shared.show(store: store, projectId: projectId)
+    }
+
     @objc private func filterChanged(_ field: NSSearchField) {
         if windowState.filter != field.stringValue {
             windowState.filter = field.stringValue
@@ -258,6 +275,7 @@ final class MainWindowController: NSObject, NSWindowDelegate, NSToolbarDelegate 
 private extension NSToolbarItem.Identifier {
     static let loomSidebar = NSToolbarItem.Identifier("loom.sidebar")
     static let loomQuickOpen = NSToolbarItem.Identifier("loom.quickOpen")
+    static let loomNotes = NSToolbarItem.Identifier("loom.notes")
     static let loomNew = NSToolbarItem.Identifier("loom.new")
     static let loomRefresh = NSToolbarItem.Identifier("loom.refresh")
     static let loomSearch = NSToolbarItem.Identifier("loom.search")

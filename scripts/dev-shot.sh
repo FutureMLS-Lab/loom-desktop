@@ -71,17 +71,29 @@ defaults write "$BUNDLE_ID" loomAuthToken ""
 defaults write "$BUNDLE_ID" panelHidden -bool false
 
 mkdir -p "$SHOTS"
-rm -f "$SHOTS"/window-*.png
+rm -f "$SHOTS"/window-*.png "$SHOTS"/screen-main.png
 
 echo "▸ running (snapshots land ~7s in)…"
 LOOM_DESKTOP_SNAPSHOT_DIR="$SHOTS" \
 LOOM_DESKTOP_OPEN_CHAT="${LOOM_DESKTOP_OPEN_CHAT:-p1/video2bit}" \
     "$APP/Contents/MacOS/LoomDesktop" &
 APP_PID=$!
-sleep 13
+sleep 9
+# LOOM_DEV_REAL_SHOT=1 also photographs the main window off the real screen,
+# title bar and toolbar included, which the offscreen snapshot cannot show.
+# Needs Screen Recording permission for the terminal running this.
+if [ "${LOOM_DEV_REAL_SHOT:-}" = "1" ]; then
+    WID="$(swift scripts/dev-window-id.swift 2>/dev/null || true)"
+    # A cold `swift` interpreter can spend the window's first seconds compiling.
+    [ -z "$WID" ] && sleep 2 && WID="$(swift scripts/dev-window-id.swift 2>/dev/null || true)"
+    if [ -n "$WID" ]; then
+        screencapture -x -o -l "$WID" "$SHOTS/screen-main.png" 2>/dev/null || true
+    fi
+fi
+sleep 4
 kill "$APP_PID" 2>/dev/null || true
 wait "$APP_PID" 2>/dev/null || true
 [ -n "$STARTED_MOCK" ] && kill "$STARTED_MOCK" 2>/dev/null || true
 
 echo "✓ snapshots:"
-ls "$SHOTS"/window-*.png
+ls "$SHOTS"/window-*.png "$SHOTS"/screen-main.png 2>/dev/null

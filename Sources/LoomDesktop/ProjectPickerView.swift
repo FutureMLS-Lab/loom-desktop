@@ -373,6 +373,9 @@ struct ProjectPickerView: View {
                             onMoveTask: { slug, target in
                                 store.moveTask(projectId: project.id, slug: slug, above: target)
                             },
+                            onNotes: {
+                                NotesWindowController.shared.show(store: store, projectId: project.id)
+                            },
                             onSetCodeRoot: {
                                 codeRootDraft = "."
                                 codeRootProject = project
@@ -421,6 +424,15 @@ struct ProjectPickerView: View {
                 sidebarAction("Workspace", symbol: "square.grid.2x2", shortcut: "⇧⌘H") { store.selection = nil }
                 sidebarAction("Quick switch", symbol: "magnifyingglass", shortcut: "⌘K") { quickOpen = true }
                 sidebarAction("New task", symbol: "plus", shortcut: "⌘N") { newTask = true }
+                // The project scratchpad, for the project of the task in
+                // front. It had a shortcut and a menu-bar entry and no face in
+                // the window, which is where people looked for it.
+                sidebarAction("Project notes", symbol: "note.text", shortcut: "⇧⌘N") {
+                    NotesWindowController.shared.show(
+                        store: store,
+                        projectId: store.selection.flatMap { ProjectPickerView.split($0)?.0 }
+                    )
+                }
             }
             .padding(10)
         }
@@ -524,6 +536,7 @@ private struct ProjectCard: View {
     let onRename: (LoomTaskMeta) -> Void
     let onDelete: (LoomTaskMeta) -> Void
     let onMoveTask: (String, String) -> Void
+    let onNotes: () -> Void
     let onSetCodeRoot: () -> Void
     let onRemove: () -> Void
 
@@ -571,6 +584,7 @@ private struct ProjectCard: View {
                     NSPasteboard.general.clearContents()
                     NSPasteboard.general.setString(project.path, forType: .string)
                 }
+                Button("Project Notes…", action: onNotes)
                 Button("Set Code Root…", action: onSetCodeRoot)
                 Divider()
                 Button("Remove from Loom…", action: onRemove)

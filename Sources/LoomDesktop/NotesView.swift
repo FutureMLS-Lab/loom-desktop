@@ -188,6 +188,16 @@ final class NotesWindowController: NSObject, NSWindowDelegate {
 
     private var window: NSWindow?
 
+    /// Open on a particular project's notes — the one whose task is in front,
+    /// or the one right-clicked. The view keeps its project in defaults, so
+    /// setting that first is enough, and an already-open window follows.
+    func show(store: TaskStore, projectId: String?) {
+        if let projectId, !projectId.isEmpty {
+            UserDefaults.standard.set(projectId, forKey: "notesProject")
+        }
+        show(store: store)
+    }
+
     func show(store: TaskStore) {
         if window == nil {
             let window = NSWindow(

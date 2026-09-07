@@ -180,7 +180,10 @@ final class StatusItemController: NSObject, NSMenuDelegate {
     }
 
     @objc private func openNotes() {
-        NotesWindowController.shared.show(store: store)
+        NotesWindowController.shared.show(
+            store: store,
+            projectId: store.selection.flatMap { ProjectPickerView.split($0)?.0 }
+        )
     }
 
     @objc private func markAllSeen() { store.markAllSeen() }

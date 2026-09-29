@@ -301,6 +301,11 @@ matches project names, agent names, and goals. Filtering reveals matching tasks
 even inside collapsed projects. To review indicates an unseen finish, not an
 approval request.
 
+Drag a project by its heading, or a task, onto another to reorder: it takes that
+one's place, landing below it when moved down and above it when moved up, and
+the line shows where. A project dropped on another project's tasks counts as
+dropped on that project. Tasks stay within their project.
+
 Drag the sidebar divider to choose a width between 240 and 340 points. The toolbar
 has buttons for showing or hiding the sidebar, returning to the overview, and
 quick switching. The sidebar footer also exposes the overview, quick switch, and

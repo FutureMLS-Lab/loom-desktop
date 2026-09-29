@@ -12,7 +12,14 @@ struct ProjectPickerView: View {
     /// requests arrive from AppKit through here.
     @ObservedObject var windowState: MainWindowState
     @StateObject private var sessions = SessionCache()
-    @State private var projectDropTarget: String?
+    /// The project a drop would land on, and which part of it is under the
+    /// pointer — its heading or one of its tasks — so that moving from one
+    /// part to the next cannot clear the target the other has just set.
+    @State private var projectDropTarget: (project: String, part: String)?
+    /// What is being dragged, noted as the drag starts. A drop target sees
+    /// the payload only when it is dropped, and without this could not tell
+    /// whether the item would land above it or below.
+    @State private var dragging: DragPayload?
     @State private var collapsed: Set<String> = []
     @State private var activityFilter = WorkspaceFilter.all
     @AppStorage("workspaceSidebarVisible") private var sidebarVisible = true
@@ -371,7 +378,14 @@ struct ProjectPickerView: View {
                             },
                             onDelete: { meta in deleteTarget = (project.id, meta) },
                             onMoveTask: { slug, target in
-                                store.moveTask(projectId: project.id, slug: slug, above: target)
+                                store.moveTask(projectId: project.id, slug: slug, onto: target)
+                                dragging = nil
+                            },
+                            dragging: dragging,
+                            beginDrag: beginDrag,
+                            onDropProject: { id in dropProject(id, onto: project.id) },
+                            onProjectTargeted: { part, entered in
+                                targetProject(project.id, part: part, entered)
                             },
                             onNotes: {
                                 NotesWindowController.shared.show(store: store, projectId: project.id)
@@ -382,23 +396,18 @@ struct ProjectPickerView: View {
                             },
                             onRemove: { projectToRemove = project }
                         )
-                        .draggable(DragPayload.project(id: project.id).text)
+                        .draggable(beginDrag(.project(id: project.id)))
                         .dropDestination(for: String.self) { items, _ in
-                            guard let payload = items.compactMap(DragPayload.init).first,
-                                  case let .project(id) = payload
+                            guard case let .project(id)? = items.compactMap(DragPayload.init).first
                             else { return false }
-                            store.moveProject(id, above: project.id)
+                            dropProject(id, onto: project.id)
                             return true
-                        } isTargeted: { over in
-                            projectDropTarget = over
-                                ? project.id
-                                : (projectDropTarget == project.id ? nil : projectDropTarget)
+                        } isTargeted: { entered in
+                            targetProject(project.id, part: "", entered)
                         }
-                        .overlay(alignment: .top) {
-                            if projectDropTarget == project.id {
-                                Rectangle()
-                                    .fill(LoomColors.accent)
-                                    .frame(height: 2)
+                        .overlay(alignment: landsBelow(project.id) ? .bottom : .top) {
+                            if projectDropTarget?.project == project.id {
+                                DropLine()
                             }
                         }
                     }
@@ -455,6 +464,38 @@ struct ProjectPickerView: View {
             .contentShape(LoomShape.control)
         }
         .buttonStyle(.plain)
+    }
+
+    // MARK: Drag and drop
+
+    private func beginDrag(_ payload: DragPayload) -> String {
+        dragging = payload
+        return payload.text
+    }
+
+    private func dropProject(_ id: String, onto target: String) {
+        store.moveProject(id, onto: target)
+        projectDropTarget = nil
+        dragging = nil
+    }
+
+    private func targetProject(_ project: String, part: String, _ entered: Bool) {
+        if entered {
+            if case let .project(id)? = dragging, id == project { return }
+            projectDropTarget = (project, part)
+        } else if projectDropTarget?.project == project && projectDropTarget?.part == part {
+            projectDropTarget = nil
+        }
+    }
+
+    /// A project dragged down lands under the one it is dropped on, so the
+    /// line goes on the side where it will land.
+    private func landsBelow(_ target: String) -> Bool {
+        guard case let .project(id)? = dragging,
+              let from = projects.firstIndex(where: { $0.id == id }),
+              let to = projects.firstIndex(where: { $0.id == target })
+        else { return false }
+        return from < to
     }
 
     private var search: String { windowState.filter.trimmingCharacters(in: .whitespacesAndNewlines) }
@@ -536,6 +577,13 @@ private struct ProjectCard: View {
     let onRename: (LoomTaskMeta) -> Void
     let onDelete: (LoomTaskMeta) -> Void
     let onMoveTask: (String, String) -> Void
+    /// What the sidebar is dragging, and how a drag starting here says so.
+    let dragging: DragPayload?
+    let beginDrag: (DragPayload) -> String
+    /// A project dropped on this one's tasks, which cover most of it, lands
+    /// as if dropped on the heading — not silently nowhere.
+    let onDropProject: (String) -> Void
+    let onProjectTargeted: (String, Bool) -> Void
     let onNotes: () -> Void
     let onSetCodeRoot: () -> Void
     let onRemove: () -> Void
@@ -603,22 +651,33 @@ private struct ProjectCard: View {
                             onRename: { onRename(meta) },
                             onDelete: { onDelete(meta) }
                         )
-                        .draggable(DragPayload.task(project: project.id, slug: meta.slug).text)
+                        .draggable(beginDrag(.task(project: project.id, slug: meta.slug)))
                         .dropDestination(for: String.self) { items, _ in
-                            guard let payload = items.compactMap(DragPayload.init).first,
-                                  case let .task(fromProject, slug) = payload,
-                                  fromProject == project.id
-                            else { return false }
-                            onMoveTask(slug, meta.slug)
-                            return true
-                        } isTargeted: { over in
-                            dropTarget = over ? meta.slug : (dropTarget == meta.slug ? nil : dropTarget)
+                            switch items.compactMap(DragPayload.init).first {
+                            case let .task(fromProject, slug)? where fromProject == project.id:
+                                onMoveTask(slug, meta.slug)
+                                return true
+                            case let .project(id)?:
+                                onDropProject(id)
+                                return true
+                            default:
+                                return false
+                            }
+                        } isTargeted: { entered in
+                            switch dragging {
+                            case .project?:
+                                onProjectTargeted(meta.slug, entered)
+                            case let .task(fromProject, slug)? where fromProject != project.id || slug == meta.slug:
+                                // Tasks do not move between projects, and a
+                                // task dropped on itself goes nowhere.
+                                break
+                            default:
+                                dropTarget = entered ? meta.slug : (dropTarget == meta.slug ? nil : dropTarget)
+                            }
                         }
-                        .overlay(alignment: .top) {
+                        .overlay(alignment: taskLandsBelow(meta.slug) ? .bottom : .top) {
                             if dropTarget == meta.slug {
-                                Rectangle()
-                                    .fill(LoomColors.accent)
-                                    .frame(height: 2)
+                                DropLine()
                             }
                         }
                     }
@@ -636,6 +695,23 @@ private struct ProjectCard: View {
         // air, and boxes around every group made the list read as a page of
         // panels rather than a list.
         .padding(.horizontal, 4)
+    }
+
+    private func taskLandsBelow(_ target: String) -> Bool {
+        guard case let .task(fromProject, slug)? = dragging, fromProject == project.id,
+              let from = tasks.firstIndex(where: { $0.slug == slug }),
+              let to = tasks.firstIndex(where: { $0.slug == target })
+        else { return false }
+        return from < to
+    }
+}
+
+/// Where a dragged row will land.
+private struct DropLine: View {
+    var body: some View {
+        Rectangle()
+            .fill(LoomColors.accent)
+            .frame(height: 2)
     }
 }
 
@@ -887,7 +963,7 @@ struct LoomMark: View {
 }
 
 /// What a sidebar drag carries. Tasks and projects are dragged in the same
-/// list, so each says which it is and a drop ignores the other kind.
+/// list, so each says which it is, and a drop acts on the kind it carries.
 private enum DragPayload {
     case task(project: String, slug: String)
     case project(id: String)

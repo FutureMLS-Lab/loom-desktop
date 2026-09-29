@@ -401,30 +401,35 @@ final class TaskStore: ObservableObject {
         Set(pills.map(\.projectId)).count > 1
     }
 
-    /// Drag a task above another in the same project.
+    /// Drag a task onto another in the same project, and it takes that one's
+    /// place: dropped on a task below, it lands under it. Always landing
+    /// above made a move one step down a drop that changed nothing, and the
+    /// last place one no drop could reach.
     ///
     /// Applied here first and sent afterwards: the list is the thing being
     /// dragged, and waiting a round trip to see it move makes the drag feel
     /// like it failed. The next poll carries the server's own order, which
     /// is the same one unless the write failed.
-    func moveTask(projectId: String, slug: String, above target: String) {
-        guard slug != target, var metas = tasksByProject[projectId] else { return }
-        guard let from = metas.firstIndex(where: { $0.slug == slug }) else { return }
-        let moved = metas.remove(at: from)
-        let to = metas.firstIndex(where: { $0.slug == target }) ?? metas.count
-        metas.insert(moved, at: to)
+    func moveTask(projectId: String, slug: String, onto target: String) {
+        guard slug != target, var metas = tasksByProject[projectId],
+              let from = metas.firstIndex(where: { $0.slug == slug }),
+              let to = metas.firstIndex(where: { $0.slug == target })
+        else { return }
+        metas.insert(metas.remove(at: from), at: to)
         tasksByProject[projectId] = metas
         let slugs = metas.map(\.slug)
         Task { [api] in try? await api.reorderTasks(projectId: projectId, slugs: slugs) }
         reorderPills()
     }
 
-    func moveProject(_ id: String, above target: String) {
-        guard id != target, let from = projects.firstIndex(where: { $0.id == id }) else { return }
+    /// The same for projects: a project dropped on another takes its place.
+    func moveProject(_ id: String, onto target: String) {
+        guard id != target,
+              let from = projects.firstIndex(where: { $0.id == id }),
+              let to = projects.firstIndex(where: { $0.id == target })
+        else { return }
         var next = projects
-        let moved = next.remove(at: from)
-        let to = next.firstIndex(where: { $0.id == target }) ?? next.count
-        next.insert(moved, at: to)
+        next.insert(next.remove(at: from), at: to)
         projects = next
         let ids = next.map(\.id)
         Task { [api] in try? await api.reorderProjects(ids: ids) }

@@ -15,7 +15,14 @@ DEST_DIR="${1:-/Applications}"
 STAGE="$(mktemp -d)/$APP_NAME.app"
 
 echo "▸ building release…"
-swift build -c release >/dev/null
+scripts/swift-build.sh -c release >/dev/null
+# An app stamped with an older SDK than it was built against runs in that
+# release's compatibility mode, which is how drags once quietly stopped.
+BUILT_SDK="$(otool -l .build/release/LoomDesktop | awk '/LC_BUILD_VERSION/ { found = 1 } found && $1 == "sdk" { print $2; exit }')"
+if [ "$BUILT_SDK" != "$(xcrun --sdk macosx --show-sdk-version)" ]; then
+    echo "✗ LoomDesktop records SDK ${BUILT_SDK:-none}, built against $(xcrun --sdk macosx --show-sdk-version)" >&2
+    exit 1
+fi
 
 echo "▸ assembling bundle…"
 mkdir -p "$STAGE/Contents/MacOS" "$STAGE/Contents/Resources"

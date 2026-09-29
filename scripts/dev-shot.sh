@@ -25,7 +25,7 @@ MOCK_PORT="${LOOM_DEV_MOCK_PORT:-8899}"
 SHOTS="${1:-/tmp/loom-dev/snaps}"
 
 echo "▸ building debug…"
-swift build >/dev/null
+scripts/swift-build.sh >/dev/null
 
 echo "▸ assembling dev bundle…"
 rm -rf "$APP"

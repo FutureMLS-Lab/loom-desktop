@@ -147,9 +147,15 @@ never receives clicks, resizes, or focus.
 ## Build & run from source
 
 ```bash
-swift build -c release
+scripts/swift-build.sh -c release
 ./.build/release/LoomDesktop
 ```
+
+`scripts/swift-build.sh` is `swift build` with the SDK handed to the linker.
+With Xcode 27's default build engine a plain `swift build` stamps the binary
+as built against macOS 14, and the app then runs in that release's
+compatibility mode — sidebar drags never start, and the window loses the
+current design. `make-app.sh` refuses to install a binary stamped that way.
 
 Configure servers via the loom menu → **Settings…**. Point each at whatever
 serves the Loom HTTP API: the loom-app gateway (which holds the Loom token
@@ -274,6 +280,7 @@ binary somewhere else.
 | `Snapshotter.swift` | Window → PNG for the headless UI check, web views included |
 | `Resources/` | App icon, the two pages the app hosts (`terminal.html`, `markdown-preview.html`), and the bundled `marked`, `xterm`, and fit addon that get spliced into them at their placeholders. `mermaid.min.js` (v12) is not spliced — at megabytes, the preview loads it only for a document with a diagram. Anything added here must also be copied in `make-app.sh`, or it exists for the checkout and not for the installed app. The sidebar watermark reads `loom-mark.png`, which only the installed bundle has — the bare binary runs without it |
 | `scripts/make-app.sh` | Build, sign, install to `/Applications`, register the login item |
+| `scripts/swift-build.sh` | `swift build` that stamps the binary with the SDK it was built against — see *Build & run from source* |
 | `scripts/dev-shot.sh` | Build a dev copy under its own bundle id, run it against the mock, and save window PNGs — without killing or replacing the installed app the way `make-app.sh` does. The dev hooks below pass through (`LOOM_DESKTOP_OPEN_CHAT=… scripts/dev-shot.sh`) |
 | `scripts/mock-loom.py` | Offline mock of the Loom API for development |
 | `scripts/summon.swift` | Poke a running app to bring its windows to this screen |

@@ -124,6 +124,13 @@
   }
   th { background: var(--code-bg); }
   img { max-width: 100%; }
+  /* Diagrams at their own size, scrolled sideways when wider than the
+     column — the rule tables follow, for the same reason: a flowchart
+     shrunk to fit has labels nobody can read. */
+  .loom-diagram { margin: 0.85em 0; overflow-x: auto; }
+  .loom-diagram svg { display: block; margin: 0 auto; max-width: none; }
+  .loom-diagram.drawing { color: var(--muted); font-size: 0.9em; }
+  .diagram-error { color: var(--muted); font-size: 0.85em; margin: -0.4em 0 0.85em; }
   #empty {
     color: var(--muted);
     text-align: center;
@@ -468,6 +475,114 @@
       Object.keys(wanted).forEach(function (key) { fetchFigure(key, wanted[key], 0); });
     }
 
+    // Diagrams. A ```mermaid block is drawn instead of shown as code. The
+    // renderer is megabytes, so the page fetches it through the asset
+    // scheme the first time a document has a diagram rather than carrying
+    // it the way it carries marked. Drawings are kept by theme and source:
+    // a re-render puts an unchanged diagram straight back, where drawing
+    // it again would flash the placeholder and shift everything below.
+    var diagramRenderer = 'idle', diagramWaiting = [];
+    var diagramDrawn = Object.create(null);
+    var diagramChain = Promise.resolve(), diagramConfigured = '', diagramSerial = 0;
+    var darkScheme = window.matchMedia('(prefers-color-scheme: dark)');
+    function diagramTheme() { return darkScheme.matches ? 'dark' : 'neutral'; }
+    function withDiagramRenderer(ready, failed) {
+      if (diagramRenderer === 'ready') return ready();
+      if (diagramRenderer === 'failed') return failed();
+      diagramWaiting.push([ready, failed]);
+      if (diagramRenderer === 'loading') return;
+      diagramRenderer = 'loading';
+      var script = document.createElement('script');
+      var settle = function () {
+        diagramRenderer = window.mermaid ? 'ready' : 'failed';
+        var waiting = diagramWaiting;
+        diagramWaiting = [];
+        waiting.forEach(function (pair) { pair[diagramRenderer === 'ready' ? 0 : 1](); });
+      };
+      script.onload = settle;
+      script.onerror = settle;
+      script.src = 'loom-asset://bundle/mermaid.min.js';
+      document.head.appendChild(script);
+    }
+    function showDiagram(box, svg) {
+      box.classList.remove('drawing');
+      box.innerHTML = svg;
+      var drawing = box.querySelector('svg');
+      var view = drawing && drawing.viewBox && drawing.viewBox.baseVal;
+      if (view && view.width) {
+        drawing.setAttribute('width', view.width);
+        drawing.setAttribute('height', view.height);
+        drawing.style.maxWidth = 'none';
+      }
+    }
+    // The code comes back, with the reason it is not a drawing.
+    function showDiagramSource(box, reason) {
+      box.replaceWith(box.loomSource);
+      if (!reason) return;
+      var note = document.createElement('div');
+      note.className = 'diagram-error';
+      note.textContent = 'Diagram not drawn: ' + reason;
+      box.loomSource.after(note);
+    }
+    function drawDiagram(box, theme) {
+      var key = theme + '\n' + box.loomText;
+      if (diagramDrawn[key]) return showDiagram(box, diagramDrawn[key]);
+      box.classList.add('drawing');
+      box.textContent = 'Drawing diagram…';
+      withDiagramRenderer(function () {
+        var id = '';
+        // One at a time, and a failure ends only its own diagram.
+        diagramChain = diagramChain.then(function () {
+          if (!box.isConnected) return;
+          if (diagramDrawn[key]) return showDiagram(box, diagramDrawn[key]);
+          if (diagramConfigured !== theme) {
+            window.mermaid.initialize({
+              startOnLoad: false,
+              theme: theme,
+              securityLevel: 'strict',
+              suppressErrorRendering: true,
+              // Plans break their own labels with <br/>; the default 200px
+              // wrap broke them again into tall, one-word-wide boxes.
+              flowchart: { wrappingWidth: 420 },
+              fontFamily: '-apple-system, "SF Pro Text", "Helvetica Neue", "PingFang SC", "Hiragino Sans GB", sans-serif'
+            });
+            diagramConfigured = theme;
+          }
+          id = 'loom-diagram-' + (++diagramSerial);
+          return window.mermaid.render(id, box.loomText).then(function (out) {
+            diagramDrawn[key] = out.svg;
+            if (box.isConnected) showDiagram(box, out.svg);
+          });
+        }).catch(function (error) {
+          var stray = id && document.getElementById('d' + id);
+          if (stray) stray.remove();
+          if (box.isConnected) {
+            showDiagramSource(box, String((error && error.message) || error).split('\n')[0]);
+          }
+        });
+      }, function () {
+        if (box.isConnected) showDiagramSource(box, 'the diagram renderer did not load');
+      });
+    }
+    function drawDiagrams() {
+      var theme = diagramTheme();
+      var codes = document.querySelectorAll('#content pre > code.language-mermaid');
+      Array.prototype.forEach.call(codes, function (code) {
+        var box = document.createElement('div');
+        box.className = 'loom-diagram';
+        box.loomSource = code.parentElement;
+        box.loomText = code.textContent;
+        code.parentElement.replaceWith(box);
+        drawDiagram(box, theme);
+      });
+    }
+    darkScheme.addEventListener('change', function () {
+      var theme = diagramTheme();
+      document.querySelectorAll('#content .loom-diagram').forEach(function (box) {
+        drawDiagram(box, theme);
+      });
+    });
+
     // Find. `WKWebView.find` would highlight but gives no count and no
     // field to type into, so the whole thing lives in the page: wrap
     // matches in <mark>, step through them, and put the document back
@@ -493,7 +608,8 @@
       var walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT, null);
       var targets = [], node;
       while ((node = walker.nextNode())) {
-        if (node.parentElement.closest('button, script, style')) continue;
+        // A <mark> dropped into a drawing's text breaks the drawing.
+        if (node.parentElement.closest('button, script, style, .loom-diagram')) continue;
         if (node.nodeValue.toLowerCase().indexOf(needle) !== -1) { targets.push(node); }
       }
       targets.forEach(function (text) {
@@ -618,6 +734,7 @@
       }
       buildSections();
       linkAssets(true);
+      drawDiagrams();
       window.scrollTo(0, keepY);
       reportHeight();
       if (rerun) { findRun(rerun, true); }

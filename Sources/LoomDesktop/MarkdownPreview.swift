@@ -75,6 +75,10 @@ final class PassThroughWebView: WKWebView {
 
 /// Serves `loom-asset://` requests from the markdown preview by fetching the
 /// figure through the API, which is the only party holding the token.
+///
+/// `loom-asset://bundle/<file>` is the other kind: a script the page loads
+/// only when a document needs it. The diagram renderer is megabytes, too big
+/// to splice into every page the way `marked` is.
 @MainActor
 private final class AssetSchemeHandler: NSObject, WKURLSchemeHandler {
     private let api = LoomAPI()
@@ -83,11 +87,18 @@ private final class AssetSchemeHandler: NSObject, WKURLSchemeHandler {
     /// every figure still loading — and answering a stopped task raises.
     private var inFlight: [ObjectIdentifier: Task<Void, Never>] = [:]
 
+    private static let bundled = ["mermaid.min.js": ("mermaid.min", "js")]
+    private static var bundledData: [String: Data] = [:]
+
     func webView(_ webView: WKWebView, start task: WKURLSchemeTask) {
         guard let url = task.request.url,
               let parts = URLComponents(url: url, resolvingAgainstBaseURL: false)
         else {
             task.didFailWithError(LoomAPIError(message: "bad asset url", status: 0))
+            return
+        }
+        if url.host == "bundle" {
+            serveBundled(url, to: task)
             return
         }
         let items = parts.queryItems ?? []
@@ -122,6 +133,22 @@ private final class AssetSchemeHandler: NSObject, WKURLSchemeHandler {
         inFlight.removeValue(forKey: ObjectIdentifier(task))?.cancel()
     }
 
+    private func serveBundled(_ url: URL, to task: WKURLSchemeTask) {
+        let file = url.lastPathComponent
+        guard let (name, ext) = Self.bundled[file],
+              let data = Self.bundledData[file] ?? LoomResource.data(name, ext)
+        else {
+            task.didFailWithError(LoomAPIError(message: "\(file) is not bundled", status: 404))
+            return
+        }
+        Self.bundledData[file] = data
+        task.didReceive(URLResponse(
+            url: url, mimeType: "text/javascript",
+            expectedContentLength: data.count, textEncodingName: "utf-8"
+        ))
+        task.didReceive(data)
+        task.didFinish()
+    }
 }
 
 /// Browser-style Markdown preview: `marked` → HTML inside a WKWebView, with

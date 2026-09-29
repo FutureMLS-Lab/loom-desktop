@@ -37,6 +37,23 @@ let html = page.replacingOccurrences(
     with: marked.isEmpty ? "" : "<script>\(marked)</script>"
 )
 
+/// The bundled scripts the page loads on demand, which the app's asset scheme
+/// would otherwise serve — the diagram renderer, so diagrams come out drawn.
+final class BundledScripts: NSObject, WKURLSchemeHandler {
+    func webView(_ webView: WKWebView, start task: WKURLSchemeTask) {
+        guard let url = task.request.url, url.host == "bundle",
+              let data = try? Data(contentsOf: root.appending(path: "Resources/\(url.lastPathComponent)"))
+        else {
+            task.didFailWithError(URLError(.fileDoesNotExist))
+            return
+        }
+        task.didReceive(URLResponse(url: url, mimeType: "text/javascript", expectedContentLength: data.count, textEncodingName: "utf-8"))
+        task.didReceive(data)
+        task.didFinish()
+    }
+    func webView(_ webView: WKWebView, stop task: WKURLSchemeTask) {}
+}
+
 final class Shooter: NSObject, WKNavigationDelegate {
     let web: WKWebView
     let markdown: String
@@ -44,7 +61,9 @@ final class Shooter: NSObject, WKNavigationDelegate {
     let compact: Bool
 
     init(width: Double, markdown: String, out: String, compact: Bool) {
-        web = WKWebView(frame: NSRect(x: 0, y: 0, width: width, height: 100))
+        let config = WKWebViewConfiguration()
+        config.setURLSchemeHandler(BundledScripts(), forURLScheme: "loom-asset")
+        web = WKWebView(frame: NSRect(x: 0, y: 0, width: width, height: 100), configuration: config)
         self.markdown = markdown
         self.out = out
         self.compact = compact
@@ -57,6 +76,18 @@ final class Shooter: NSObject, WKNavigationDelegate {
             .flatMap { String(data: $0, encoding: .utf8) } ?? "{}"
         let setup = compact ? "window.__loomSetCompact(true);" : ""
         webView.evaluateJavaScript("\(setup) window.__loomRender(\(payload).md);") { _, _ in
+            self.waitForDiagrams(tries: 50)
+        }
+    }
+
+    /// Diagrams draw after the render returns; photographing the placeholder
+    /// would show nothing worth looking at.
+    private func waitForDiagrams(tries: Int) {
+        web.evaluateJavaScript("!!document.querySelector('.loom-diagram.drawing')") { busy, _ in
+            if (busy as? Bool) == true && tries > 0 {
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) { self.waitForDiagrams(tries: tries - 1) }
+                return
+            }
             // One runloop turn for layout, then grow to the whole document so
             // nothing interesting is cropped away below the fold.
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) { self.resizeAndShoot() }

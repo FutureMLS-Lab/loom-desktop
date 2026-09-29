@@ -261,7 +261,7 @@ binary somewhere else.
 | `PlanView.swift` | The Files tab: the task's folder tree and source editor |
 | `PlainTextEditor.swift` | The plain source editor, shared by Files and Notes |
 | `MarkdownBlocks.swift` | Agent turns as blocks: tables, lists, code |
-| `MarkdownPreview.swift` | `marked` in a `WKWebView`, shared by the digest and notes. The page it hosts is `Resources/markdown-preview.html` |
+| `MarkdownPreview.swift` | `marked` in a `WKWebView`, shared by the digest and notes. The page it hosts is `Resources/markdown-preview.html`; its `loom-asset://` scheme fetches figures through the API and hands the page the diagram renderer when a document has a ```` ```mermaid ```` block |
 | `MarkdownFind.swift` | Find over the plan digest: a bar pinned over the terminal tab's page, driving highlights in the web view and scrolling the page to each match — the page cannot scroll itself, being laid out as part of the tab |
 | `LoomResource.swift` | Finds a bundled asset, whether the app is installed or run from a checkout |
 | `DiffView.swift` | The Changes tab: per-file diffs, and the task's worktrees |
@@ -272,7 +272,7 @@ binary somewhere else.
 | `LoomServers.swift` | The configured Looms, and which one is current |
 | `SettingsWindow.swift` | Managing servers: URL, token, and switching |
 | `Snapshotter.swift` | Window → PNG for the headless UI check, web views included |
-| `Resources/` | App icon, the two pages the app hosts (`terminal.html`, `markdown-preview.html`), and the bundled `marked`, `xterm`, and fit addon that get spliced into them at their placeholders. Anything added here must also be copied in `make-app.sh`, or it exists for the checkout and not for the installed app. The sidebar watermark reads `loom-mark.png`, which only the installed bundle has — the bare binary runs without it |
+| `Resources/` | App icon, the two pages the app hosts (`terminal.html`, `markdown-preview.html`), and the bundled `marked`, `xterm`, and fit addon that get spliced into them at their placeholders. `mermaid.min.js` (v12) is not spliced — at megabytes, the preview loads it only for a document with a diagram. Anything added here must also be copied in `make-app.sh`, or it exists for the checkout and not for the installed app. The sidebar watermark reads `loom-mark.png`, which only the installed bundle has — the bare binary runs without it |
 | `scripts/make-app.sh` | Build, sign, install to `/Applications`, register the login item |
 | `scripts/dev-shot.sh` | Build a dev copy under its own bundle id, run it against the mock, and save window PNGs — without killing or replacing the installed app the way `make-app.sh` does. The dev hooks below pass through (`LOOM_DESKTOP_OPEN_CHAT=… scripts/dev-shot.sh`) |
 | `scripts/mock-loom.py` | Offline mock of the Loom API for development |
@@ -317,16 +317,18 @@ and task switches during the app session, independently for each server/document
 The Files tab offers **Read / Source** for Markdown, including PLAN.md and WIKI.md.
 Reading and folding never modify the source file.
 
-Figures resolve from the document's own folder. Each render and each press of
-the reload button fetches them again — agents regenerate figures in place —
-keeping the copy on screen until the new one arrives, and a figure that fails
-to load is retried.
+```` ```mermaid ```` blocks are drawn as diagrams, at their own size and scrolled
+sideways when wider than the column, like tables; one that does not parse stays
+as code with the reason under it. Figures resolve from the document's own folder.
+Each render and each press of the reload button fetches them again — agents
+regenerate figures in place — keeping the copy on screen until the new one
+arrives, and a figure that fails to load is retried.
 
 The compact plan uses 14pt body text with more line spacing. Preview updates are
 coalesced only when the source changes, so unrelated view updates cannot postpone
 the render. Run `swift scripts/test-markdown-preview.swift` from the repository
-root to check folding, search, refreshes, figures and large plans in WebKit
-without opening a window or connecting to a gateway.
+root to check folding, search, refreshes, figures, diagrams and large plans in
+WebKit without opening a window or connecting to a gateway.
 
 Finish acknowledgments track each completion timestamp. A task that finishes
 again between polls still becomes visible, and a failed acknowledgment is retried.

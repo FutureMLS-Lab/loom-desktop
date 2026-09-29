@@ -20,9 +20,11 @@ swift build -c release >/dev/null
 echo "▸ assembling bundle…"
 mkdir -p "$STAGE/Contents/MacOS" "$STAGE/Contents/Resources"
 cp .build/release/LoomDesktop "$STAGE/Contents/MacOS/LoomDesktop"
-# Web assets loaded via Bundle.main at runtime: the markdown preview engine
-# and xterm, which renders the agent's pane exactly as the web console does.
-cp Resources/marked.min.js Resources/xterm.js Resources/xterm.css Resources/addon-fit.js \
+# Web assets loaded via Bundle.main at runtime: the markdown preview engine,
+# the diagram renderer it fetches when a document has a diagram, and xterm,
+# which renders the agent's pane exactly as the web console does.
+cp Resources/marked.min.js Resources/mermaid.min.js \
+   Resources/xterm.js Resources/xterm.css Resources/addon-fit.js \
    Resources/markdown-preview.html Resources/terminal.html \
    "$STAGE/Contents/Resources/"
 

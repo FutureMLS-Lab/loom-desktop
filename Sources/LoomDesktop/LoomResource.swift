@@ -10,7 +10,26 @@ import Foundation
 /// step. `Package.swift` declares no resources, so nothing here is generated.
 enum LoomResource {
     static func text(_ name: String, _ ext: String) -> String? {
-        let candidates: [URL?] = [
+        for case let url? in candidates(name, ext) {
+            if let text = try? String(contentsOf: url, encoding: .utf8), !text.isEmpty {
+                return text
+            }
+        }
+        return nil
+    }
+
+    /// The same lookup as bytes, for a file handed to a page as it is.
+    static func data(_ name: String, _ ext: String) -> Data? {
+        for case let url? in candidates(name, ext) {
+            if let data = try? Data(contentsOf: url), !data.isEmpty {
+                return data
+            }
+        }
+        return nil
+    }
+
+    private static func candidates(_ name: String, _ ext: String) -> [URL?] {
+        [
             Bundle.main.url(forResource: name, withExtension: ext),
             Bundle.main.resourceURL?.appendingPathComponent("\(name).\(ext)"),
             URL(fileURLWithPath: #filePath)
@@ -19,11 +38,5 @@ enum LoomResource {
                 .deletingLastPathComponent()   // package root
                 .appendingPathComponent("Resources/\(name).\(ext)"),
         ]
-        for case let url? in candidates {
-            if let text = try? String(contentsOf: url, encoding: .utf8), !text.isEmpty {
-                return text
-            }
-        }
-        return nil
     }
 }

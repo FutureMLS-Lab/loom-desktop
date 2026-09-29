@@ -31,7 +31,7 @@ echo "▸ assembling dev bundle…"
 rm -rf "$APP"
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
 cp .build/debug/LoomDesktop "$APP/Contents/MacOS/LoomDesktop"
-cp Resources/marked.min.js Resources/xterm.js Resources/xterm.css \
+cp Resources/marked.min.js Resources/mermaid.min.js Resources/xterm.js Resources/xterm.css \
    Resources/addon-fit.js Resources/markdown-preview.html Resources/terminal.html \
    "$APP/Contents/Resources/"
 cp Resources/loom-icon.png "$APP/Contents/Resources/loom-mark.png"

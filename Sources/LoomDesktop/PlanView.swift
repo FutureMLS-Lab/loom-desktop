@@ -262,6 +262,9 @@ struct PlanView: View {
                         Text("Source").tag(false)
                     }
                     .pickerStyle(.segmented)
+                    // Shown, the label squeezes into the fixed width one
+                    // letter per line and stretches the whole bar.
+                    .labelsHidden()
                     .frame(width: 125)
                     .help("Read with collapsible headings, or edit the Markdown source")
                 }

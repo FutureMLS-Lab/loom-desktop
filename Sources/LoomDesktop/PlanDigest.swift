@@ -25,6 +25,9 @@ struct PlanDigest: View {
     @State private var loading = true
     @State private var error = ""
     @State private var poller: Task<Void, Never>?
+    /// Counts reloads, so a reload fetches the figures as well: with the text
+    /// unchanged, nothing else would.
+    @State private var figureRevision = 0
     /// Seeded from the last document measured, not from a guess. The pane is
     /// rebuilt whenever you change task, and starting at a fixed 240 collapsed
     /// the digest on every switch before it sprang back to full height — a
@@ -129,6 +132,7 @@ struct PlanDigest: View {
             .help("Find in this document")
 
             Button {
+                figureRevision += 1
                 Task { await load() }
             } label: {
                 Image(systemName: "arrow.clockwise")
@@ -167,7 +171,8 @@ struct PlanDigest: View {
                 measuredHeight: $contentHeight,
                 find: find,
                 assetProject: session.projectId,
-                assetTask: session.slug
+                assetTask: session.slug,
+                assetRevision: figureRevision
             )
             .frame(height: contentHeight)
             .onChange(of: contentHeight) { _, height in

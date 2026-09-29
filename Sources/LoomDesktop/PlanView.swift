@@ -29,6 +29,9 @@ struct PlanView: View {
     /// Bumped when the editor must accept an external buffer (load / file switch).
     @State private var editorRevision = 0
     @State private var autosaveTask: Task<Void, Never>?
+    /// Counts reloads, so a reload fetches the figures as well: with the text
+    /// unchanged, nothing else would.
+    @State private var figureRevision = 0
     @AppStorage("markdownFilePreview") private var showPreview = true
 
     /// What the gateway's template API accepts, and only at the task root: a
@@ -276,6 +279,7 @@ struct PlanView: View {
                 }
 
                 Button {
+                    figureRevision += 1
                     Task { await refreshOpenFile(force: true) }
                 } label: {
                     Image(systemName: "arrow.clockwise")
@@ -321,7 +325,9 @@ struct PlanView: View {
                     markdown: draft,
                     documentID: "\(session.id)/\(selected)",
                     assetProject: session.projectId,
-                    assetTask: session.slug
+                    assetTask: session.slug,
+                    assetDirectory: (selected as NSString).deletingLastPathComponent,
+                    assetRevision: figureRevision
                 )
             } else {
                 PlainTextEditor(

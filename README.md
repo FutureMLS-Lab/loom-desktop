@@ -317,11 +317,16 @@ and task switches during the app session, independently for each server/document
 The Files tab offers **Read / Source** for Markdown, including PLAN.md and WIKI.md.
 Reading and folding never modify the source file.
 
+Figures resolve from the document's own folder. Each render and each press of
+the reload button fetches them again — agents regenerate figures in place —
+keeping the copy on screen until the new one arrives, and a figure that fails
+to load is retried.
+
 The compact plan uses 14pt body text with more line spacing. Preview updates are
 coalesced only when the source changes, so unrelated view updates cannot postpone
 the render. Run `swift scripts/test-markdown-preview.swift` from the repository
-root to check folding, search, refreshes and large plans in WebKit without opening
-a window or connecting to a gateway.
+root to check folding, search, refreshes, figures and large plans in WebKit
+without opening a window or connecting to a gateway.
 
 Finish acknowledgments track each completion timestamp. A task that finishes
 again between polls still becomes visible, and a failed acknowledgment is retried.

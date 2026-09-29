@@ -46,6 +46,17 @@
   document.getElementById('fold-all').click();
   const foldMs = performance.now() - foldStart;
   assert(sections.length === 321 && !sections[0].lastElementChild.hidden, 'Large plans fold without losing their outline');
+  window.__loomAssetScope('p1', 'task-a', 'work/repo/docs');
+  window.__loomRender('# Figures\n![a](img/a.png)\n\n![b](../b.png)\n\n![c](/abs/c.png)\n\n![d](<图 1.png>)\n\n![e](https://example.com/e.png)\n\n<img src="./f.png?raw=1">', true, 'test/figures', []);
+  const figures = Array.from(document.querySelectorAll('#content img'));
+  const figurePath = img => img.hasAttribute('data-loom-key') ? JSON.parse(img.getAttribute('data-loom-key'))[2] : null;
+  assert(JSON.stringify(figures.map(figurePath)) === JSON.stringify(['work/repo/docs/img/a.png', 'work/repo/b.png', '/abs/c.png', 'work/repo/docs/图 1.png', null, 'work/repo/docs/f.png']), 'Figure paths resolve from the document folder, percent-decoded');
+  assert(figures[4].getAttribute('src') === 'https://example.com/e.png', 'Remote images are left alone');
+  const firstFetch = figures[0].getAttribute('src');
+  assert(firstFetch.indexOf('loom-asset://figure?path=' + encodeURIComponent('work/repo/docs/img/a.png') + '&project=p1&task=task-a&v=') === 0, 'Figures are fetched through the asset scheme, versioned');
+  window.__loomRender('# Figures\n![a](img/a.png)', false, 'test/figures', []);
+  assert(document.querySelector('#content img').getAttribute('src') !== firstFetch, 'A re-render asks for a figure again instead of reusing a URL WebKit has cached');
+  window.__loomAssetScope('', '', '');
   window.__loomRender(md, true, 'test/preview', []);
   document.getElementById('fold-all').click();
   click('Research');

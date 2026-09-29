@@ -259,6 +259,11 @@
       });
     }
     window.addEventListener('resize', reportHeight);
+    // The document also grows after it is measured: a figure arrives, a
+    // <details> opens. Sized once, the view clipped whatever came after.
+    if (window.ResizeObserver) {
+      new ResizeObserver(function () { reportHeight(); }).observe(document.getElementById('wrap'));
+    }
 
     var foldDocument = '', collapsedKeys = new Set(), sections = [];
     function postFolds() {
@@ -351,28 +356,116 @@
     // Figures. A relative path in the document means "next to this
     // file on the server", which the page cannot read for itself, so
     // it is pointed at our own scheme and fetched with the token.
-    var assetProject = '', assetTask = '';
-    window.__loomAssetScope = function (project, task) {
+    //
+    // WebKit keeps anything loaded from a scheme of its host for as long
+    // as the page lives, and asks for a URL again only after a failure.
+    // So each fetch carries a version: a render or a refresh asks for
+    // every figure afresh, because agents regenerate figures in place,
+    // while the copy already on screen stays up until its replacement
+    // has arrived. A figure that is missing, or caught mid-write, is
+    // tried again instead of being left broken until the text changes.
+    var assetProject = '', assetTask = '', assetDir = '';
+    var assetShown = Object.create(null);
+    var assetWanted = Object.create(null);
+    var assetRetry = Object.create(null);
+    var assetSerial = 0;
+    var ASSET_RETRY_MS = [1500, 4000, 10000, 30000];
+    window.__loomAssetScope = function (project, task, dir) {
       assetProject = project || '';
       assetTask = task || '';
-      linkAssets();
+      assetDir = dir || '';
+      linkAssets(false);
     };
-    function linkAssets() {
+    window.__loomRefreshAssets = function () { linkAssets(true); };
+    // Relative to the document's own folder, as every markdown viewer
+    // reads it. marked percent-encodes the source — a figure named
+    // 图 1.png reaches the page as %E5%9B%BE%201.png — and the server
+    // looks for the file by its name.
+    function assetPath(raw) {
+      var path = raw.split(/[?#]/)[0];
+      try { path = decodeURI(path); } catch (e) {}
+      var absolute = path.charAt(0) === '/';
+      if (!absolute && assetDir) path = assetDir + '/' + path;
+      var parts = [];
+      path.split('/').forEach(function (part) {
+        if (!part || part === '.') return;
+        if (part === '..' && parts.length && parts[parts.length - 1] !== '..') parts.pop();
+        else parts.push(part);
+      });
+      return (absolute ? '/' : '') + parts.join('/');
+    }
+    function assetFigures(key) {
+      return Array.prototype.filter.call(
+        document.querySelectorAll('#content img[data-loom-key]'),
+        function (img) { return img.getAttribute('data-loom-key') === key; }
+      );
+    }
+    function fetchFigure(key, path, attempt) {
+      clearTimeout(assetRetry[key]);
+      delete assetRetry[key];
+      var url = 'loom-asset://figure?path=' + encodeURIComponent(path)
+        + '&project=' + encodeURIComponent(assetProject)
+        + (assetTask ? '&task=' + encodeURIComponent(assetTask) : '')
+        + '&v=' + Date.now().toString(36) + '-' + (++assetSerial);
+      assetWanted[key] = url;
+      if (!assetShown[key]) {
+        assetFigures(key).forEach(function (img) { img.src = url; });
+      }
+      var probe = new Image();
+      probe.onload = function () {
+        if (assetWanted[key] !== url && assetShown[key]) return;
+        assetShown[key] = url;
+        assetFigures(key).forEach(function (img) {
+          if (img.getAttribute('src') !== url) img.src = url;
+          img.classList.remove('missing');
+          img.alt = img.getAttribute('data-loom-alt') || '';
+        });
+      };
+      probe.onerror = function () {
+        if (assetWanted[key] !== url) return;
+        var figures = assetFigures(key);
+        if (!assetShown[key]) {
+          figures.forEach(function (img) {
+            img.classList.add('missing');
+            img.alt = (img.getAttribute('data-loom-alt') || 'figure') + ' — could not be loaded from the server';
+          });
+        }
+        if (figures.length && attempt < ASSET_RETRY_MS.length) {
+          assetRetry[key] = setTimeout(function () {
+            fetchFigure(key, path, attempt + 1);
+          }, ASSET_RETRY_MS[attempt]);
+        }
+      };
+      probe.src = url;
+    }
+    // `refresh` asks the server again for figures already on screen; a
+    // figure never shown yet is always asked for.
+    function linkAssets(refresh) {
       if (!assetProject) return;
+      var wanted = Object.create(null);
       var imgs = document.querySelectorAll('#content img');
       for (var i = 0; i < imgs.length; i++) {
         var img = imgs[i];
         var raw = img.getAttribute('data-loom-src') || img.getAttribute('src') || '';
-        if (!raw || /^(https?:|data:|loom-asset:)/i.test(raw)) continue;
-        img.setAttribute('data-loom-src', raw);
-        img.src = 'loom-asset://figure?path=' + encodeURIComponent(raw)
-          + '&project=' + encodeURIComponent(assetProject)
-          + (assetTask ? '&task=' + encodeURIComponent(assetTask) : '');
-        img.addEventListener('error', function () {
-          this.classList.add('missing');
-          this.alt = (this.alt || 'figure') + ' — not found on the server';
-        }, { once: true });
+        if (!raw || /^(https?:|data:|blob:|loom-asset:)/i.test(raw)) continue;
+        if (!img.hasAttribute('data-loom-src')) {
+          img.setAttribute('data-loom-src', raw);
+          img.setAttribute('data-loom-alt', img.alt || '');
+        }
+        var path = assetPath(raw);
+        var key = JSON.stringify([assetProject, assetTask, path]);
+        img.setAttribute('data-loom-key', key);
+        if (assetShown[key]) {
+          if (img.getAttribute('src') !== assetShown[key]) img.src = assetShown[key];
+          if (refresh) wanted[key] = path;
+        } else {
+          // Not the marked output's relative URL, which the page would
+          // try to load against about:blank and paint as broken.
+          img.removeAttribute('src');
+          wanted[key] = path;
+        }
       }
+      Object.keys(wanted).forEach(function (key) { fetchFigure(key, wanted[key], 0); });
     }
 
     // Find. `WKWebView.find` would highlight but gives no count and no
@@ -524,7 +617,7 @@
         root.innerHTML = '<pre>' + escapeHtml(md) + '</pre>';
       }
       buildSections();
-      linkAssets();
+      linkAssets(true);
       window.scrollTo(0, keepY);
       reportHeight();
       if (rerun) { findRun(rerun, true); }

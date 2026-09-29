@@ -75,8 +75,13 @@ final class PassThroughWebView: WKWebView {
 
 /// Serves `loom-asset://` requests from the markdown preview by fetching the
 /// figure through the API, which is the only party holding the token.
+@MainActor
 private final class AssetSchemeHandler: NSObject, WKURLSchemeHandler {
     private let api = LoomAPI()
+    /// Fetches still out, by the task WebKit handed over. WebKit stops the
+    /// task of an `<img>` that leaves the page — a re-render does that to
+    /// every figure still loading — and answering a stopped task raises.
+    private var inFlight: [ObjectIdentifier: Task<Void, Never>] = [:]
 
     func webView(_ webView: WKWebView, start task: WKURLSchemeTask) {
         guard let url = task.request.url,
@@ -90,23 +95,33 @@ private final class AssetSchemeHandler: NSObject, WKURLSchemeHandler {
             items.first { $0.name == name }?.value ?? ""
         }
         let path = value("path"), project = value("project"), slug = value("task")
-        Task { [api] in
+        let id = ObjectIdentifier(task)
+        inFlight[id] = Task { [api] in
+            let result: Result<(Data, String), Error>
             do {
-                let (data, type) = try await api.asset(projectId: project, task: slug, path: path)
-                let response = URLResponse(
+                result = .success(try await api.asset(projectId: project, task: slug, path: path))
+            } catch {
+                result = .failure(error)
+            }
+            guard self.inFlight.removeValue(forKey: id) != nil else { return }
+            switch result {
+            case .success(let (data, type)):
+                task.didReceive(URLResponse(
                     url: url, mimeType: type,
                     expectedContentLength: data.count, textEncodingName: nil
-                )
-                task.didReceive(response)
+                ))
                 task.didReceive(data)
                 task.didFinish()
-            } catch {
+            case .failure(let error):
                 task.didFailWithError(error)
             }
         }
     }
 
-    func webView(_ webView: WKWebView, stop task: WKURLSchemeTask) {}
+    func webView(_ webView: WKWebView, stop task: WKURLSchemeTask) {
+        inFlight.removeValue(forKey: ObjectIdentifier(task))?.cancel()
+    }
+
 }
 
 /// Browser-style Markdown preview: `marked` → HTML inside a WKWebView, with
@@ -132,6 +147,12 @@ struct MarkdownPreview: NSViewRepresentable {
     /// read from disk; without a task the base is the project's `.RUD/`.
     var assetProject = ""
     var assetTask = ""
+    /// The document's folder under that base, which its relative paths
+    /// start from — `work/repo/docs` for a README deep in a worktree.
+    var assetDirectory = ""
+    /// Bump to fetch the figures on screen again. The text can stay the same
+    /// while a figure next to it is regenerated.
+    var assetRevision = 0
 
     func makeCoordinator() -> Coordinator { Coordinator() }
 
@@ -170,6 +191,8 @@ struct MarkdownPreview: NSViewRepresentable {
         context.coordinator.autosize = measuredHeight != nil
         context.coordinator.assetProject = assetProject
         context.coordinator.assetTask = assetTask
+        context.coordinator.assetDirectory = assetDirectory
+        context.coordinator.assetRevision = assetRevision
         return web
     }
 
@@ -178,9 +201,11 @@ struct MarkdownPreview: NSViewRepresentable {
         context.coordinator.measuredHeight = measuredHeight
         (webView as? PassThroughWebView)?.forwardsScrollWheel = measuredHeight != nil
         if context.coordinator.assetProject != assetProject
-            || context.coordinator.assetTask != assetTask {
+            || context.coordinator.assetTask != assetTask
+            || context.coordinator.assetDirectory != assetDirectory {
             context.coordinator.assetProject = assetProject
             context.coordinator.assetTask = assetTask
+            context.coordinator.assetDirectory = assetDirectory
             context.coordinator.applyAssetScope()
         }
         let docChanged = context.coordinator.documentID != documentID
@@ -193,6 +218,10 @@ struct MarkdownPreview: NSViewRepresentable {
         }
         context.coordinator.observe(find)
         context.coordinator.scheduleRender(markdown, force: docChanged)
+        if context.coordinator.assetRevision != assetRevision {
+            context.coordinator.assetRevision = assetRevision
+            context.coordinator.refreshAssets()
+        }
     }
 
     final class Coordinator: NSObject, WKNavigationDelegate, WKScriptMessageHandler {
@@ -205,6 +234,8 @@ struct MarkdownPreview: NSViewRepresentable {
         var documentID = ""
         var assetProject = ""
         var assetTask = ""
+        var assetDirectory = ""
+        var assetRevision = 0
         var pendingMarkdown = ""
         var ready = false
         var compact = false
@@ -361,13 +392,21 @@ struct MarkdownPreview: NSViewRepresentable {
         }
 
         func applyAssetScope() {
-            guard let webView, ready else { return }
-            let project = assetProject.replacingOccurrences(of: "'", with: "")
-            let task = assetTask.replacingOccurrences(of: "'", with: "")
+            guard let webView, ready,
+                  let data = try? JSONSerialization.data(
+                      withJSONObject: [assetProject, assetTask, assetDirectory]
+                  ),
+                  let args = String(data: data, encoding: .utf8)
+            else { return }
             webView.evaluateJavaScript(
-                "window.__loomAssetScope('\(project)', '\(task)');",
+                "window.__loomAssetScope.apply(null, \(args));",
                 completionHandler: nil
             )
+        }
+
+        func refreshAssets() {
+            guard let webView, ready else { return }
+            webView.evaluateJavaScript("window.__loomRefreshAssets();", completionHandler: nil)
         }
 
         func applyCompact() {

@@ -308,6 +308,15 @@ struct SessionList: Decodable {
     var tmux_target: String?
 }
 
+// MARK: - Pane text
+
+/// The pane as text, scrollback included, from `tmux capture-pane`.
+struct TerminalCapture: Decodable {
+    var ok: Bool?
+    var text: String?
+    var error: String?
+}
+
 // MARK: - Small acknowledgement payloads
 
 struct OkResponse: Decodable {

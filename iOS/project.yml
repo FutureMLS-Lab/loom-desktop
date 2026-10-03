@@ -1,0 +1,92 @@
+# Loom for iPhone and iPad. Generate the Xcode project with:
+#
+#   cd iOS && xcodegen generate
+#
+# The networking, models, chat session and markdown layout are the desktop
+# app's own files, compiled into this target too, so both clients talk to
+# Loom the same way. Keep them free of AppKit.
+name: Loom
+options:
+  bundleIdPrefix: engineering.loom
+  deploymentTarget:
+    iOS: "18.0"
+  createIntermediateGroups: true
+  developmentLanguage: en
+settings:
+  base:
+    SWIFT_VERSION: "5.0"
+packages:
+  SwiftTerm:
+    url: https://github.com/migueldeicaza/SwiftTerm
+    from: 1.20.0
+targets:
+  Loom:
+    type: application
+    platform: iOS
+    sources:
+      - path: Loom
+      - path: ../Sources/LoomDesktop/LoomAPI.swift
+        group: Shared
+      - path: ../Sources/LoomDesktop/Models.swift
+        group: Shared
+      - path: ../Sources/LoomDesktop/LoomServers.swift
+        group: Shared
+      - path: ../Sources/LoomDesktop/ChatSession.swift
+        group: Shared
+      - path: ../Sources/LoomDesktop/SessionCache.swift
+        group: Shared
+      - path: ../Sources/LoomDesktop/ComposeDrafts.swift
+        group: Shared
+      - path: ../Sources/LoomDesktop/LoomResource.swift
+        group: Shared
+      - path: ../Sources/LoomDesktop/MarkdownBlocks.swift
+        group: Shared
+      - path: ../Resources/markdown-preview.html
+        group: Shared
+        buildPhase: resources
+      - path: ../Resources/marked.min.js
+        group: Shared
+        buildPhase: resources
+      - path: ../Resources/mermaid.min.js
+        group: Shared
+        buildPhase: resources
+    dependencies:
+      - package: SwiftTerm
+    info:
+      path: Loom/Info.plist
+      properties:
+        CFBundleDisplayName: Loom
+        CFBundleShortVersionString: $(MARKETING_VERSION)
+        CFBundleVersion: $(CURRENT_PROJECT_VERSION)
+        LSRequiresIPhoneOS: true
+        ITSAppUsesNonExemptEncryption: false
+        UILaunchScreen:
+          UIColorName: LaunchBackground
+        UIApplicationSceneManifest:
+          UIApplicationSupportsMultipleScenes: false
+        UISupportedInterfaceOrientations:
+          - UIInterfaceOrientationPortrait
+          - UIInterfaceOrientationLandscapeLeft
+          - UIInterfaceOrientationLandscapeRight
+        UISupportedInterfaceOrientations~ipad:
+          - UIInterfaceOrientationPortrait
+          - UIInterfaceOrientationPortraitUpsideDown
+          - UIInterfaceOrientationLandscapeLeft
+          - UIInterfaceOrientationLandscapeRight
+        NSLocalNetworkUsageDescription: Loom connects to the Loom gateway running on your development machine.
+        NSAppTransportSecurity:
+          NSAllowsLocalNetworking: true
+    settings:
+      base:
+        PRODUCT_NAME: Loom
+        PRODUCT_BUNDLE_IDENTIFIER: engineering.loom.ios
+        MARKETING_VERSION: "0.2.0"
+        CURRENT_PROJECT_VERSION: "2"
+        DEVELOPMENT_TEAM: 7B28C45G8P
+        CODE_SIGN_STYLE: Automatic
+        TARGETED_DEVICE_FAMILY: "1,2"
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+        ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME: AccentColor
+        SUPPORTS_MACCATALYST: false
+        SUPPORTS_MAC_DESIGNED_FOR_IPHONE_IPAD: false
+        ENABLE_PREVIEWS: true

@@ -253,8 +253,11 @@ struct LoomAPI {
         projectId: String, slug: String, limit: Int
     ) async throws -> ConversationFeed {
         let clamped = max(20, min(500, limit))
+        // Up to 500 messages of tool output; over a phone's connection that
+        // outlasts the standard allowance.
         return try await request(
-            scoped("/api/tasks/\(slugPath(slug))/conversation?limit=\(clamped)", projectId)
+            scoped("/api/tasks/\(slugPath(slug))/conversation?limit=\(clamped)", projectId),
+            patience: .large
         )
     }
 
@@ -577,6 +580,24 @@ struct LoomAPI {
         let done = DispatchSemaphore(value: 0)
         URLSession.shared.dataTask(with: request) { _, _, _ in done.signal() }.resume()
         _ = done.wait(timeout: .now() + timeout)
+    }
+
+    /// Tells the server the stream's client is still there. A client that
+    /// vanishes without closing — a phone put away — is otherwise only noticed
+    /// when its connection finally times out, holding a `tmux attach` until then.
+    func streamHeartbeat(streamId: String) async throws {
+        let _: OkResponse = try await request(
+            "/api/tmux/stream-heartbeat",
+            method: "POST",
+            body: ["stream_id": streamId]
+        )
+    }
+
+    /// The pane's text, scrollback included; the server returns at most 500
+    /// lines. A terminal's own selection only reaches what is on its screen.
+    func capture(target: String, lines: Int) async throws -> TerminalCapture {
+        let encoded = target.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? target
+        return try await request("/api/tmux/capture?target=\(encoded)&lines=\(max(1, min(500, lines)))")
     }
 
     /// Keystrokes for an attached stream. This writes to the pty, so the keys a

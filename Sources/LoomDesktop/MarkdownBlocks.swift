@@ -264,6 +264,9 @@ enum InlineMarkdown {
 struct MarkdownBody: View {
     let text: String
     var fontSize: CGFloat = 14
+    /// Off where the host offers its own copy: on iOS, text selection and a
+    /// context menu around the same text compete for one long press.
+    var selectable = true
 
     /// Leading for running text. At 14pt the 2 this used to be worked out
     /// around 1.35× — fine for a caption, close for a paragraph, and closer
@@ -279,14 +282,14 @@ struct MarkdownBody: View {
                     Text(InlineMarkdown.text(body))
                         .font(.system(size: fontSize))
                         .lineSpacing(leading)
-                        .textSelection(.enabled)
+                        .selectableText(selectable)
                         .fixedSize(horizontal: false, vertical: true)
                         .frame(maxWidth: .infinity, alignment: .leading)
 
                 case .heading(let body, let level):
                     Text(InlineMarkdown.text(body))
                         .font(.system(size: fontSize + (level <= 2 ? 3 : 1), weight: .semibold))
-                        .textSelection(.enabled)
+                        .selectableText(selectable)
                         .fixedSize(horizontal: false, vertical: true)
                         .frame(maxWidth: .infinity, alignment: .leading)
                         .padding(.top, 2)
@@ -313,7 +316,7 @@ struct MarkdownBody: View {
                                 Text(InlineMarkdown.text(item.text))
                                     .font(.system(size: fontSize))
                                     .lineSpacing(leading)
-                                    .textSelection(.enabled)
+                                    .selectableText(selectable)
                                     .fixedSize(horizontal: false, vertical: true)
                                     .frame(maxWidth: .infinity, alignment: .leading)
                             }
@@ -322,14 +325,15 @@ struct MarkdownBody: View {
                     }
 
                 case .code(let body, let language):
-                    CodeBlock(source: body, language: language, fontSize: fontSize - 1.5)
+                    CodeBlock(source: body, language: language, fontSize: fontSize - 1.5, selectable: selectable)
 
                 case .table(let header, let rows, let alignments):
                     MarkdownTable(
                         header: header,
                         rows: rows,
                         alignments: alignments,
-                        fontSize: fontSize - 1
+                        fontSize: fontSize - 1,
+                        selectable: selectable
                     )
 
                 case .quote(let body):
@@ -341,7 +345,7 @@ struct MarkdownBody: View {
                             .font(.system(size: fontSize - 0.5))
                             .foregroundColor(.secondary)
                             .lineSpacing(leading)
-                            .textSelection(.enabled)
+                            .selectableText(selectable)
                             .fixedSize(horizontal: false, vertical: true)
                     }
                     .frame(maxWidth: .infinity, alignment: .leading)
@@ -361,6 +365,7 @@ private struct CodeBlock: View {
     let source: String
     let language: String
     let fontSize: CGFloat
+    let selectable: Bool
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -374,7 +379,7 @@ private struct CodeBlock: View {
             ScrollView(.horizontal, showsIndicators: false) {
                 Text(source)
                     .font(.system(size: fontSize, design: .monospaced))
-                    .textSelection(.enabled)
+                    .selectableText(selectable)
                     .padding(.horizontal, 10)
                     .padding(.vertical, 8)
             }
@@ -393,6 +398,7 @@ private struct MarkdownTable: View {
     let rows: [[String]]
     let alignments: [MarkdownBlock.Alignment]
     let fontSize: CGFloat
+    let selectable: Bool
 
     private var columns: Int { max(header.count, rows.map(\.count).max() ?? 0) }
 
@@ -430,7 +436,7 @@ private struct MarkdownTable: View {
         Text(InlineMarkdown.text(body))
             .font(.system(size: fontSize, weight: weight, design: .default))
             .monospacedDigit()
-            .textSelection(.enabled)
+            .selectableText(selectable)
             .fixedSize(horizontal: false, vertical: true)
             .padding(.horizontal, 9)
             .padding(.vertical, 5)
@@ -452,5 +458,16 @@ private struct MarkdownTable: View {
 private extension Array {
     subscript(safe index: Int) -> Element? {
         indices.contains(index) ? self[index] : nil
+    }
+}
+
+private extension View {
+    @ViewBuilder
+    func selectableText(_ enabled: Bool) -> some View {
+        if enabled {
+            textSelection(.enabled)
+        } else {
+            self
+        }
     }
 }

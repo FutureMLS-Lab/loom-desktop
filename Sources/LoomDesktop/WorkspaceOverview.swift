@@ -53,6 +53,9 @@ struct WorkspaceOverview: View {
                     .buttonStyle(.borderedProminent).tint(LoomColors.accent)
                     Button(action: onQuickOpen) { Label("Open task…", systemImage: "magnifyingglass") }
                         .disabled(store.tasksByProject.values.allSatisfy { $0.isEmpty })
+                    if !store.projects.isEmpty {
+                        Button(action: onAddProject) { Label("Add project", systemImage: "folder.badge.plus") }
+                    }
                     Spacer()
                     Text("⌘K to switch").font(.system(size: 11)).foregroundStyle(.tertiary)
                 }

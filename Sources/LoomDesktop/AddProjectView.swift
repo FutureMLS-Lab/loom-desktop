@@ -6,6 +6,8 @@ import SwiftUI
 /// children of the directory it was launched in, and those become shortcuts.
 struct AddProjectView: View {
     @ObservedObject var store: TaskStore
+    /// Called with the new project's id once the server has registered it.
+    var onAdded: (String?) -> Void = { _ in }
     let onDismiss: () -> Void
 
     @State private var source = ProjectSource.existing
@@ -18,6 +20,9 @@ struct AddProjectView: View {
     @State private var error = ""
     /// Cleared once the path is typed in, so a repo URL stops overwriting it.
     @State private var pathIsSuggested = true
+    /// The path last filled in for the person, so that filling it in is not
+    /// mistaken for their typing.
+    @State private var suggestedPath = ""
     @FocusState private var pathFocused: Bool
 
     private var trimmedPath: String {
@@ -26,6 +31,8 @@ struct AddProjectView: View {
 
     private var canAdd: Bool {
         guard !busy, !trimmedPath.isEmpty else { return false }
+        // The prefilled prefix alone would register the launch directory.
+        if source != .existing, isLaunchRoot(trimmedPath) { return false }
         if source == .clone {
             return !repoURL.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
         }
@@ -56,13 +63,19 @@ struct AddProjectView: View {
                 }
                 .labelsHidden()
                 .pickerStyle(.segmented)
+                .onChange(of: source) { _, mode in prefillPrefix(for: mode) }
 
                 if source == .clone {
                     field("Repository") {
-                        TextField("https://github.com/owner/repo.git", text: $repoURL)
-                            .textFieldStyle(.roundedBorder)
-                            .font(.system(size: 13))
-                            .onChange(of: repoURL) { _, new in suggestPath(from: new) }
+                        VStack(alignment: .leading, spacing: 6) {
+                            TextField("https://github.com/owner/repo.git", text: $repoURL)
+                                .textFieldStyle(.roundedBorder)
+                                .font(.system(size: 13))
+                                .onChange(of: repoURL) { _, new in suggestPath(from: new) }
+                            Text("A link copied from a GitHub page works too.")
+                                .font(.system(size: 11))
+                                .foregroundColor(.secondary)
+                        }
                     }
                 }
 
@@ -73,8 +86,8 @@ struct AddProjectView: View {
                                 .textFieldStyle(.roundedBorder)
                                 .font(.system(size: 13, design: .monospaced))
                                 .focused($pathFocused)
-                                .onChange(of: path) { _, _ in
-                                    if pathFocused { pathIsSuggested = false }
+                                .onChange(of: path) { _, new in
+                                    if pathFocused, new != suggestedPath { pathIsSuggested = false }
                                 }
                             if !children.isEmpty {
                                 Menu("Browse") {
@@ -163,18 +176,65 @@ struct AddProjectView: View {
         guard let workspace = try? await store.api.workspace() else { return }
         launchRoot = workspace.launchRoot ?? ""
         children = workspace.launchRootChildren ?? []
+        // A URL pasted before the root arrived had nothing to suggest under.
+        if source == .clone, !repoURL.isEmpty {
+            suggestPath(from: repoURL)
+        } else {
+            prefillPrefix(for: source)
+        }
+    }
+
+    private var rootPrefix: String {
+        launchRoot.hasSuffix("/") ? launchRoot : launchRoot + "/"
+    }
+
+    private func isLaunchRoot(_ candidate: String) -> Bool {
+        guard !launchRoot.isEmpty else { return false }
+        func bare(_ value: String) -> String { value.hasSuffix("/") ? String(value.dropLast()) : value }
+        return bare(candidate) == bare(launchRoot)
+    }
+
+    private func suggest(_ value: String) {
+        suggestedPath = value
+        path = value
+    }
+
+    /// New folders and clones have to live under the launch root, so their
+    /// path starts there.
+    private func prefillPrefix(for mode: ProjectSource) {
+        guard mode != .existing, pathIsSuggested, trimmedPath.isEmpty, !launchRoot.isEmpty else { return }
+        suggest(rootPrefix)
     }
 
     /// `…/owner/repo.git` clones into `<launchRoot>/repo` unless the path has
     /// been typed in by hand.
     private func suggestPath(from url: String) {
         guard pathIsSuggested, !launchRoot.isEmpty else { return }
-        var name = url.trimmingCharacters(in: .whitespacesAndNewlines)
+        var name = Self.cloneURL(from: url)
         if name.hasSuffix("/") { name.removeLast() }
         if name.hasSuffix(".git") { name.removeLast(4) }
-        guard let slash = name.lastIndex(of: "/"), slash < name.endIndex else { return }
-        let leaf = String(name[name.index(after: slash)...])
-        path = leaf.isEmpty ? "" : "\(launchRoot)/\(leaf)"
+        let leaf = name.lastIndex(of: "/").map { String(name[name.index(after: $0)...]) } ?? ""
+        suggest(rootPrefix + leaf)
+    }
+
+    /// What `git clone` is given for what was pasted. A link copied from a
+    /// GitHub page — a branch, a file, no scheme — is not a URL git can clone
+    /// as written, so it is cut back to the repository it belongs to. Anything
+    /// else, a URL carrying credentials included, goes through as typed.
+    static func cloneURL(from raw: String) -> String {
+        let typed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        let lowered = typed.lowercased()
+        let candidate = lowered.hasPrefix("github.com/") || lowered.hasPrefix("www.github.com/")
+            ? "https://" + typed
+            : typed
+        guard let url = URL(string: candidate),
+              let host = url.host?.lowercased(),
+              host == "github.com" || host == "www.github.com",
+              url.user == nil
+        else { return typed }
+        let parts = url.path.split(separator: "/")
+        guard parts.count >= 2 else { return typed }
+        return "https://github.com/\(parts[0])/\(parts[1])"
     }
 
     private func add() {
@@ -183,12 +243,13 @@ struct AddProjectView: View {
         error = ""
         Task {
             do {
-                try await store.api.addProject(
+                let id = try await store.api.addProject(
                     path: trimmedPath,
                     source: source,
-                    repoURL: repoURL.trimmingCharacters(in: .whitespacesAndNewlines),
+                    repoURL: Self.cloneURL(from: repoURL),
                     codeRoot: codeRoot.trimmingCharacters(in: .whitespacesAndNewlines)
                 )
+                onAdded(id)
                 store.refreshNow()
                 onDismiss()
             } catch {

@@ -20,7 +20,10 @@ struct ProjectPickerView: View {
     /// the payload only when it is dropped, and without this could not tell
     /// whether the item would land above it or below.
     @State private var dragging: DragPayload?
-    @State private var collapsed: Set<String> = []
+    /// Projects start closed: a fleet of a dozen projects opened out is a
+    /// list too long to find anything in. The one holding the open task
+    /// opens itself, so a task chosen from the dock or ⌘K is never hidden.
+    @State private var expanded: Set<String> = []
     @State private var activityFilter = WorkspaceFilter.all
     @AppStorage("workspaceSidebarVisible") private var sidebarVisible = true
 
@@ -31,7 +34,13 @@ struct ProjectPickerView: View {
 
     @State private var quickOpen = false
     @State private var newTask = false
+    /// The project a New Task sheet opened from that project's section starts
+    /// in, rather than the one in front.
+    @State private var newTaskProject: String?
     @State private var addProject = false
+    /// A project just added, brought into view once the list holds it.
+    @State private var revealProject: String?
+    @State private var scrolledProject: String?
     /// The project whose code root is being edited, and the pattern typed so
     /// far. Two pieces of state because the alert outlives the menu that
     /// opened it.
@@ -53,7 +62,11 @@ struct ProjectPickerView: View {
         }
         .background(LoomColors.bgBase)
         .frame(minWidth: 940, minHeight: 640)
-        .onAppear { store.refreshNow() }
+        .onAppear {
+            store.refreshNow()
+            expandProject(of: store.selection)
+        }
+        .onChange(of: store.selection) { _, selection in expandProject(of: selection) }
         .onChange(of: windowState.toggleSidebarRequests) { _, _ in sidebarVisible.toggle() }
         .onChange(of: windowState.quickOpenRequests) { _, _ in quickOpen = true }
         .onChange(of: windowState.newTaskRequests) { _, _ in newTask = true }
@@ -66,6 +79,8 @@ struct ProjectPickerView: View {
                     .keyboardShortcut("p", modifiers: .command)
                 Button("New Task…") { newTask = true }
                     .keyboardShortcut("n", modifiers: .command)
+                Button("Add Project…") { addProject = true }
+                    .keyboardShortcut("n", modifiers: [.command, .option])
                 Button("Quick Switch…") { quickOpen = true }
                     .keyboardShortcut("k", modifiers: .command)
                 Button("Toggle Sidebar") { sidebarVisible.toggle() }
@@ -75,9 +90,10 @@ struct ProjectPickerView: View {
             }
             .opacity(0)
         )
-        .sheet(isPresented: $newTask) {
+        .sheet(isPresented: $newTask, onDismiss: { newTaskProject = nil }) {
             NewTaskView(
                 store: store,
+                preferredProjectId: newTaskProject,
                 onCreated: { projectId, slug in
                     store.select(projectId: projectId, slug: slug)
                 },
@@ -94,7 +110,7 @@ struct ProjectPickerView: View {
             )
         }
         .sheet(isPresented: $addProject) {
-            AddProjectView(store: store) { addProject = false }
+            AddProjectView(store: store, onAdded: reveal) { addProject = false }
         }
         .alert(
             "Code root for \(codeRootProject?.label ?? "")",
@@ -352,21 +368,21 @@ struct ProjectPickerView: View {
                 // view can continually revise its estimates while scrolling,
                 // trapping the main thread in layout. Measure these small
                 // sidebar sections eagerly so scrolling uses stable heights.
-                VStack(alignment: .leading, spacing: 18) {
+                VStack(alignment: .leading, spacing: 2) {
                     ForEach(visibleProjects, id: \.id) { project in
                         ProjectCard(
                             project: project,
                             tasks: filteredTasks(for: project.id, states: stateByTask),
                             counts: store.projectCounts(for: project.id),
-                            collapsed: collapsed.contains(project.id) && search.isEmpty && activityFilter == .all,
+                            collapsed: !expanded.contains(project.id) && search.isEmpty && activityFilter == .all,
                             selection: selection,
                             stateFor: { slug in stateByTask["\(project.id)/\(slug)"] },
                             onToggle: {
                                 withAnimation(.easeInOut(duration: 0.14)) {
-                                    if collapsed.contains(project.id) {
-                                        collapsed.remove(project.id)
+                                    if expanded.contains(project.id) {
+                                        expanded.remove(project.id)
                                     } else {
-                                        collapsed.insert(project.id)
+                                        expanded.insert(project.id)
                                     }
                                 }
                             },
@@ -394,7 +410,11 @@ struct ProjectPickerView: View {
                                 codeRootDraft = "."
                                 codeRootProject = project
                             },
-                            onRemove: { projectToRemove = project }
+                            onRemove: { projectToRemove = project },
+                            onNewTask: {
+                                newTaskProject = project.id
+                                newTask = true
+                            }
                         )
                         .draggable(beginDrag(.project(id: project.id)))
                         .dropDestination(for: String.self) { items, _ in
@@ -419,20 +439,28 @@ struct ProjectPickerView: View {
                             if !projects.isEmpty {
                                 Button("Show all tasks") { activityFilter = .all; windowState.filter = "" }
                                     .font(.system(size: 12)).buttonStyle(.link)
+                            } else if store.connection == .online {
+                                Button("Add a project…") { addProject = true }
+                                    .font(.system(size: 12)).buttonStyle(.link)
                             }
                         }
                         .frame(maxWidth: .infinity).padding(.vertical, 24)
                     }
                 }
+                .scrollTargetLayout()
                 .padding(.horizontal, 12)
                 .padding(.top, 6)
                 .padding(.bottom, 16)
             }
+            .scrollPosition(id: $scrolledProject, anchor: .center)
+            .onChange(of: visibleProjects.map(\.id)) { _, ids in revealIfListed(ids) }
+            .onChange(of: revealProject) { _, _ in revealIfListed(visibleProjects.map(\.id)) }
             Divider().padding(.horizontal, 12)
             VStack(spacing: 2) {
                 sidebarAction("Workspace", symbol: "square.grid.2x2", shortcut: "⇧⌘H") { store.selection = nil }
                 sidebarAction("Quick switch", symbol: "magnifyingglass", shortcut: "⌘K") { quickOpen = true }
                 sidebarAction("New task", symbol: "plus", shortcut: "⌘N") { newTask = true }
+                sidebarAction("Add project", symbol: "folder.badge.plus", shortcut: "⌥⌘N") { addProject = true }
                 // The project scratchpad, for the project of the task in
                 // front. It had a shortcut and a menu-bar entry and no face in
                 // the window, which is where people looked for it.
@@ -450,6 +478,27 @@ struct ProjectPickerView: View {
         // through, dimming with the window — rather than a painted wash. It
         // is the one surface that says "Mac" before anything on it is read.
         .background(SidebarMaterial())
+    }
+
+    /// A project just added has no tasks, so any filter would hide it; it is
+    /// shown open, wherever in the list the server put it.
+    private func reveal(_ id: String?) {
+        guard let id else { return }
+        activityFilter = .all
+        if !windowState.filter.isEmpty { windowState.filter = "" }
+        expanded.insert(id)
+        revealProject = id
+    }
+
+    private func expandProject(of selection: String?) {
+        guard let projectId = selection.flatMap({ Self.split($0)?.0 }) else { return }
+        expanded.insert(projectId)
+    }
+
+    private func revealIfListed(_ ids: [String]) {
+        guard let id = revealProject, ids.contains(id) else { return }
+        revealProject = nil
+        withAnimation(.easeInOut(duration: 0.2)) { scrolledProject = id }
     }
 
     private func sidebarAction(_ title: String, symbol: String, shortcut: String, action: @escaping () -> Void) -> some View {
@@ -563,7 +612,8 @@ struct ProjectPickerView: View {
 
 // MARK: - Sidebar pieces
 
-/// One project = one card, mirroring `.sidebar__section` in the web console.
+/// One project: its heading a chip, as in the web console's project bar, and
+/// its tasks hanging beneath it.
 private struct ProjectCard: View {
     let project: LoomProject
     let tasks: [LoomTaskMeta]
@@ -587,46 +637,56 @@ private struct ProjectCard: View {
     let onNotes: () -> Void
     let onSetCodeRoot: () -> Void
     let onRemove: () -> Void
+    let onNewTask: () -> Void
 
     @State private var dropTarget: String?
+    @State private var hovering = false
+
+    private var holdsSelection: Bool {
+        selection?.hasPrefix("\(project.id)/") == true
+    }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
+        VStack(alignment: .leading, spacing: 4) {
+            // The project carries an icon tile its tasks do not, which is what
+            // tells the two apart; the tile deepens while one of its tasks is
+            // open, so a closed project still says where the open task lives.
             Button(action: onToggle) {
-                HStack(spacing: 7) {
+                HStack(spacing: 8) {
                     Image(systemName: "chevron.right")
-                        .font(.system(size: 9, weight: .bold))
-                        .foregroundColor(.secondary)
+                        .font(.system(size: 8.5, weight: .semibold))
+                        .foregroundStyle(.tertiary)
                         .rotationEffect(.degrees(collapsed ? 0 : 90))
+                        .frame(width: 10)
+                    Image(systemName: "folder.fill")
+                        .font(.system(size: 10.5, weight: .medium))
+                        .foregroundStyle(LoomColors.accent)
+                        .frame(width: 22, height: 22)
+                        .background(LoomColors.accent.opacity(holdsSelection ? 0.2 : 0.1), in: LoomShape.control)
                     Text(project.label)
-                        .font(.system(size: 12, weight: .semibold))
-                        .foregroundColor(.secondary)
+                        .font(.system(size: 13, weight: .semibold))
+                        .foregroundColor(.primary.opacity(0.88))
                         .lineLimit(1)
                     Spacer(minLength: 4)
                     // Live counts; fixed-width digits so the header row does
                     // not shuffle when one of them ticks over.
-                    Text("\(tasks.count)")
-                        .font(.system(size: 10, weight: .semibold))
-                        .monospacedDigit()
-                        .foregroundColor(.secondary)
                     if let counts {
-                        if counts.finished > 0 {
-                            Label("\(counts.finished)", systemImage: "exclamationmark.circle.fill")
-                                .font(.system(size: 10, weight: .semibold))
-                                .monospacedDigit()
-                                .foregroundColor(LoomColors.attention)
-                        }
-                        if counts.working > 0 {
-                            Label("\(counts.working)", systemImage: "arrow.triangle.2.circlepath")
-                                .font(.system(size: 10, weight: .semibold))
-                                .monospacedDigit()
-                                .foregroundColor(LoomColors.accent)
-                        }
+                        if counts.finished > 0 { countPill(counts.finished, .finished) }
+                        if counts.working > 0 { countPill(counts.working, .working) }
                     }
+                    Text("\(tasks.count)")
+                        .font(.system(size: 11, weight: .medium))
+                        .monospacedDigit()
+                        .foregroundStyle(.tertiary)
+                        .frame(minWidth: 14, alignment: .trailing)
                 }
-                .contentShape(Rectangle())
+                .padding(.horizontal, 6)
+                .padding(.vertical, 5)
+                .background(hovering ? Color.primary.opacity(0.045) : .clear, in: LoomShape.field)
+                .contentShape(LoomShape.field)
             }
             .buttonStyle(.plain)
+            .onHover { hovering = $0 }
             .contextMenu {
                 Button("Copy Path") {
                     NSPasteboard.general.clearContents()
@@ -640,7 +700,7 @@ private struct ProjectCard: View {
             .help(project.path)
 
             if !collapsed {
-                VStack(spacing: 4) {
+                VStack(spacing: 2) {
                     ForEach(tasks, id: \.slug) { meta in
                         SidebarTaskRow(
                             meta: meta,
@@ -682,19 +742,42 @@ private struct ProjectCard: View {
                         }
                     }
                     if tasks.isEmpty {
-                        Text("No tasks")
-                            .font(.system(size: 12.5))
-                            .foregroundColor(.secondary)
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                            .padding(.vertical, 4)
+                        HStack(spacing: 6) {
+                            Text("No tasks")
+                                .foregroundColor(.secondary)
+                            Button("New task", action: onNewTask)
+                                .buttonStyle(.link)
+                        }
+                        .font(.system(size: 12.5))
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .padding(.vertical, 4)
+                        .padding(.leading, 10)
                     }
                 }
+                // Status dots line up under the project's tile.
+                .padding(.leading, 20)
+                .padding(.bottom, 6)
             }
         }
         // A section, not a card: a native sidebar groups with a heading and
         // air, and boxes around every group made the list read as a page of
         // panels rather than a list.
         .padding(.horizontal, 4)
+    }
+
+    /// The same symbol and colour as the sidebar's filter of that name.
+    private func countPill(_ count: Int, _ filter: WorkspaceFilter) -> some View {
+        HStack(spacing: 3) {
+            Image(systemName: filter.symbol)
+                .font(.system(size: 8.5, weight: .semibold))
+            Text("\(count)")
+        }
+        .font(.system(size: 10.5, weight: .semibold))
+        .monospacedDigit()
+        .foregroundColor(filter.color)
+        .padding(.horizontal, 6)
+        .padding(.vertical, 2)
+        .background(filter.color.opacity(0.1), in: Capsule())
     }
 
     private func taskLandsBelow(_ target: String) -> Bool {
@@ -738,32 +821,45 @@ private struct SidebarTaskRow: View {
                 // one row you can read costs you the ones you were scanning
                 // for.
                 Text(meta.title ?? meta.slug)
-                    .font(.system(size: 14, weight: selected ? .medium : .regular))
+                    .font(.system(size: 13.5, weight: selected ? .medium : .regular))
                     .lineSpacing(2)
-                    .foregroundColor(selected ? .white : .primary)
+                    .foregroundColor(selected ? .primary : .primary.opacity(0.82))
                     .multilineTextAlignment(.leading)
                     .lineLimit(2)
                     .fixedSize(horizontal: false, vertical: true)
                     .frame(maxWidth: .infinity, alignment: .leading)
+                if let badge {
+                    Text(badge.text)
+                        .font(.system(size: 9.5, weight: .medium))
+                        .foregroundColor(badge.research ? LoomColors.green : (selected ? LoomColors.accent : .secondary))
+                        .padding(.horizontal, 6)
+                        .padding(.vertical, 1.5)
+                        .background(
+                            badge.research ? LoomColors.green.opacity(0.1)
+                                : (selected ? LoomColors.accent.opacity(0.12) : Color.primary.opacity(0.05)),
+                            in: Capsule()
+                        )
+                        .padding(.top, 2)
+                }
             }
             .padding(.horizontal, 10)
-            .padding(.vertical, 7)
-            // Selection the way a Mac sidebar selects: the accent, filled,
-            // with the row's text turned white — not a pale wash in a box.
-            .background(rowBackground, in: LoomShape.control)
+            .padding(.vertical, 6)
+            // A soft wash rather than a solid fill: the open task should be
+            // easy to find without being the loudest thing in the list.
+            .background(rowBackground, in: LoomShape.field)
             .overlay(alignment: .leading) {
                 // A standing edge on a task that finished unseen, so it
                 // is findable in a long list even between blinks. Inset
                 // and rounded, so it sits inside the row's corners.
                 if state == .finished {
                     Capsule()
-                        .fill(selected ? Color.white.opacity(0.8) : LoomColors.attention)
+                        .fill(LoomColors.attention.opacity(0.8))
                         .frame(width: 3)
                         .padding(.vertical, 7)
                         .padding(.leading, 3)
                 }
             }
-            .contentShape(LoomShape.control)
+            .contentShape(LoomShape.field)
         }
         .buttonStyle(.plain)
         .help(meta.title ?? meta.slug)
@@ -781,22 +877,30 @@ private struct SidebarTaskRow: View {
         }
     }
 
+    /// The web console's task badge: AR for a research task, otherwise the
+    /// CLI that runs it.
+    private var badge: (text: String, research: Bool)? {
+        let kind = (meta.kind ?? "").lowercased()
+        if kind == "ar" || kind == "aris" { return ("AR", true) }
+        let agent = (meta.agent ?? "").trimmingCharacters(in: .whitespaces)
+        return agent.isEmpty ? nil : (agent.capitalized, false)
+    }
+
     private var rowBackground: Color {
-        if selected { return LoomColors.accent }
-        if hovering { return Color.primary.opacity(0.06) }
-        if state == .finished { return LoomColors.attention.opacity(0.12) }
+        if selected { return LoomColors.accentSoft }
+        if hovering { return Color.primary.opacity(0.045) }
+        if state == .finished { return LoomColors.attention.opacity(0.08) }
         return .clear
     }
 
-    /// On the accent fill the coloured dots would vanish, so a selected row
-    /// draws its state in white. Static there, too: the selected task is the
-    /// one being looked at, so it has nothing to wave about.
+    /// Static on the selected row: the selected task is the one being looked
+    /// at, so it has nothing to wave about.
     @ViewBuilder
     private var statusDot: some View {
         switch state {
         case .working:
             if selected {
-                Circle().fill(Color.white).frame(width: 8, height: 8)
+                Circle().fill(LoomColors.accent).frame(width: 8, height: 8)
             } else {
                 LoomActivityDot(size: 12)
             }
@@ -804,20 +908,20 @@ private struct SidebarTaskRow: View {
             if selected {
                 Image(systemName: "exclamationmark.circle.fill")
                     .font(.system(size: 11))
-                    .foregroundColor(.white)
+                    .foregroundColor(LoomColors.attention)
             } else {
                 LoomBlinkDot(size: 12)
             }
         case .idle:
             Circle()
                 .strokeBorder(
-                    selected ? Color.white.opacity(0.75) : Color.secondary.opacity(0.45),
+                    selected ? LoomColors.accent.opacity(0.6) : Color.secondary.opacity(0.45),
                     lineWidth: 1.2
                 )
                 .frame(width: 9, height: 9)
         case nil:
             Circle()
-                .fill(selected ? Color.white.opacity(0.5) : Color.secondary.opacity(0.22))
+                .fill(selected ? LoomColors.accent.opacity(0.35) : Color.secondary.opacity(0.22))
                 .frame(width: 9, height: 9)
         }
     }

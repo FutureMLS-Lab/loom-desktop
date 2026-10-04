@@ -5,6 +5,8 @@ import SwiftUI
 /// `.RUD/<slug>/`; the worktree appears when the agent first starts.
 struct NewTaskView: View {
     @ObservedObject var store: TaskStore
+    /// Where to start when the sheet was opened from a particular project.
+    var preferredProjectId: String?
     let onCreated: (String, String) -> Void
     let onDismiss: () -> Void
 
@@ -101,8 +103,8 @@ struct NewTaskView: View {
         .onAppear {
             // Default to whatever project you were already looking at.
             if projectId.isEmpty {
-                projectId = store.selection
-                    .flatMap { ProjectPickerView.split($0)?.0 }
+                projectId = preferredProjectId
+                    ?? store.selection.flatMap { ProjectPickerView.split($0)?.0 }
                     ?? store.projects.first?.id
                     ?? ""
             }

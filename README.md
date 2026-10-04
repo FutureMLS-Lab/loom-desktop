@@ -45,14 +45,18 @@ for a finishing phrase whether or not the task is open.
 
 The window's toolbar holds **+** (a new task, or a project to add — an
 existing folder on the Loom host, a new folder, or a repo to clone), refresh,
-and the search field that filters the sidebar as you type. Right-clicking a
+and the search field that filters the sidebar as you type. **Add project** is
+also at the foot of the sidebar (⌥⌘N) and on the workspace overview. A link
+copied from a GitHub page — a branch, a file — clones the repository it
+belongs to, into a folder named after it. The new project is scrolled into
+view, and a project with no tasks offers **New task** in its place. Right-clicking a
 project sets its code root or removes it from Loom — removing unregisters the
 folder without deleting anything on disk — and right-clicking a task renames
 or deletes it. Deleting does remove the task's folder on the host (plan,
 notes, worktree checkout), after stopping its agent; branches and commits
 stay in the repository they came from.
 
-⌘P opens any task by name, ⌘N creates one, ⌘0 brings the main window back,
+⌘P opens any task by name, ⌘N creates one, ⌥⌘N adds a project, ⌘0 brings the main window back,
 ⌘⇧N opens the project's notes (`<project>/.RUD/NOTES.md`, the same file the
 web console edits), ⌘S saves in Files and Notes, ⌘F finds in the plan preview,
 and ⌘+/⌘− set the terminal's font size.
@@ -193,9 +197,12 @@ then the reply arrives and the pill blinks until you click it.
 - `LOOM_DESKTOP_WINDOW=940x640` — open the main window at that content size,
   to check cramped layouts. Without it the window clamps to its default, so
   a script cannot make it small.
-- `LOOM_DESKTOP_OPEN_WINDOWS=main,notes,settings` — open windows that
-  otherwise need a menu click, so a snapshot can include them. `main` selects
-  no task on the way in, so reviewing the UI never spends an unread flag.
+- `LOOM_DESKTOP_OPEN_WINDOWS=main,notes,settings,addproject` — open windows
+  that otherwise need a menu click, so a snapshot can include them. `main`
+  selects no task on the way in, so reviewing the UI never spends an unread
+  flag; `addproject` opens the main window with the Add project sheet on it.
+  The mock serves a launch root and accepts new projects, so the sheet can be
+  exercised end to end without a server.
 - `LOOM_DESKTOP_THEME_FLIP=dark` — switch the dock's theme eight seconds in.
   Flipping a running dock is the case that breaks: layer colours are resolved
   once and kept, so a card can half-change in a way a launch-time setting
@@ -298,7 +305,9 @@ FutureMLS-Lab.
 The main window now opens to a workspace overview with running agents and unseen
 results. **All tasks / Working / To review** filter the sidebar; search also
 matches project names, agent names, and goals. Filtering reveals matching tasks
-even inside collapsed projects. To review indicates an unseen finish, not an
+even inside collapsed projects. Projects start collapsed, each with its counts;
+the one holding the open task opens by itself, and each task row carries its
+agent (Cursor / Claude / Codex, or AR for a research task). To review indicates an unseen finish, not an
 approval request.
 
 Drag a project by its heading, or a task, onto another to reorder: it takes that

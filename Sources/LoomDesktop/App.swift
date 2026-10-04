@@ -68,16 +68,24 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             installClickLog()
         }
 
-        // Dev hook: LOOM_DESKTOP_OPEN_WINDOWS=main,notes,settings opens the
-        // windows that otherwise only a menu click can reach, so the snapshot
-        // below can see them. `main` selects nothing on the way in — going
-        // through a task would mark it seen, and reading the UI is not a
+        // Dev hook: LOOM_DESKTOP_OPEN_WINDOWS=main,notes,settings,addproject
+        // opens the windows that otherwise only a menu click can reach, so the
+        // snapshot below can see them. `main` selects nothing on the way in —
+        // going through a task would mark it seen, and reading the UI is not a
         // reason to spend somebody's unread flag.
         if let which = ProcessInfo.processInfo.environment["LOOM_DESKTOP_OPEN_WINDOWS"] {
             DispatchQueue.main.asyncAfter(deadline: .now() + 3) { [store] in
                 if which.contains("main") { MainWindowController.shared.show(store: store) }
                 if which.contains("notes") { NotesWindowController.shared.show(store: store) }
                 if which.contains("settings") { SettingsWindowController.shared.show() }
+                if which.contains("addproject") {
+                    MainWindowController.shared.show(store: store)
+                    // After the window's first pass, or the sheet's trigger
+                    // is its starting value rather than a change.
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+                        MainWindowController.shared.requestAddProject()
+                    }
+                }
             }
         }
 

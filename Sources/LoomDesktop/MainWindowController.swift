@@ -30,6 +30,8 @@ final class MainWindowController: NSObject, NSWindowDelegate, NSToolbarDelegate 
     private let windowState = MainWindowState()
     private var subtitleSink: AnyCancellable?
     private var brandSizeSink: AnyCancellable?
+    private var filterSink: AnyCancellable?
+    private weak var searchField: NSSearchField?
     private var brandController: NSHostingController<WindowBrandView>?
 
     /// Whether the task on screen is actually on screen — the window is kept
@@ -175,6 +177,16 @@ final class MainWindowController: NSObject, NSWindowDelegate, NSToolbarDelegate 
         toolbar.allowsUserCustomization = false
         window.toolbar = toolbar
         window.toolbarStyle = .unified
+        // The field writes the filter as it is typed; this carries the other
+        // way, for the view clearing it — otherwise the list shows everything
+        // under a box that still reads as a search. Delivered synchronously:
+        // queued, a value from one keystroke could land after the next and
+        // overwrite it.
+        filterSink = windowState.$filter
+            .sink { [weak self] text in
+                guard let field = self?.searchField, field.stringValue != text else { return }
+                field.stringValue = text
+            }
     }
 
     func toolbarDefaultItemIdentifiers(_ toolbar: NSToolbar) -> [NSToolbarItem.Identifier] {
@@ -216,7 +228,7 @@ final class MainWindowController: NSObject, NSWindowDelegate, NSToolbarDelegate 
             let item = NSMenuToolbarItem(itemIdentifier: identifier)
             item.image = NSImage(systemSymbolName: "plus", accessibilityDescription: "New")
             item.label = "New"
-            item.toolTip = "New task (⌘N) or add a project"
+            item.toolTip = "New task (⌘N) or add a project (⌥⌘N)"
             let menu = NSMenu()
             let task = NSMenuItem(title: "New Task…", action: #selector(requestNewTask), keyEquivalent: "")
             task.target = self
@@ -246,6 +258,7 @@ final class MainWindowController: NSObject, NSWindowDelegate, NSToolbarDelegate 
             item.searchField.sendsWholeSearchString = false
             item.searchField.target = self
             item.searchField.action = #selector(filterChanged(_:))
+            searchField = item.searchField
             return item
         default:
             return nil
@@ -256,7 +269,7 @@ final class MainWindowController: NSObject, NSWindowDelegate, NSToolbarDelegate 
     @objc private func showOverview() { store?.selection = nil }
     @objc private func requestQuickOpen() { windowState.quickOpenRequests += 1 }
     @objc private func requestNewTask() { windowState.newTaskRequests += 1 }
-    @objc private func requestAddProject() { windowState.addProjectRequests += 1 }
+    @objc func requestAddProject() { windowState.addProjectRequests += 1 }
     @objc private func refresh() { store?.refreshNow() }
 
     @objc private func openNotes() {

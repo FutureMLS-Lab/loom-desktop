@@ -35,7 +35,11 @@ struct LoomAPI {
     }
 
     private static let largeSession: URLSession = session(request: 60, resource: 90)
-    private static let gitSession: URLSession = session(request: 120, resource: 900)
+    /// The server answers a git call only once git has finished, so the wait
+    /// for the first byte can be the whole operation: the per-request timeout
+    /// has to allow as much as the resource one, or a long clone is reported
+    /// as failed while the server goes on to finish and register it.
+    private static let gitSession: URLSession = session(request: 900, resource: 900)
 
     private static func session(request: TimeInterval, resource: TimeInterval) -> URLSession {
         let config = URLSessionConfiguration.ephemeral
@@ -121,27 +125,31 @@ struct LoomAPI {
         try await request("/api/projects")
     }
 
-    /// Registers a directory as a project. `source` decides how it is obtained
-    /// first: an existing directory, one created now, or one cloned — the last
-    /// two only inside the server's launch root, which the server enforces.
+    /// Registers a directory as a project and returns its id. `source` decides
+    /// how it is obtained first: an existing directory, one created now, or
+    /// one cloned — the last two only inside the server's launch root, which
+    /// the server enforces.
+    @discardableResult
     func addProject(
         path: String,
         source: ProjectSource,
         repoURL: String = "",
         codeRoot: String = "."
-    ) async throws {
+    ) async throws -> String? {
+        struct Added: Decodable { var id: String? }
         var body: [String: Any] = [
             "path": path,
             "mode": source.rawValue,
             "code_root_pattern": codeRoot.isEmpty ? "." : codeRoot,
         ]
         if source == .clone { body["repo_url"] = repoURL }
-        let _: OkResponse = try await request(
+        let added: Added = try await request(
             "/api/projects",
             method: "POST",
             body: body,
             patience: source == .clone ? .git : .standard
         )
+        return added.id
     }
 
     /// Unregisters a project. The directory and everything in it stays.

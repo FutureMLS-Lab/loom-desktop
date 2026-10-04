@@ -4,6 +4,8 @@
 Serves just enough of the Loom HTTP API on http://127.0.0.1:8787:
 
 - /api/projects, /api/tasks           — two projects, four tasks
+- POST /api/projects                  — registers a folder (existing, new or
+                                        "cloned"; nothing touches the disk)
 - /api/activity, /api/activity/ack    — one task working (rotating ring),
                                         one finished-unseen (blinking),
                                         one idle
@@ -32,6 +34,11 @@ PROJECTS = [
     {"id": "p1", "path": "/home/charlie/CoQuant", "name": "CoQuant"},
     {"id": "p2", "path": "/home/charlie/xorl", "name": "xorl"},
 ]
+
+# Where the mock server "was launched": new folders and clones must land
+# inside it, as on the real server.
+LAUNCH_ROOT = "/home/charlie"
+LAUNCH_CHILDREN = ["CoQuant", "diffusion-lab", "notes", "xorl"]
 
 TASKS = {
     "p1": [
@@ -214,7 +221,13 @@ class Handler(BaseHTTPRequestHandler):
                 )
                 return self._json({"ok": True, "text": "Working · esc to interrupt" if working else "Ready for a follow-up."})
             if path == "/api/projects":
-                return self._json({"projects": PROJECTS})
+                return self._json({
+                    "projects": PROJECTS,
+                    "launchRoot": LAUNCH_ROOT,
+                    "launchRootChildren": [
+                        {"name": name, "path": f"{LAUNCH_ROOT}/{name}"} for name in LAUNCH_CHILDREN
+                    ],
+                })
             if path == "/api/tasks":
                 project = parse_qs(parsed.query).get("project", ["p1"])[0]
                 return self._json({"tasks": TASKS.get(project, [])})
@@ -294,6 +307,21 @@ class Handler(BaseHTTPRequestHandler):
         parts = path.strip("/").split("/")
 
         with LOCK:
+            if path == "/api/projects":
+                folder = str(body.get("path", "")).strip().rstrip("/")
+                mode = str(body.get("mode", "existing"))
+                if not folder:
+                    return self._json({"error": "path required"}, 400)
+                if mode in ("empty", "clone") and not folder.startswith(LAUNCH_ROOT + "/"):
+                    return self._json({"error": f"new folders must be inside {LAUNCH_ROOT}"}, 400)
+                if mode == "clone" and not str(body.get("repo_url", "")).strip():
+                    return self._json({"error": "repo URL is required to clone"}, 400)
+                if any(p["path"] == folder for p in PROJECTS):
+                    return self._json({"error": "already registered"}, 400)
+                new_id = f"p{len(PROJECTS) + 1}"
+                PROJECTS.append({"id": new_id, "path": folder, "name": folder.rsplit("/", 1)[-1]})
+                TASKS[new_id] = []
+                return self._json({"id": new_id, "projects": PROJECTS}, 201)
             if path == "/api/activity/ack":
                 project = parse_qs(parsed.query).get("project", ["p1"])[0]
                 key = f"{project}/{body.get('slug', '')}"

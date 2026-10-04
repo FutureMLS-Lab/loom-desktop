@@ -116,6 +116,12 @@ final class TerminalSession: NSObject, ObservableObject {
     private var scrolledBackPane = ""
     private var reconnect: Task<Void, Never>?
     private var reconnectStreak = 0
+    private var heartbeat: Task<Void, Never>?
+
+    /// The server ends a stream nobody has renewed in 75 s. Typing renews it;
+    /// a pane that is only being read needs these beats, or it is cut and
+    /// redrawn every minute or so.
+    private static let heartbeatInterval: UInt64 = 20_000_000_000
 
     private let api = LoomAPI()
 
@@ -169,6 +175,7 @@ final class TerminalSession: NSObject, ObservableObject {
         streamTask?.cancel()
         streamSession?.invalidateAndCancel()
         reattach?.cancel()
+        heartbeat?.cancel()
         flushTimer?.invalidate()
     }
 
@@ -191,6 +198,8 @@ final class TerminalSession: NSObject, ObservableObject {
         reattach = nil
         reconnect?.cancel()
         reconnect = nil
+        heartbeat?.cancel()
+        heartbeat = nil
         flushTimer?.invalidate()
         flushTimer = nil
         pending.removeAll(keepingCapacity: false)
@@ -232,14 +241,22 @@ final class TerminalSession: NSObject, ObservableObject {
     }
 
     /// Compose-box text, which is a paste rather than keystrokes.
-    func paste(_ text: String, submit: Bool) {
-        guard !text.isEmpty, !target.isEmpty else { return }
+    func paste(_ text: String, submit: Bool, onFailure: @escaping (Error) -> Void = { _ in }) {
+        guard !text.isEmpty else { return }
+        guard !target.isEmpty else {
+            onFailure(LoomAPIError(message: "The pane is not attached yet", status: 0))
+            return
+        }
         let pane = target
         // `send-text` leaves copy-mode server-side, so the pane is at the
         // prompt again whether or not the wheel had moved it.
         if scrolledBackPane == pane { scrolledBackPane = "" }
         Task { [api] in
-            try? await api.sendText(target: pane, text: text, submit: submit)
+            do {
+                try await api.sendText(target: pane, text: text, submit: submit)
+            } catch {
+                onFailure(error)
+            }
         }
     }
 
@@ -328,6 +345,7 @@ final class TerminalSession: NSObject, ObservableObject {
                 self.connected = true
                 self.error = ""
                 self.reconnectStreak = 0
+                self.startHeartbeat()
                 self.startFlushing()
             },
             onChunk: { [weak self] data in
@@ -351,6 +369,8 @@ final class TerminalSession: NSObject, ObservableObject {
                 self.streamTask = nil
                 self.streamSession?.finishTasksAndInvalidate()
                 self.streamSession = nil
+                self.heartbeat?.cancel()
+                self.heartbeat = nil
                 self.connected = false
                 let cancelled = (failure as NSError?)?.code == NSURLErrorCancelled
                 if let failure, !cancelled {
@@ -519,6 +539,30 @@ extension TerminalSession {
                 self.scrollPane(direction: dir, lines: lines)
             default:
                 break
+            }
+        }
+    }
+
+    /// A refused beat means the server has already let this stream go while
+    /// the connection here still looks open — the usual state after a sleep —
+    /// so the pane is attached afresh instead of sitting frozen until the
+    /// request times out. Other failures are left to the next beat; a server
+    /// too old to know the endpoint answers 404 and never ends the stream.
+    private func startHeartbeat() {
+        heartbeat?.cancel()
+        let id = streamID
+        guard !id.isEmpty else { return }
+        heartbeat = Task { [weak self] in
+            while !Task.isCancelled {
+                try? await Task.sleep(nanoseconds: Self.heartbeatInterval)
+                guard !Task.isCancelled, let self, self.streamID == id else { return }
+                do {
+                    try await self.api.streamHeartbeat(streamId: id)
+                } catch let error as LoomAPIError where error.status == 409 {
+                    guard !Task.isCancelled, self.streamID == id else { return }
+                    self.restart()
+                    return
+                } catch {}
             }
         }
     }

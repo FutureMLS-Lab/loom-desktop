@@ -13,7 +13,6 @@ struct TerminalPane: View {
     @AppStorage("terminalFontSize") private var fontSize = TerminalSession.defaultFontSize
     @AppStorage("terminalPlanExpanded") private var planExpanded = true
     @State private var composerHeight = ComposerField.minHeight
-    @State private var composerRevision = 0
     /// Find over the plan. Owned here, not by the digest, because the bar has
     /// to stay put while the page scrolls under it — and the page is this
     /// view's.
@@ -114,11 +113,21 @@ struct TerminalPane: View {
                     Text(terminal.connected ? "Live session" : (terminal.error.isEmpty ? "Connecting…" : "Disconnected"))
                         .font(.system(size: 12.5, weight: .semibold))
                         .foregroundColor(TerminalTheme.text)
-                    Text(terminal.error.isEmpty ? session.paneTarget : terminal.error)
+                    Text(statusDetail)
                         .font(.system(size: 11, design: .monospaced))
                         .foregroundColor(TerminalTheme.dimText)
                         .lineLimit(1)
                         .truncationMode(.middle)
+                        .textSelection(.enabled)
+                        .help(statusDetail)
+                        // A narrow window cuts the middle out of the name, and
+                        // a selection reaches only what is drawn.
+                        .contextMenu {
+                            Button(terminal.error.isEmpty ? "Copy Pane Target" : "Copy Error") {
+                                NSPasteboard.general.clearContents()
+                                NSPasteboard.general.setString(statusDetail, forType: .string)
+                            }
+                        }
                 }
             }
 
@@ -179,6 +188,10 @@ struct TerminalPane: View {
         return terminal.connected ? LoomColors.green : LoomColors.amber
     }
 
+    private var statusDetail: String {
+        terminal.error.isEmpty ? session.paneTarget : terminal.error
+    }
+
     private func toolbarIcon(
         _ systemName: String,
         help: String,
@@ -231,7 +244,7 @@ struct TerminalPane: View {
                 ComposerField(
                     text: $session.terminalDraft,
                     measuredHeight: $composerHeight,
-                    contentRevision: composerRevision,
+                    contentRevision: session.draftRevision,
                     placeholder: "Send to the terminal… ⏎ send, ⇧⏎ newline",
                     focusOnAppear: true,
                     onSubmit: { sendDraft(submit: true) }
@@ -286,12 +299,10 @@ struct TerminalPane: View {
     }
 
     private func sendDraft(submit: Bool) {
-        let payload = session.terminalDraft
-        guard !payload.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
-        session.terminalDraft = ""
-        composerRevision += 1
-        session.persistTerminalDraft()
-        terminal.paste(payload, submit: submit)
+        guard let payload = session.takeTerminalDraft() else { return }
+        terminal.paste(payload, submit: submit) { [session] error in
+            session.terminalTextNotSent(payload, error)
+        }
     }
 }
 

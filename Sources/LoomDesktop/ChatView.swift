@@ -8,7 +8,6 @@ struct ChatView: View {
     @ObservedObject var session: ChatSession
     @State private var stickToLatest = true
     @State private var composerHeight = ComposerField.minHeight
-    @State private var composerRevision = 0
     @State private var composerFocused = false
     @State private var expandedRuns: Set<String> = []
 
@@ -236,7 +235,7 @@ struct ChatView: View {
             ComposerField(
                 text: $session.chatDraft,
                 measuredHeight: $composerHeight,
-                contentRevision: composerRevision,
+                contentRevision: session.draftRevision,
                 placeholder: "Message the agent… ⏎ send, ⇧⏎ newline",
                 onFocusChange: { focused in
                     // Off the responder-chain callback before touching state:
@@ -300,12 +299,7 @@ struct ChatView: View {
     }
 
     private func sendDraft() {
-        let text = session.chatDraft
-        guard !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
-        session.chatDraft = ""
-        composerRevision += 1
-        session.persistChatDraft()
-        session.send(text)
+        session.sendChatDraft()
     }
 }
 

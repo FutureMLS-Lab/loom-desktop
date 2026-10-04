@@ -24,6 +24,17 @@ final class ChatSession: ObservableObject, Identifiable {
     @Published private(set) var loading = true
     @Published private(set) var error = ""
 
+    /// Why the last thing asked of this task did not happen — a send, a flow
+    /// step, starting or stopping the agent. Kept apart from `error`, which is
+    /// about reading the feed and is cleared by the next poll that works: this
+    /// stays until it is dismissed or something else is tried.
+    @Published private(set) var actionFailure: ActionFailure?
+
+    struct ActionFailure: Equatable {
+        let action: String
+        let reason: String
+    }
+
     /// Optimistic echo of a message the server hasn't reflected back yet.
     @Published private(set) var pendingSend: String?
     @Published private(set) var sending = false
@@ -53,6 +64,10 @@ final class ChatSession: ObservableObject, Identifiable {
     /// mirrored into `UserDefaults` via `ComposeDrafts`.
     @Published var chatDraft: String = ""
     @Published var terminalDraft: String = ""
+    /// Bumped whenever the session replaces a draft itself — emptied for a
+    /// send, or handed back after one failed — so a composer that has the
+    /// keyboard takes the new text instead of keeping what it shows.
+    @Published private(set) var draftRevision = 0
     /// Unsaved Files-tab edits, keyed by relative markdown path.
     @Published var fileDrafts: [String: String] = [:]
 
@@ -289,21 +304,78 @@ final class ChatSession: ObservableObject, Identifiable {
 
     // MARK: Actions
 
+    func dismissActionFailure() {
+        actionFailure = nil
+    }
+
+    private func report(_ action: String, _ error: Error) {
+        actionFailure = ActionFailure(action: action, reason: error.localizedDescription)
+    }
+
+    /// Empties the chat composer and sends what it held.
+    func sendChatDraft() {
+        let text = chatDraft
+        guard !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty, !sending else { return }
+        chatDraft = ""
+        draftRevision &+= 1
+        persistChatDraft()
+        send(text)
+    }
+
+    /// Callers may empty the composer before calling this; text that does not
+    /// go out — refused while another send is in flight, or failed — is put
+    /// back there.
     func send(_ text: String) {
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty, !sending else { return }
+        guard !trimmed.isEmpty else { return }
+        guard !sending else {
+            handBackChatDraft(text)
+            return
+        }
         sending = true
         pendingSend = trimmed
+        actionFailure = nil
         Task {
             do {
                 try await api.send(projectId: projectId, slug: slug, text: trimmed)
                 refreshBurst()
             } catch {
                 pendingSend = nil
-                self.error = error.localizedDescription
+                handBackChatDraft(text)
+                report("Message not sent", error)
             }
             sending = false
         }
+    }
+
+    /// Only into an empty box: anything typed since belongs to the person
+    /// typing it, and is not overwritten.
+    private func handBackChatDraft(_ text: String) {
+        guard chatDraft.isEmpty else { return }
+        chatDraft = text
+        draftRevision &+= 1
+        persistChatDraft()
+    }
+
+    /// Empties the terminal composer, returning what it held.
+    func takeTerminalDraft() -> String? {
+        let text = terminalDraft
+        guard !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return nil }
+        terminalDraft = ""
+        draftRevision &+= 1
+        persistTerminalDraft()
+        return text
+    }
+
+    /// The terminal composer's text goes to the pane through `TerminalSession`,
+    /// so its failures arrive here to be shown and handed back.
+    func terminalTextNotSent(_ text: String, _ error: Error) {
+        if terminalDraft.isEmpty {
+            terminalDraft = text
+            draftRevision &+= 1
+            persistTerminalDraft()
+        }
+        report("Text not sent to the terminal", error)
     }
 
     func answer(question: ConversationQuestion, selected: [String: [String]], custom: String) {
@@ -373,6 +445,7 @@ final class ChatSession: ObservableObject, Identifiable {
     func run(_ step: FlowStep) {
         guard !sending else { return }
         sending = true
+        actionFailure = nil
         Task {
             do {
                 switch step {
@@ -410,7 +483,7 @@ final class ChatSession: ObservableObject, Identifiable {
                 refreshBurst()
                 planRevision += 1
             } catch {
-                self.error = error.localizedDescription
+                report("Couldn't send “\(step.label)”", error)
             }
             sending = false
         }
@@ -419,22 +492,28 @@ final class ChatSession: ObservableObject, Identifiable {
     /// Sends Escape into the agent's pane — the "stop what you're doing" nudge.
     func interrupt() {
         guard !paneTarget.isEmpty else { return }
+        actionFailure = nil
         Task {
-            try? await api.sendKey(target: paneTarget, key: "Escape")
-            refreshBurst()
+            do {
+                try await api.sendKey(target: paneTarget, key: "Escape")
+                refreshBurst()
+            } catch {
+                report("Esc didn't reach the agent", error)
+            }
         }
     }
 
     func startAgent() {
         guard !starting else { return }
         starting = true
+        actionFailure = nil
         Task {
             do {
                 _ = try await api.startAgent(projectId: projectId, slug: slug)
                 await loadDetail()
                 refreshBurst()
             } catch {
-                self.error = error.localizedDescription
+                report("Couldn't start the agent", error)
             }
             starting = false
         }
@@ -443,12 +522,13 @@ final class ChatSession: ObservableObject, Identifiable {
     func stopAgent() {
         guard !starting else { return }
         starting = true
+        actionFailure = nil
         Task {
             do {
                 try await api.stopAgent(projectId: projectId, slug: slug)
                 await loadDetail()
             } catch {
-                self.error = error.localizedDescription
+                report("Couldn't stop the agent", error)
             }
             starting = false
         }
@@ -487,11 +567,17 @@ final class ChatSession: ObservableObject, Identifiable {
     func setMonitor(_ on: Bool) {
         guard !monitorBusy else { return }
         monitorBusy = true
+        actionFailure = nil
         Task {
-            if let status = try? await api.setMonitor(
-                projectId: projectId, slug: slug, on: on
-            ) {
+            do {
+                let status = try await api.setMonitor(projectId: projectId, slug: slug, on: on)
                 monitorOn = status.isOn
+            } catch {
+                report(
+                    on ? "Couldn't turn on Notify when finished"
+                       : "Couldn't turn off Notify when finished",
+                    error
+                )
             }
             monitorBusy = false
         }
@@ -501,6 +587,7 @@ final class ChatSession: ObservableObject, Identifiable {
     func resume(_ session: SessionInfo) {
         guard !starting else { return }
         starting = true
+        actionFailure = nil
         Task {
             do {
                 _ = try await api.resumeSession(
@@ -509,7 +596,7 @@ final class ChatSession: ObservableObject, Identifiable {
                 await loadDetail()
                 refreshBurst()
             } catch {
-                self.error = error.localizedDescription
+                report("Couldn't resume the session", error)
             }
             starting = false
         }

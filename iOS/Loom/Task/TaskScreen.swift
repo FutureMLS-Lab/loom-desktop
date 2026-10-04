@@ -86,6 +86,18 @@ private struct TaskContent: View {
             // A finish that happens while you are watching is already seen.
             if state == .finished { workspace.markSeen(ref) }
         }
+        .alert(
+            session.actionFailure?.action ?? "",
+            isPresented: Binding(
+                get: { session.actionFailure != nil },
+                set: { if !$0 { session.dismissActionFailure() } }
+            ),
+            presenting: session.actionFailure
+        ) { _ in
+            Button("OK", role: .cancel) {}
+        } message: { failure in
+            Text(failure.reason)
+        }
     }
 
     private var header: some View {

@@ -52,6 +52,10 @@ struct TaskPane: View {
         VStack(spacing: 0) {
             header
             Divider()
+            if let failure = session.actionFailure {
+                ActionFailureBanner(failure: failure) { session.dismissActionFailure() }
+                Divider()
+            }
             Group {
                 switch tab {
                 case .conversation:
@@ -218,6 +222,47 @@ struct TaskPane: View {
             .buttonStyle(.plain)
             .help(step.help)
             .onHover { hovering = $0 }
+        }
+    }
+
+    /// Above the tabs rather than in one, because the header's buttons act
+    /// from all four and a failure has to be seen from whichever is open.
+    private struct ActionFailureBanner: View {
+        let failure: ChatSession.ActionFailure
+        let dismiss: () -> Void
+
+        var body: some View {
+            HStack(alignment: .top, spacing: 10) {
+                HStack(alignment: .firstTextBaseline, spacing: 8) {
+                    Image(systemName: "exclamationmark.triangle.fill")
+                        .font(.system(size: 12))
+                        .foregroundColor(LoomColors.amber)
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(failure.action)
+                            .font(.system(size: 13, weight: .semibold))
+                        Text(failure.reason)
+                            .font(.system(size: 12))
+                            .foregroundColor(.secondary)
+                            .textSelection(.enabled)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                }
+                Spacer(minLength: 8)
+                Button(action: dismiss) {
+                    Image(systemName: "xmark")
+                        .font(.system(size: 10.5, weight: .semibold))
+                        .foregroundColor(.secondary)
+                        .frame(width: 18, height: 18)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .help("Dismiss")
+                .accessibilityLabel("Dismiss")
+            }
+            .padding(.horizontal, 18)
+            .padding(.vertical, 9)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(LoomColors.amber.opacity(0.10))
         }
     }
 

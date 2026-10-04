@@ -56,6 +56,19 @@
   assert(firstFetch.indexOf('loom-asset://figure?path=' + encodeURIComponent('work/repo/docs/img/a.png') + '&project=p1&task=task-a&v=') === 0, 'Figures are fetched through the asset scheme, versioned');
   window.__loomRender('# Figures\n![a](img/a.png)', false, 'test/figures', []);
   assert(document.querySelector('#content img').getAttribute('src') !== firstFetch, 'A re-render asks for a figure again instead of reusing a URL WebKit has cached');
+  window.__loomRender([
+    '# Untrusted',
+    '<img src="x.png" onerror="window.__loomXSS = 1">',
+    '<script>window.__loomXSS = 2</script>',
+    '[click](javascript:window.__loomXSS=3)',
+    '<img src="loom-asset://figure?path=../../secret&project=p1">',
+    '<details><summary>More</summary>Kept</details>'
+  ].join('\n\n'), true, 'test/untrusted', []);
+  const untrusted = document.getElementById('content');
+  assert(window.__loomXSS === undefined && !untrusted.querySelector('script, [onerror]'), 'HTML in a document cannot run script');
+  assert(!Array.from(untrusted.querySelectorAll('a')).some(a => /^\s*javascript:/i.test(a.getAttribute('href') || '')), 'javascript: links are dropped');
+  assert(!Array.from(untrusted.querySelectorAll('img')).some(img => (img.getAttribute('src') || '').indexOf('secret') !== -1), 'A document cannot aim the asset scheme at a path of its own');
+  assert(untrusted.querySelector('details summary') && untrusted.textContent.indexOf('Kept') !== -1, 'Harmless HTML still renders');
   window.__loomAssetScope('', '', '');
   window.__loomRender(md, true, 'test/preview', []);
   document.getElementById('fold-all').click();

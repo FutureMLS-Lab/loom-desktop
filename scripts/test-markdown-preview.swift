@@ -33,8 +33,14 @@ final class PreviewTests: NSObject, WKNavigationDelegate {
     func run() throws {
         let page = try String(contentsOf: root.appendingPathComponent("Resources/markdown-preview.html"), encoding: .utf8)
         let marked = try String(contentsOf: root.appendingPathComponent("Resources/marked.min.js"), encoding: .utf8)
+        let purify = try String(contentsOf: root.appendingPathComponent("Resources/purify.min.js"), encoding: .utf8)
         web.navigationDelegate = self
-        web.loadHTMLString(page.replacingOccurrences(of: "<!--marked-->", with: "<script>\(marked)</script>"), baseURL: nil)
+        web.loadHTMLString(
+            page
+                .replacingOccurrences(of: "<!--marked-->", with: "<script>\(marked)</script>")
+                .replacingOccurrences(of: "<!--purify-->", with: "<script>\(purify)</script>"),
+            baseURL: nil
+        )
     }
     func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
         do {

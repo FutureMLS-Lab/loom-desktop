@@ -87,12 +87,21 @@ struct LoomAPI {
         return try JSONDecoder().decode(T.self, from: data)
     }
 
+    /// Query values are read back by Python's `parse_qs`, which takes `+` as a
+    /// space and splits on `&`. `.urlQueryAllowed` leaves both unescaped, and
+    /// `URLQueryItem` leaves `+`. Everything but the unreserved set and `/` is
+    /// percent-encoded.
+    private static let queryValueAllowed = CharacterSet(
+        charactersIn: "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-._~/"
+    )
+
+    private func queryValue(_ value: String) -> String {
+        value.addingPercentEncoding(withAllowedCharacters: Self.queryValueAllowed) ?? value
+    }
+
     private func scoped(_ path: String, _ projectId: String) -> String {
         let sep = path.contains("?") ? "&" : "?"
-        let encoded = projectId.addingPercentEncoding(
-            withAllowedCharacters: .urlQueryAllowed
-        ) ?? projectId
-        return "\(path)\(sep)project=\(encoded)"
+        return "\(path)\(sep)project=\(queryValue(projectId))"
     }
 
     private func slugPath(_ slug: String) -> String {
@@ -226,10 +235,7 @@ struct LoomAPI {
         slug: String,
         path: String = ""
     ) async throws -> TaskFileListing {
-        let encoded = path.addingPercentEncoding(
-            withAllowedCharacters: .urlQueryAllowed
-        ) ?? path
-        let query = encoded.isEmpty ? "" : "?path=\(encoded)"
+        let query = path.isEmpty ? "" : "?path=\(queryValue(path))"
         return try await request(
             scoped("/api/tasks/\(slugPath(slug))/files\(query)", projectId)
         )
@@ -437,11 +443,8 @@ struct LoomAPI {
     /// Removes a worktree — this one does delete the checkout on disk, though
     /// the branch and its commits survive in the repository it came from.
     func removeWorktree(projectId: String, slug: String, path: String) async throws {
-        let encoded = path.addingPercentEncoding(
-            withAllowedCharacters: .urlQueryAllowed
-        ) ?? path
         let _: OkResponse = try await request(
-            scoped("/api/tasks/\(slugPath(slug))/worktree?path=\(encoded)", projectId),
+            scoped("/api/tasks/\(slugPath(slug))/worktree?path=\(queryValue(path))", projectId),
             method: "DELETE"
         )
     }
@@ -479,9 +482,8 @@ struct LoomAPI {
     /// cursor motion, the lot — and tells tmux to size the pane to the client,
     /// so the output is laid out for the window it will be read in.
     func streamRequest(target: String, cols: Int, rows: Int) -> URLRequest? {
-        let encoded = target.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? target
         guard let url = URL(
-            string: "\(LoomSettings.baseURL)/api/tmux/stream?target=\(encoded)&cols=\(cols)&rows=\(rows)"
+            string: "\(LoomSettings.baseURL)/api/tmux/stream?target=\(queryValue(target))&cols=\(cols)&rows=\(rows)"
         ) else { return nil }
         var request = URLRequest(url: url)
         request.setValue("no-store", forHTTPHeaderField: "Cache-Control")
@@ -527,12 +529,9 @@ struct LoomAPI {
     /// Without a task the base is the project's `.RUD/`, which is where
     /// `NOTES.md` and its images live; with one it is that task's directory.
     func asset(projectId: String, task: String, path: String) async throws -> (Data, String) {
-        var components = URLComponents(string: LoomSettings.baseURL + "/api/asset")
-        components?.queryItems = [
-            URLQueryItem(name: "path", value: path),
-            URLQueryItem(name: "project", value: projectId),
-        ] + (task.isEmpty ? [] : [URLQueryItem(name: "task", value: task)])
-        guard let url = components?.url else {
+        var query = "path=\(queryValue(path))&project=\(queryValue(projectId))"
+        if !task.isEmpty { query += "&task=\(queryValue(task))" }
+        guard let url = URL(string: LoomSettings.baseURL + "/api/asset?" + query) else {
             throw LoomAPIError(message: "Invalid asset URL", status: 0)
         }
         var request = URLRequest(url: url)
@@ -596,8 +595,7 @@ struct LoomAPI {
     /// The pane's text, scrollback included; the server returns at most 500
     /// lines. A terminal's own selection only reaches what is on its screen.
     func capture(target: String, lines: Int) async throws -> TerminalCapture {
-        let encoded = target.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? target
-        return try await request("/api/tmux/capture?target=\(encoded)&lines=\(max(1, min(500, lines)))")
+        try await request("/api/tmux/capture?target=\(queryValue(target))&lines=\(max(1, min(500, lines)))")
     }
 
     /// Keystrokes for an attached stream. This writes to the pty, so the keys a

@@ -316,10 +316,16 @@ struct MarkdownWebView: UIViewRepresentable {
             return "<!doctype html><html><body></body></html>"
         }
         let marked = LoomResource.text("marked.min", "js") ?? ""
-        return page.replacingOccurrences(
-            of: "<!--marked-->",
-            with: marked.isEmpty ? "" : "<script>\(marked)</script>"
-        )
+        let purify = LoomResource.text("purify.min", "js") ?? ""
+        return page
+            .replacingOccurrences(
+                of: "<!--marked-->",
+                with: marked.isEmpty ? "" : "<script>\(marked)</script>"
+            )
+            .replacingOccurrences(
+                of: "<!--purify-->",
+                with: purify.isEmpty ? "" : "<script>\(purify)</script>"
+            )
     }()
 
     /// A phone's column: the desktop margins took a fifth of the width, and

@@ -32,10 +32,17 @@ else {
 }
 let marked = (try? String(contentsOf: root.appending(path: "Resources/marked.min.js"),
                           encoding: .utf8)) ?? ""
-let html = page.replacingOccurrences(
-    of: "<!--marked-->",
-    with: marked.isEmpty ? "" : "<script>\(marked)</script>"
-)
+let purify = (try? String(contentsOf: root.appending(path: "Resources/purify.min.js"),
+                          encoding: .utf8)) ?? ""
+let html = page
+    .replacingOccurrences(
+        of: "<!--marked-->",
+        with: marked.isEmpty ? "" : "<script>\(marked)</script>"
+    )
+    .replacingOccurrences(
+        of: "<!--purify-->",
+        with: purify.isEmpty ? "" : "<script>\(purify)</script>"
+    )
 
 /// The bundled scripts the page loads on demand, which the app's asset scheme
 /// would otherwise serve — the diagram renderer, so diagrams come out drawn.

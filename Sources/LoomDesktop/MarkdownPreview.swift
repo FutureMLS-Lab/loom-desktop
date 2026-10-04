@@ -418,6 +418,27 @@ struct MarkdownPreview: NSViewRepresentable {
             applyFind()
         }
 
+        /// The page is a shell the app keeps rendering into, so it never
+        /// navigates: a followed link would replace it with someone else's
+        /// page and every later render would land there. Links open in the
+        /// browser; the shell's own load, and jumps within it, are `about:`.
+        func webView(
+            _ webView: WKWebView,
+            decidePolicyFor navigationAction: WKNavigationAction,
+            decisionHandler: @escaping @MainActor (WKNavigationActionPolicy) -> Void
+        ) {
+            let url = navigationAction.request.url
+            if url?.scheme == "about", navigationAction.targetFrame?.isMainFrame == true {
+                decisionHandler(.allow)
+                return
+            }
+            if navigationAction.navigationType == .linkActivated, let url,
+               ["http", "https", "mailto"].contains(url.scheme?.lowercased() ?? "") {
+                NSWorkspace.shared.open(url)
+            }
+            decisionHandler(.cancel)
+        }
+
         func applyAssetScope() {
             guard let webView, ready,
                   let data = try? JSONSerialization.data(
@@ -489,18 +510,25 @@ struct MarkdownPreview: NSViewRepresentable {
     }
 
     /// The page itself lives in `Resources/markdown-preview.html`, where its
-    /// CSS and JS can be read and edited as CSS and JS. `marked` is spliced in
-    /// at the placeholder when the bundle has it; without it the page falls
-    /// back to escaping into a `<pre>` rather than going blank.
+    /// CSS and JS can be read and edited as CSS and JS. `marked` and the
+    /// DOMPurify sanitizer are spliced in at their placeholders when the
+    /// bundle has them; without both the page falls back to escaping into a
+    /// `<pre>` rather than going blank.
     private static let shellHTML: String = {
         guard let page = LoomResource.text("markdown-preview", "html") else {
             return "<!doctype html><html><body></body></html>"
         }
         let marked = LoomResource.text("marked.min", "js") ?? ""
-        return page.replacingOccurrences(
-            of: "<!--marked-->",
-            with: marked.isEmpty ? "" : "<script>\(marked)</script>"
-        )
+        let purify = LoomResource.text("purify.min", "js") ?? ""
+        return page
+            .replacingOccurrences(
+                of: "<!--marked-->",
+                with: marked.isEmpty ? "" : "<script>\(marked)</script>"
+            )
+            .replacingOccurrences(
+                of: "<!--purify-->",
+                with: purify.isEmpty ? "" : "<script>\(purify)</script>"
+            )
     }()
 
 }

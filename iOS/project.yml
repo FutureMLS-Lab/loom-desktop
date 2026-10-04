@@ -47,6 +47,9 @@ targets:
       - path: ../Resources/marked.min.js
         group: Shared
         buildPhase: resources
+      - path: ../Resources/purify.min.js
+        group: Shared
+        buildPhase: resources
       - path: ../Resources/mermaid.min.js
         group: Shared
         buildPhase: resources

@@ -162,6 +162,7 @@ struct PlanScreen: View {
                 .sorted { Self.rank($0) < Self.rank($1) }
             error = ""
         } catch {
+            if error.isCancellation { return }
             if files.isEmpty { self.error = error.localizedDescription }
             return
         }
@@ -192,7 +193,7 @@ struct PlanScreen: View {
             let body = file.body ?? ""
             if body != markdown { markdown = body }
         } catch {
-            guard selected == path else { return }
+            guard selected == path, !error.isCancellation else { return }
             if markdown.isEmpty { self.error = error.localizedDescription }
         }
     }

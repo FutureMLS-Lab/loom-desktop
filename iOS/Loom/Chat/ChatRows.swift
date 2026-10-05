@@ -44,7 +44,11 @@ struct MessageRow: View {
             }
         case "question":
             if let question = message.question {
-                QuestionCard(question: question, session: session)
+                if question.source == "numbered" {
+                    QuickReplies(question: question, session: session)
+                } else {
+                    QuestionCard(question: question, session: session)
+                }
             }
         case "event":
             Text(message.text ?? "")
@@ -349,7 +353,7 @@ private struct QuestionCard: View {
             if pending {
                 HStack(spacing: 10) {
                     Button {
-                        session.answer(question: question, selected: selected, custom: custom)
+                        submit()
                     } label: {
                         if session.answering {
                             ProgressView()
@@ -393,6 +397,29 @@ private struct QuestionCard: View {
         }
     }
 
+    /// A menu open in the pane is answered with its keys; any other question
+    /// is answered the way a person would, by replying with the choice.
+    private func submit() {
+        if question.source == "terminal", question.id != nil {
+            session.answer(question: question, selected: selected, custom: custom)
+            return
+        }
+        let typed = custom.trimmingCharacters(in: .whitespacesAndNewlines)
+        let answers = prompts.map { prompt -> (prompt: String, values: [String]) in
+            let values = (selected[prompt.id] ?? []).map { value -> String in
+                let option = prompt.options.first { $0.value == value }
+                if let option, isOther(option), !typed.isEmpty { return typed }
+                return value
+            }
+            return (prompt.prompt, values)
+        }
+        let text = answers.count == 1
+            ? answers[0].values.joined(separator: ", ")
+            : answers.map { "\($0.prompt)\n\($0.values.joined(separator: ", "))" }.joined(separator: "\n\n")
+        guard !text.isEmpty else { return }
+        session.send(text)
+    }
+
     private func toggle(prompt: ConversationPrompt, option: ConversationOption) {
         let other = isOther(option)
         if !other { custom = "" }
@@ -411,6 +438,52 @@ private struct QuestionCard: View {
             active = [option.value]
         }
         selected[prompt.id] = active
+    }
+}
+
+/// A 1/2/3 list read out of the agent's last message. Only a guess that it
+/// is waiting on a choice, so it is offered as replies under the message —
+/// one tap sends the number — rather than as a question card, and goes away
+/// once the conversation moves on.
+private struct QuickReplies: View {
+    let question: ConversationQuestion
+    @ObservedObject var session: ChatSession
+
+    var body: some View {
+        if question.status == "pending", let prompt = question.questions?.first, !prompt.options.isEmpty {
+            VStack(alignment: .leading, spacing: 6) {
+                Text("Reply with")
+                    .font(.caption.weight(.medium))
+                    .foregroundStyle(.secondary)
+                ForEach(prompt.options) { option in
+                    Button {
+                        session.send(option.value)
+                    } label: {
+                        HStack(spacing: 8) {
+                            Text(option.value)
+                                .font(.caption.weight(.bold))
+                                .foregroundStyle(.white)
+                                .frame(width: 22, height: 22)
+                                .background(LoomColors.accent, in: Circle())
+                            Text(InlineMarkdown.text(option.label))
+                                .font(.subheadline)
+                                .foregroundStyle(.primary)
+                                .lineLimit(1)
+                            Spacer(minLength: 0)
+                            Image(systemName: "arrow.up.circle")
+                                .foregroundStyle(LoomColors.accent)
+                        }
+                        .padding(.horizontal, 10)
+                        .padding(.vertical, 7)
+                        .background(LoomColors.accent.opacity(0.07), in: LoomShape.field)
+                        .contentShape(LoomShape.field)
+                    }
+                    .buttonStyle(.plain)
+                    .disabled(session.sending)
+                }
+            }
+            .padding(.leading, 13)
+        }
     }
 }
 

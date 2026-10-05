@@ -77,6 +77,7 @@ final class ChatSession: ObservableObject, Identifiable {
     let api: LoomAPI
     private var pollTask: Task<Void, Never>?
     private var detailTask: Task<Void, Never>?
+    private var pendingStop: Task<Void, Never>?
     private var sessionId: String?
     private var limit = 60
     /// Poll hard while the agent is producing output, back off when it is
@@ -147,6 +148,8 @@ final class ChatSession: ObservableObject, Identifiable {
     }
 
     func start() {
+        pendingStop?.cancel()
+        pendingStop = nil
         guard pollTask == nil else { return }
         // Alongside the transcript, not in front of it. The detail read gives
         // the pane target and the title, but it arrives with every markdown
@@ -156,6 +159,13 @@ final class ChatSession: ObservableObject, Identifiable {
         // for as long as the download took.
         detailTask = Task { [weak self] in await self?.loadDetail() }
         pollTask = Task { [weak self] in
+            // Coming back to a task whose first read never finished: say it
+            // is loading again, not whatever stopped the last attempt. In
+            // here rather than in `start`, which a view's body can call.
+            if let self, self.messages.isEmpty {
+                self.publish(\.error, "")
+                self.publish(\.loading, true)
+            }
             await self?.load(full: true)
             while !Task.isCancelled {
                 let interval = self?.pollDelay ?? Self.idleInterval
@@ -165,11 +175,33 @@ final class ChatSession: ObservableObject, Identifiable {
         }
     }
 
+    /// Stops polling a moment from now, unless something starts it first:
+    /// going back and straight into the same task keeps its feed.
     func stop() {
-        pollTask?.cancel()
-        pollTask = nil
-        detailTask?.cancel()
-        detailTask = nil
+        pendingStop?.cancel()
+        // The tasks themselves, not `self`: a session dropped from the cache
+        // in the meantime must still have its polling stopped.
+        let poll = pollTask
+        let detail = detailTask
+        pendingStop = Task { [weak self] in
+            try? await Task.sleep(nanoseconds: 1_000_000_000)
+            guard !Task.isCancelled else { return }
+            poll?.cancel()
+            detail?.cancel()
+            guard let self, self.pollTask == poll else { return }
+            self.pollTask = nil
+            self.detailTask = nil
+            self.pendingStop = nil
+        }
+    }
+
+    /// The read was abandoned — its screen closed, polling stopped — rather
+    /// than refused. Shown as a failure it read "Conversation unavailable —
+    /// cancelled", and stayed until the next read worked.
+    private static func wasCancelled(_ error: Error) -> Bool {
+        if error is CancellationError || Task.isCancelled { return true }
+        let error = error as NSError
+        return error.domain == NSURLErrorDomain && error.code == NSURLErrorCancelled
     }
 
     /// Keeps asking until it learns the pane target.
@@ -193,6 +225,7 @@ final class ChatSession: ObservableObject, Identifiable {
                 publish(\.detailError, "")
                 return
             } catch {
+                if Self.wasCancelled(error) { return }
                 attempt += 1
                 // Quiet about the first couple of failures. A cold connection
                 // drops one often enough, and the retry behind it usually
@@ -222,6 +255,7 @@ final class ChatSession: ObservableObject, Identifiable {
             publish(\.error, "")
             failureStreak = 0
         } catch {
+            if Self.wasCancelled(error) { return }
             failureStreak += 1
             // Only surface errors while there is nothing on screen; a dropped
             // poll on a live feed is not worth a banner.

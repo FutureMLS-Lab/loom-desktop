@@ -77,11 +77,9 @@ private struct TaskContent: View {
             ToolbarItem(placement: .topBarTrailing) { agentMenu }
         }
         .onAppear {
-            session.start()
             session.loadSessions()
             workspace.markSeen(ref)
         }
-        .onDisappear { session.stop() }
         .onChange(of: workspace.state(ref)) { _, state in
             // A finish that happens while you are watching is already seen.
             if state == .finished { workspace.markSeen(ref) }

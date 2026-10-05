@@ -32,6 +32,14 @@ final class SessionCache: ObservableObject {
         activeKey = nil
     }
 
+    /// No task on screen any more: stop the one that was. The selection says
+    /// so reliably; on iPhone a task screen's own appear and disappear calls
+    /// arrive out of step with what is shown, and stopped the visible task.
+    func deactivate() {
+        if let key = activeKey { sessions[key]?.stop() }
+        activeKey = nil
+    }
+
     func session(
         projectId: String,
         slug: String,
@@ -62,6 +70,7 @@ final class SessionCache: ObservableObject {
             api: api
         )
         sessions[key] = session
+        session.start()
 
         while order.count > Self.capacity, let oldest = order.first {
             order.removeFirst()

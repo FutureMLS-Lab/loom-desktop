@@ -17,13 +17,21 @@ final class TerminalController: NSObject, ObservableObject {
     @Published private(set) var paneSize = ""
     /// The pane is showing history rather than the live screen.
     @Published private(set) var scrolledBack = false
+    /// The terminal has the keyboard: what is typed goes straight to the pane.
+    @Published private(set) var typing = false
+    /// Ctrl is held for the next key typed on the keyboard.
+    @Published private(set) var controlArmed = false
+    /// A keyboard is on screen, for the terminal or for the composer.
+    @Published private(set) var keyboardUp = false
 
-    let terminalView: TerminalView
+    let terminalView: LoomTerminalView
     let host: TerminalHostView
 
     private let api = LoomAPI()
     private(set) var target = ""
     private var visible = false
+    private var inWindow = false
+    private var appActive = true
     /// The grid has been sized to the screen once. Attached before that, tmux
     /// sizes the pane to the placeholder frame and the real size costs a
     /// second attach straight after.
@@ -59,7 +67,7 @@ final class TerminalController: NSObject, ObservableObject {
     }
 
     override init() {
-        let view = TerminalView(
+        let view = LoomTerminalView(
             frame: CGRect(x: 0, y: 0, width: 390, height: 600),
             font: UIFont.monospacedSystemFont(ofSize: 12, weight: .regular)
         )
@@ -84,6 +92,11 @@ final class TerminalController: NSObject, ObservableObject {
         // insets there would push the grid down.
         terminalView.contentInsetAdjustmentBehavior = .never
         terminalView.keyboardAppearance = .dark
+        // SwiftTerm's own key bar: its "hide keyboard" button swaps in a panel
+        // of special keys rather than hiding anything, so there was no way
+        // back to the full screen. The screen's key bar replaces it.
+        terminalView.inputAccessoryView = nil
+        terminalView.onFocusChange = { [weak self] focused in self?.focusChanged(focused) }
         let background = LoomColors.uiColor(TerminalTheme.background)
         terminalView.backgroundColor = background
         terminalView.nativeBackgroundColor = background
@@ -101,6 +114,22 @@ final class TerminalController: NSObject, ObservableObject {
         pan.delegate = self
         terminalView.addGestureRecognizer(pan)
         host.onLayout = { [weak self] in self?.hostLaidOut() }
+        host.onWindowChange = { [weak self] inWindow in
+            self?.inWindow = inWindow
+            self?.updateVisibility()
+        }
+        host.onKeyboardChange = { [weak self] up in
+            if self?.keyboardUp != up { self?.keyboardUp = up }
+        }
+    }
+
+    private func focusChanged(_ focused: Bool) {
+        host.holdsHeight = focused
+        if typing != focused { typing = focused }
+        if !focused && controlArmed {
+            controlArmed = false
+            terminalView.controlModifier = false
+        }
     }
 
     private func hostLaidOut() {
@@ -115,12 +144,19 @@ final class TerminalController: NSObject, ObservableObject {
 
     // MARK: Lifecycle
 
-    /// On screen with the app in front. Off, the stream is closed: an attach
-    /// left open by a phone in a pocket holds the pane for nobody.
-    func setVisible(_ visible: Bool) {
-        guard visible != self.visible else { return }
-        self.visible = visible
-        if visible {
+    /// The app in front or not. Together with the terminal being in a window,
+    /// that is "on screen"; off, the stream is closed: an attach left open by
+    /// a phone in a pocket holds the pane for nobody.
+    func setAppActive(_ active: Bool) {
+        appActive = active
+        updateVisibility()
+    }
+
+    private func updateVisibility() {
+        let now = inWindow && appActive
+        guard now != visible else { return }
+        visible = now
+        if now {
             attachIfReady()
         } else {
             stop()
@@ -350,12 +386,45 @@ final class TerminalController: NSObject, ObservableObject {
         Task { [api] in try? await api.sendText(target: pane, text: text, submit: submit) }
     }
 
+    func showKeyboard() {
+        _ = terminalView.becomeFirstResponder()
+    }
+
+    func hideKeyboard() {
+        _ = terminalView.resignFirstResponder()
+    }
+
     func toggleKeyboard() {
-        if terminalView.isFirstResponder {
-            _ = terminalView.resignFirstResponder()
+        if typing {
+            hideKeyboard()
         } else {
-            _ = terminalView.becomeFirstResponder()
+            showKeyboard()
         }
+    }
+
+    /// Ctrl for the next key typed on the keyboard — ctrl+r, ctrl+o in the
+    /// agents' TUIs. SwiftTerm lets go of it once that key is sent.
+    func toggleControl() {
+        controlArmed.toggle()
+        terminalView.controlModifier = controlArmed
+    }
+
+    enum Arrow {
+        case up, down, left, right
+    }
+
+    /// In the form the program asked for: a TUI that put the cursor keys in
+    /// application mode reads `ESC O A`, not `ESC [ A`.
+    func sendArrow(_ arrow: Arrow) {
+        let introducer = terminalView.getTerminal().applicationCursor ? "O" : "["
+        let final: String
+        switch arrow {
+        case .up: final = "A"
+        case .down: final = "B"
+        case .right: final = "C"
+        case .left: final = "D"
+        }
+        sendInput("\u{1b}\(introducer)\(final)")
     }
 
     func setFontSize(_ size: Double) {
@@ -468,6 +537,7 @@ extension TerminalController: TerminalViewDelegate {
         MainActor.assumeIsolated {
             // Nobody asked, with no client attached; the next attach asks again.
             if self.streamID.isEmpty && Self.isTerminalReply(text) { return }
+            if self.controlArmed && !Self.isTerminalReply(text) { self.controlArmed = false }
             self.sendInput(text)
         }
     }
@@ -505,9 +575,24 @@ final class TerminalHostView: UIView {
     let terminal: TerminalView
     /// After each pass, with the grid already resized to the new frame.
     var onLayout: (() -> Void)?
+    /// With the height already held, so what the screen adds in answer
+    /// lands while the grid keeps its size.
+    var onKeyboardChange: ((Bool) -> Void)?
+    /// Whether the terminal is in a window — on screen, as SwiftUI's appear
+    /// and disappear calls for the task screen on iPhone are not reliably.
+    var onWindowChange: ((Bool) -> Void)?
+    /// Set while the terminal has the keyboard. The bars under the terminal
+    /// change the moment it takes focus, before the keyboard says anything.
+    var holdsHeight = false {
+        didSet {
+            if oldValue && !holdsHeight { setNeedsLayout() }
+        }
+    }
     private var keyboardVisible = false
     private var settledHeight: CGFloat = 0
     private var settledWidth: CGFloat = 0
+
+    private var holding: Bool { keyboardVisible || holdsHeight }
 
     init(terminal: TerminalView) {
         self.terminal = terminal
@@ -516,20 +601,35 @@ final class TerminalHostView: UIView {
         backgroundColor = LoomColors.uiColor(TerminalTheme.background)
         addSubview(terminal)
         let center = NotificationCenter.default
-        center.addObserver(self, selector: #selector(keyboardWillShow), name: UIResponder.keyboardWillShowNotification, object: nil)
-        center.addObserver(self, selector: #selector(keyboardWillHide), name: UIResponder.keyboardWillHideNotification, object: nil)
+        center.addObserver(
+            self,
+            selector: #selector(keyboardWillChangeFrame),
+            name: UIResponder.keyboardWillChangeFrameNotification,
+            object: nil
+        )
+        center.addObserver(
+            self,
+            selector: #selector(keyboardWillHide),
+            name: UIResponder.keyboardWillHideNotification,
+            object: nil
+        )
     }
 
     required init?(coder: NSCoder) { fatalError("init(coder:) is not used") }
 
+    override func didMoveToWindow() {
+        super.didMoveToWindow()
+        onWindowChange?(window != nil)
+    }
+
     override func layoutSubviews() {
         super.layoutSubviews()
         guard bounds.width > 0, bounds.height > 0 else { return }
-        if !keyboardVisible || settledHeight == 0 || bounds.width != settledWidth {
+        if !holding || settledHeight == 0 || bounds.width != settledWidth {
             settledHeight = bounds.height
             settledWidth = bounds.width
         }
-        let height = max(bounds.height, settledHeight)
+        let height = holding ? settledHeight : bounds.height
         let frame = CGRect(x: 0, y: bounds.height - height, width: bounds.width, height: height)
         if terminal.frame != frame { terminal.frame = frame }
         // SwiftTerm resizes its grid in its own layout pass; run it now, so
@@ -538,13 +638,41 @@ final class TerminalHostView: UIView {
         onLayout?()
     }
 
-    @objc private func keyboardWillShow(_ note: Notification) {
-        keyboardVisible = true
+    @objc private func keyboardWillChangeFrame(_ note: Notification) {
+        guard let end = (note.userInfo?[UIResponder.keyboardFrameEndUserInfoKey] as? NSValue)?.cgRectValue
+        else { return }
+        let bottom = window?.windowScene?.screen.bounds.maxY ?? .greatestFiniteMagnitude
+        // A hardware keyboard leaves only a slim bar on screen, nothing to
+        // make room for.
+        let visible = end.height > 120 && end.minY < bottom - 1
+        guard visible != keyboardVisible else { return }
+        keyboardVisible = visible
+        if !visible { setNeedsLayout() }
+        onKeyboardChange?(visible)
     }
 
     @objc private func keyboardWillHide(_ note: Notification) {
+        let changed = keyboardVisible
         keyboardVisible = false
         setNeedsLayout()
+        if changed { onKeyboardChange?(false) }
+    }
+}
+
+/// SwiftTerm's view, saying when it takes the keyboard and when it lets go.
+final class LoomTerminalView: TerminalView {
+    var onFocusChange: ((Bool) -> Void)?
+
+    override func becomeFirstResponder() -> Bool {
+        let became = super.becomeFirstResponder()
+        if became { onFocusChange?(true) }
+        return became
+    }
+
+    override func resignFirstResponder() -> Bool {
+        let resigned = super.resignFirstResponder()
+        if resigned { onFocusChange?(false) }
+        return resigned
     }
 }
 

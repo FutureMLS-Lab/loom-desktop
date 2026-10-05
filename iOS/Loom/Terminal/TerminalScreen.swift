@@ -5,8 +5,14 @@ struct TerminalScreen: View {
     @ObservedObject var terminal: TerminalController
     @Environment(\.scenePhase) private var scenePhase
     @AppStorage("terminalFontSize") private var fontSize = 12.0
+    /// The key bar stays up with the keyboard down, for answering a TUI's
+    /// prompts with arrows and Enter alone.
+    @AppStorage("terminalPinKeys") private var pinKeys = false
     @State private var selecting: SelectableItem?
     @State private var capturing = false
+    /// Ctrl held for the next letter typed into the composer, which then goes
+    /// to the pane as that control key instead of into the text.
+    @State private var composerControl = false
     @FocusState private var composerFocused: Bool
 
     private static let fontSizes: [Double] = [10, 11, 12, 13, 14, 16]
@@ -22,14 +28,70 @@ struct TerminalScreen: View {
         .onAppear {
             terminal.setFontSize(fontSize)
             terminal.adopt(target: session.paneTarget)
-            terminal.setVisible(scenePhase != .background)
+            terminal.setAppActive(scenePhase != .background)
+            #if DEBUG
+            // Simulator runs, which cannot tap: `-LoomTerminalTyping YES`.
+            if UserDefaults.standard.bool(forKey: "LoomTerminalTyping") {
+                DispatchQueue.main.asyncAfter(deadline: .now() + 10) { terminal.showKeyboard() }
+                if UserDefaults.standard.bool(forKey: "LoomTerminalTypingThenHide") {
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 15) { terminal.hideKeyboard() }
+                }
+            }
+            // `-LoomComposerFocus YES`: the composer takes the keyboard, then lets go.
+            if UserDefaults.standard.bool(forKey: "LoomComposerFocus") {
+                DispatchQueue.main.asyncAfter(deadline: .now() + 6) { composerFocused = true }
+                DispatchQueue.main.asyncAfter(deadline: .now() + 16) { composerFocused = false }
+            }
+            #endif
         }
-        .onDisappear { terminal.setVisible(false) }
         .onChange(of: session.paneTarget) { _, target in terminal.adopt(target: target) }
-        .onChange(of: scenePhase) { _, phase in terminal.setVisible(phase != .background) }
+        .onChange(of: scenePhase) { _, phase in terminal.setAppActive(phase != .background) }
         .onChange(of: fontSize) { _, size in terminal.setFontSize(size) }
-        .onChange(of: session.terminalDraft) { _, _ in session.persistTerminalDraft() }
+        .onChange(of: session.terminalDraft) { old, new in
+            if composerControl, new.count == old.count + 1, new.hasPrefix(old),
+               let typed = new.last, let code = Self.controlCode(for: typed) {
+                composerControl = false
+                session.terminalDraft = old
+                terminal.sendInput(code)
+                return
+            }
+            session.persistTerminalDraft()
+        }
+        .onChange(of: composerFocused) { _, focused in
+            if !focused { composerControl = false }
+        }
         .sheet(item: $selecting) { SelectableTextSheet(item: $0) }
+    }
+
+    /// The control key a letter makes with ctrl held: ctrl+r is 0x12.
+    private static func controlCode(for character: Character) -> String? {
+        guard let ascii = character.asciiValue else { return nil }
+        switch ascii {
+        case 0x40...0x5F: return String(UnicodeScalar(ascii - 0x40))
+        case 0x61...0x7A: return String(UnicodeScalar(ascii - 0x60))
+        case 0x3F: return "\u{7f}"
+        default: return nil
+        }
+    }
+
+    /// Typing, into the terminal or into the composer.
+    private var keyboardMode: Bool { terminal.typing || composerFocused }
+
+    /// With a keyboard for either, once it is up: added before the keyboard
+    /// arrives, the bar would shrink the terminal ahead of it and cost an
+    /// attach. And pinned, for answering a TUI with the keyboard down.
+    private var showKeyBar: Bool {
+        terminal.typing || (composerFocused && terminal.keyboardUp) || (pinKeys && !composerFocused)
+    }
+
+    private func toggleKeyboard() {
+        if terminal.typing {
+            terminal.hideKeyboard()
+        } else if composerFocused {
+            composerFocused = false
+        } else {
+            terminal.showKeyboard()
+        }
     }
 
     private var live: some View {
@@ -51,8 +113,14 @@ struct TerminalScreen: View {
                         .padding(12)
                     }
                 }
-            keyBar
-            composer
+            // Typing into the terminal: keys above the keyboard and no input
+            // box. Typing into the box: the keys above it.
+            if showKeyBar {
+                keyBar
+            }
+            if !terminal.typing {
+                composer
+            }
         }
         .background(TerminalTheme.screen)
     }
@@ -117,7 +185,21 @@ struct TerminalScreen: View {
                     .frame(width: 34, height: 30)
                     .contentShape(Rectangle())
             }
-            barButton("keyboard", label: "Keyboard") { terminal.toggleKeyboard() }
+            Button {
+                pinKeys.toggle()
+            } label: {
+                Image(systemName: "command")
+                    .foregroundStyle(pinKeys ? LoomColors.accent : TerminalTheme.text)
+                    .frame(width: 34, height: 30)
+                    .contentShape(Rectangle())
+            }
+            .accessibilityLabel(pinKeys ? "Hide Key Bar" : "Keep Key Bar")
+            barButton(
+                keyboardMode ? "keyboard.chevron.compact.down" : "keyboard",
+                label: keyboardMode ? "Hide Keyboard" : "Show Keyboard"
+            ) {
+                toggleKeyboard()
+            }
         }
         .font(.system(size: 15, weight: .medium))
         .foregroundStyle(TerminalTheme.text)
@@ -138,42 +220,62 @@ struct TerminalScreen: View {
 
     // MARK: Keys
 
-    /// The keys an agent's TUI asks for — pick an option, confirm, back out —
-    /// without bringing up the keyboard.
+    /// The keys a keyboard lacks and an agent's TUI asks for — back out,
+    /// pick an option, confirm. The button at the end is the one way the
+    /// keyboard comes and goes, so the full screen is always one tap away.
     private var keyBar: some View {
-        ScrollView(.horizontal, showsIndicators: false) {
-            HStack(spacing: 6) {
-                key("esc", "\u{1b}")
-                key("^C", "\u{03}")
-                key("tab", "\t")
-                key("⇧tab", "\u{1b}[Z")
-                key("↑", "\u{1b}[A")
-                key("↓", "\u{1b}[B")
-                key("←", "\u{1b}[D")
-                key("→", "\u{1b}[C")
-                key("⏎", "\r")
-                key("y", "y")
-                key("n", "n")
-                key("1", "1")
-                key("2", "2")
-                key("3", "3")
+        HStack(spacing: 0) {
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 6) {
+                    key("esc") { terminal.sendInput("\u{1b}") }
+                    if terminal.typing {
+                        key("ctrl", lit: terminal.controlArmed) { terminal.toggleControl() }
+                    } else if composerFocused {
+                        key("ctrl", lit: composerControl) { composerControl.toggle() }
+                    } else {
+                        key("^C") { terminal.sendInput("\u{03}") }
+                    }
+                    key("tab") { terminal.sendInput("\t") }
+                    key("⇧tab") { terminal.sendInput("\u{1b}[Z") }
+                    key("↑") { terminal.sendArrow(.up) }
+                    key("↓") { terminal.sendArrow(.down) }
+                    key("←") { terminal.sendArrow(.left) }
+                    key("→") { terminal.sendArrow(.right) }
+                    key("⏎") { terminal.sendInput("\r") }
+                    if !keyboardMode {
+                        key("1") { terminal.sendInput("1") }
+                        key("2") { terminal.sendInput("2") }
+                        key("3") { terminal.sendInput("3") }
+                    }
+                }
+                .padding(.horizontal, 10)
+                .padding(.vertical, 6)
             }
-            .padding(.horizontal, 10)
-            .padding(.vertical, 6)
+            Rectangle()
+                .fill(TerminalTheme.dimText.opacity(0.35))
+                .frame(width: 1, height: 24)
+            Button {
+                toggleKeyboard()
+            } label: {
+                Image(systemName: keyboardMode ? "keyboard.chevron.compact.down" : "keyboard")
+                    .font(.system(size: 16, weight: .medium))
+                    .foregroundStyle(TerminalTheme.text)
+                    .frame(width: 50, height: 44)
+                    .contentShape(Rectangle())
+            }
+            .accessibilityLabel(keyboardMode ? "Hide Keyboard" : "Show Keyboard")
         }
         .background(TerminalTheme.chrome)
     }
 
-    private func key(_ label: String, _ bytes: String) -> some View {
-        Button {
-            terminal.sendInput(bytes)
-        } label: {
+    private func key(_ label: String, lit: Bool = false, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
             Text(label)
                 .font(.system(size: 14, weight: .medium, design: .monospaced))
-                .foregroundStyle(TerminalTheme.text)
+                .foregroundStyle(lit ? Color.white : TerminalTheme.text)
                 .frame(minWidth: 38, minHeight: 32)
                 .padding(.horizontal, 4)
-                .background(TerminalTheme.field, in: LoomShape.control)
+                .background(lit ? LoomColors.accent : TerminalTheme.field, in: LoomShape.control)
                 .contentShape(LoomShape.control)
         }
         .buttonStyle(.plain)

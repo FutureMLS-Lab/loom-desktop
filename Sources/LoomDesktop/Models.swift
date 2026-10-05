@@ -181,6 +181,10 @@ struct ConversationQuestion: Decodable, Equatable {
     var status: String // pending | answered | error | canceled
     var answer: String?
     var questions: [ConversationPrompt]?
+    /// terminal: a menu open in the pane, answered with keys. transcript: an
+    /// ask-question tool call. numbered: a 1/2/3 list read out of the agent's
+    /// text — a guess, answered by replying with the number.
+    var source: String?
 }
 
 struct ConversationMessage: Decodable, Equatable, Identifiable {

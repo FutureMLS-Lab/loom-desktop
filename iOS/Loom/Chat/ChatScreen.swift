@@ -17,13 +17,44 @@ struct ChatScreen: View {
         }
         .sheet(item: $selecting) { SelectableTextSheet(item: $0) }
         .onChange(of: session.chatDraft) { _, _ in session.persistChatDraft() }
+        #if DEBUG
+        // Simulator runs, which cannot type: `-LoomChatDraft <text>` fills
+        // the composer and focuses it once the feed has loaded.
+        .task {
+            guard let draft = UserDefaults.standard.string(forKey: "LoomChatDraft") else { return }
+            try? await Task.sleep(nanoseconds: 8_000_000_000)
+            session.chatDraft = ""
+            composerFocused = true
+            try? await Task.sleep(nanoseconds: 1_500_000_000)
+            // Through the text view itself, the path a keyboard takes.
+            func focusedTextInput(in view: UIView) -> UIKeyInput? {
+                if view.isFirstResponder, let input = view as? UIKeyInput { return input }
+                for child in view.subviews {
+                    if let found = focusedTextInput(in: child) { return found }
+                }
+                return nil
+            }
+            let windows = UIApplication.shared.connectedScenes
+                .compactMap { $0 as? UIWindowScene }
+                .flatMap(\.windows)
+            guard let input = windows.lazy.compactMap({ focusedTextInput(in: $0) }).first else { return }
+            for character in draft {
+                input.insertText(String(character))
+                try? await Task.sleep(nanoseconds: 90_000_000)
+            }
+        }
+        #endif
     }
 
     // MARK: Feed
 
     private var feed: some View {
         ScrollView {
-            LazyVStack(alignment: .leading, spacing: 12) {
+            // Not lazy. Kept at the bottom through a resize — the keyboard,
+            // the composer growing a line — a lazy stack re-anchored on the
+            // estimated heights of rows it had not drawn, and drifted up the
+            // conversation or onto a stretch with nothing drawn at all.
+            VStack(alignment: .leading, spacing: 12) {
                 if session.hasMore {
                     Button {
                         session.loadOlder()

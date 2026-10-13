@@ -126,12 +126,16 @@ FEEDS = {
 
 
 # The plan under the terminal: long enough to scroll, a table wider than the
-# digest so horizontal scrolling has something to do, and a word ("PSNR")
-# that recurs so find has matches to step through.
+# digest so horizontal scrolling has something to do, a word ("PSNR") that
+# recurs so find has matches to step through, and formulas for KaTeX.
 PLAN_MD = "\n".join(
     ["# Plan — video2bit", "", "## Goal", "",
      "Quantize the video encoder to 2-bit while keeping PSNR above 38 dB on the "
      "held-out clips. Progress, decisions and numbers live in this file.", "",
+     r"Each frame is scored against the 8-bit reference, "
+     r"$\mathrm{PSNR} = 10 \log_{10}\left(\mathrm{MAX}_I^2 / \mathrm{MSE}\right)$, "
+     r"and a clip by its mean:", "",
+     r"$$\overline{\mathrm{PSNR}} = \frac{1}{N} \sum_{t=1}^{N} \mathrm{PSNR}(x_t, \hat{x}_t)$$", "",
      "## Sweep so far", "",
      "| bits | layers | PSNR (dB) | SSIM | bitrate (kbps) | latency p50 (ms) | latency p99 (ms) | notes |",
      "| --- | --- | --- | --- | --- | --- | --- | --- |",

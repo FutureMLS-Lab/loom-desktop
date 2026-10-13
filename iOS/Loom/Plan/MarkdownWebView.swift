@@ -4,8 +4,8 @@ import WebKit
 
 /// Serves `loom-asset://` requests from the markdown page: a figure fetched
 /// through the API, which holds the token an `<img>` cannot send, or
-/// `loom-asset://bundle/<file>`, a script the page loads only when a document
-/// needs it.
+/// `loom-asset://bundle/<path>`, what the page loads only when a document
+/// needs it — the diagram renderer, KaTeX and its fonts.
 @MainActor
 private final class AssetSchemeHandler: NSObject, WKURLSchemeHandler {
     private let api = LoomAPI()
@@ -13,8 +13,7 @@ private final class AssetSchemeHandler: NSObject, WKURLSchemeHandler {
     /// a stopped task raises.
     private var inFlight: [ObjectIdentifier: Task<Void, Never>] = [:]
 
-    private static let bundled = ["mermaid.min.js": ("mermaid.min", "js")]
-    private static var bundledData: [String: Data] = [:]
+    private static var bundled: [String: (data: Data, type: String)] = [:]
 
     func webView(_ webView: WKWebView, start task: WKURLSchemeTask) {
         guard let url = task.request.url,
@@ -60,19 +59,14 @@ private final class AssetSchemeHandler: NSObject, WKURLSchemeHandler {
     }
 
     private func serveBundled(_ url: URL, to task: WKURLSchemeTask) {
-        let file = url.lastPathComponent
-        guard let (name, ext) = Self.bundled[file],
-              let data = Self.bundledData[file] ?? LoomResource.data(name, ext)
-        else {
-            task.didFailWithError(LoomAPIError(message: "\(file) is not bundled", status: 404))
+        let path = String(url.path.drop { $0 == "/" })
+        guard let asset = Self.bundled[path] ?? LoomResource.pageAsset(path) else {
+            task.didFailWithError(LoomAPIError(message: "\(path) is not bundled", status: 404))
             return
         }
-        Self.bundledData[file] = data
-        task.didReceive(URLResponse(
-            url: url, mimeType: "text/javascript",
-            expectedContentLength: data.count, textEncodingName: "utf-8"
-        ))
-        task.didReceive(data)
+        Self.bundled[path] = asset
+        task.didReceive(LoomResource.pageAssetResponse(url, asset))
+        task.didReceive(asset.data)
         task.didFinish()
     }
 }

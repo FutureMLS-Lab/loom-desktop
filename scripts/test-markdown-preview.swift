@@ -2,19 +2,23 @@
 import AppKit
 import WebKit
 
-/// Hands the page what the app's asset scheme would: the bundled scripts it
-/// loads on demand. Figures have no server here and fail, as they should.
+/// Hands the page what the app's asset scheme would: what it loads on demand,
+/// typed as the app types it. Figures have no server here and fail, as they
+/// should.
 final class BundledScripts: NSObject, WKURLSchemeHandler {
     let root: URL
     init(root: URL) { self.root = root }
+    static let types = ["js": "text/javascript", "css": "text/css", "woff2": "font/woff2"]
     func webView(_ webView: WKWebView, start task: WKURLSchemeTask) {
         guard let url = task.request.url, url.host == "bundle",
-              let data = try? Data(contentsOf: root.appendingPathComponent("Resources/\(url.lastPathComponent)"))
+              let type = Self.types[url.pathExtension],
+              let data = try? Data(contentsOf: root.appendingPathComponent("Resources" + url.path))
         else {
             task.didFailWithError(URLError(.fileDoesNotExist))
             return
         }
-        task.didReceive(URLResponse(url: url, mimeType: "text/javascript", expectedContentLength: data.count, textEncodingName: "utf-8"))
+        task.didReceive(URLResponse(url: url, mimeType: type, expectedContentLength: data.count,
+                                    textEncodingName: type.hasPrefix("text/") ? "utf-8" : nil))
         task.didReceive(data)
         task.didFinish()
     }
@@ -45,24 +49,35 @@ final class PreviewTests: NSObject, WKNavigationDelegate {
     func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
         do {
             let tests = try String(contentsOf: root.appendingPathComponent("Tests/MarkdownPreviewTests.js"), encoding: .utf8)
-            let diagrams = try String(contentsOf: root.appendingPathComponent("Tests/MarkdownPreviewDiagramTests.js"), encoding: .utf8)
+            let waiting = try [("diagrams", "Diagram"), ("math", "Math")].map { name, file in
+                (name, try String(contentsOf: root.appendingPathComponent("Tests/MarkdownPreview\(file)Tests.js"), encoding: .utf8))
+            }
             web.evaluateJavaScript(tests) { result, error in
                 if let error { fputs("FAIL: \(error)\n", stderr); exit(1) }
-                self.web.callAsyncJavaScript(diagrams, arguments: [:], in: nil, in: .page) { outcome in
-                    switch outcome {
-                    case .failure(let error):
-                        fputs("FAIL (diagrams): \(error)\n", stderr)
-                        exit(1)
-                    case .success(let diagramResult):
-                        let combined: [String: Any] = ["preview": result ?? NSNull(), "diagrams": diagramResult ?? NSNull()]
-                        guard let data = try? JSONSerialization.data(withJSONObject: combined, options: [.prettyPrinted, .sortedKeys]),
-                              let output = String(data: data, encoding: .utf8) else { exit(2) }
-                        print(output)
-                        exit(0)
-                    }
-                }
+                self.runWaiting(waiting, results: ["preview": result ?? NSNull()])
             }
         } catch { fputs("FAIL: \(error)\n", stderr); exit(1) }
+    }
+    /// The suites that wait for something the page fetches — the diagram
+    /// renderer, KaTeX — one after another.
+    func runWaiting(_ suites: [(String, String)], results: [String: Any]) {
+        guard let suite = suites.first else {
+            guard let data = try? JSONSerialization.data(withJSONObject: results, options: [.prettyPrinted, .sortedKeys]),
+                  let output = String(data: data, encoding: .utf8) else { exit(2) }
+            print(output)
+            exit(0)
+        }
+        web.callAsyncJavaScript(suite.1, arguments: [:], in: nil, in: .page) { outcome in
+            switch outcome {
+            case .failure(let error):
+                fputs("FAIL (\(suite.0)): \(error)\n", stderr)
+                exit(1)
+            case .success(let value):
+                var results = results
+                results[suite.0] = value ?? NSNull()
+                self.runWaiting(Array(suites.dropFirst()), results: results)
+            }
+        }
     }
 }
 let app = NSApplication.shared

@@ -131,6 +131,29 @@
   .loom-diagram svg { display: block; margin: 0 auto; max-width: none; }
   .loom-diagram.drawing { color: var(--muted); font-size: 0.9em; }
   .diagram-error { color: var(--muted); font-size: 0.85em; margin: -0.4em 0 0.85em; }
+  /* Formulas. Until KaTeX has typeset one — or if it never loads — its
+     TeX shows, set like code. A display formula wider than the column
+     scrolls sideways, as tables and diagrams do. */
+  .loom-math:not(.typeset) {
+    font-family: ui-monospace, "SF Mono", Menlo, monospace;
+    font-size: 0.9em;
+    color: var(--muted);
+  }
+  /* KaTeX sets a formula as a row of inline blocks, and a line could break
+     after the last one, leaving the ")." that touched it alone on the next
+     line. The punctuation moves into the box, which then goes to a line as
+     one piece; one longer than the line still breaks inside, where KaTeX
+     allows. */
+  .loom-math.glued { display: inline-block; }
+  .loom-math.display { display: block; margin: 0.85em 0; }
+  .loom-math.display:not(.typeset) { white-space: pre-wrap; }
+  .loom-math .katex-display { margin: 0; }
+  .loom-math .katex-display > .katex { max-width: 100%; }
+  .loom-math .katex-display > .katex > .katex-html {
+    max-width: 100%; overflow-x: auto; overflow-y: hidden;
+    padding: 0.1em 2px;
+  }
+  body.compact .loom-math.display { margin: 0.6em 0; }
   #empty {
     color: var(--muted);
     text-align: center;
@@ -584,6 +607,139 @@
       });
     });
 
+    // Formulas: $…$ and \(…\) within a line, $$…$$ and \[…\] set apart, as
+    // the web console reads them. marked takes each as one token instead of
+    // as text — otherwise `\,` and `\\` lose a backslash, and the `_` in
+    // `\right)_{ij}` opens italics that run on into the next formula — and
+    // writes its TeX into a .loom-math box, typeset after sanitizing. A single $ follows pandoc's rule: no space just inside
+    // either one and no digit straight after the closing one, so "$5 and
+    // $10" stays prices. Code is tokenized first and keeps its dollar signs.
+    var MATH_INLINE = /^(?:\$\$([\s\S]+?)\$\$|\\\[([\s\S]+?)\\\]|\\\(([\s\S]+?)\\\)|\$(?=[^\s$])((?:\\[\s\S]|[^\\$\n])*?[^\s\\])\$(?!\d))/;
+    // A formula set apart may span lines but not a blank one, which TeX
+    // refuses in math too: a stray $$ cannot swallow the sections after it.
+    var MATH_BLOCK = /^ {0,3}(?:\$\$((?:[^\n]|\n(?![ \t]*\n))+?)\$\$|\\\[((?:[^\n]|\n(?![ \t]*\n))+?)\\\])[ \t]*(?:\n+|$)/;
+    // \[…\] is also Markdown's escaped brackets: `\[1\]` is a citation. It
+    // counts as a formula only with a TeX command, a script or a brace.
+    function texLike(tex) { return /[\\^_{}=]/.test(tex); }
+    function blockMath(src) {
+      var m = MATH_BLOCK.exec(src);
+      if (!m || (m[2] !== undefined && !texLike(m[2]))) return null;
+      return { type: 'loomMathBlock', raw: m[0], tex: (m[1] !== undefined ? m[1] : m[2]).trim() };
+    }
+    if (typeof marked !== 'undefined' && marked.use) {
+      marked.use({ extensions: [{
+        name: 'loomMathBlock',
+        level: 'block',
+        // Where a paragraph has to stop for a formula on its own lines.
+        start: function (src) {
+          for (var from = 0; ;) {
+            var dollars = src.indexOf('$$', from), bracket = src.indexOf('\\[', from);
+            var at = dollars < 0 ? bracket : bracket < 0 ? dollars : Math.min(dollars, bracket);
+            if (at < 0) return;
+            var line = src.lastIndexOf('\n', at - 1) + 1;
+            if (/^ {0,3}$/.test(src.slice(line, at)) && blockMath(src.slice(line))) return line;
+            from = at + 2;
+          }
+        },
+        tokenizer: function (src) { return blockMath(src) || undefined; },
+        renderer: function (token) {
+          return '<div class="loom-math display">' + escapeHtml(token.tex) + '</div>\n';
+        }
+      }, {
+        name: 'loomMath',
+        level: 'inline',
+        start: function (src) {
+          var at = src.search(/\$|\\[([]/);
+          return at < 0 ? undefined : at;
+        },
+        tokenizer: function (src) {
+          var m = MATH_INLINE.exec(src);
+          if (!m || (m[2] !== undefined && !texLike(m[2]))) return;
+          var display = m[1] !== undefined || m[2] !== undefined;
+          var tex = [m[1], m[2], m[3], m[4]].find(function (part) { return part !== undefined; });
+          return { type: 'loomMath', raw: m[0], tex: tex.trim(), display: display };
+        },
+        renderer: function (token) {
+          return '<span class="loom-math' + (token.display ? ' display' : '') + '">' + escapeHtml(token.tex) + '</span>';
+        }
+      }] });
+    }
+    // KaTeX comes the way the diagram renderer does, the first time a
+    // document has a formula, with the stylesheet that brings its fonts.
+    var mathRenderer = 'idle', mathWaiting = [];
+    function withMathRenderer(ready, failed) {
+      if (mathRenderer === 'ready') return ready();
+      if (mathRenderer === 'failed') return failed();
+      mathWaiting.push([ready, failed]);
+      if (mathRenderer === 'loading') return;
+      mathRenderer = 'loading';
+      var styled = false, pending = 3;
+      var settle = function () {
+        if (--pending) return;
+        mathRenderer = styled && window.katex ? 'ready' : 'failed';
+        var waiting = mathWaiting;
+        mathWaiting = [];
+        waiting.forEach(function (pair) { pair[mathRenderer === 'ready' ? 0 : 1](); });
+      };
+      var sheet = document.createElement('link');
+      sheet.rel = 'stylesheet';
+      sheet.onload = function () { styled = true; settle(); };
+      sheet.onerror = settle;
+      sheet.href = 'loom-asset://bundle/katex/katex.min.css';
+      var script = document.createElement('script');
+      script.onload = settle;
+      script.onerror = settle;
+      script.src = 'loom-asset://bundle/katex/katex.min.js';
+      // Copying a typeset formula copies its TeX between dollar signs, not
+      // its glyphs twice over.
+      var copy = document.createElement('script');
+      copy.onload = settle;
+      copy.onerror = settle;
+      copy.src = 'loom-asset://bundle/katex/copy-tex.min.js';
+      document.head.append(sheet, script, copy);
+    }
+    function gluePunctuation(box) {
+      var after = box.nextSibling, before = box.previousSibling;
+      var closing = after && after.nodeType === 3 && /^[)\]}.,;:!?%'"’”，。、；：！？）」』】]+/.exec(after.nodeValue);
+      if (closing) {
+        after.nodeValue = after.nodeValue.slice(closing[0].length);
+        box.append(closing[0]);
+      }
+      var opening = before && before.nodeType === 3 && /[(\[{'"‘“（「『【]+$/.exec(before.nodeValue);
+      if (opening) {
+        before.nodeValue = before.nodeValue.slice(0, -opening[0].length);
+        box.prepend(opening[0]);
+      }
+      if (closing || opening) box.classList.add('glued');
+    }
+    // After the sections are built, so a heading's fold key is its TeX
+    // whether or not KaTeX had arrived by then.
+    function typesetMath() {
+      var boxes = document.querySelectorAll('#content .loom-math:not(.typeset)');
+      if (!boxes.length) return;
+      if (mathRenderer !== 'ready') {
+        boxes.forEach(function (box) { box.classList.add('waiting'); });
+      }
+      withMathRenderer(function () {
+        document.querySelectorAll('#content .loom-math:not(.typeset)').forEach(function (box) {
+          box.classList.remove('waiting');
+          try {
+            window.katex.render(box.textContent, box, {
+              displayMode: box.classList.contains('display'),
+              throwOnError: false
+            });
+            box.classList.add('typeset');
+            if (!box.classList.contains('display')) gluePunctuation(box);
+          } catch (e) {}
+        });
+        reportHeight();
+      }, function () {
+        document.querySelectorAll('#content .loom-math.waiting').forEach(function (box) {
+          box.classList.remove('waiting');
+        });
+      });
+    }
+
     // Find. `WKWebView.find` would highlight but gives no count and no
     // field to type into, so the whole thing lives in the page: wrap
     // matches in <mark>, step through them, and put the document back
@@ -609,8 +765,9 @@
       var walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT, null);
       var targets = [], node;
       while ((node = walker.nextNode())) {
-        // A <mark> dropped into a drawing's text breaks the drawing.
-        if (node.parentElement.closest('button, script, style, .loom-diagram')) continue;
+        // A <mark> dropped into a drawing's text breaks the drawing; a
+        // formula's text is its glyphs, and a hidden copy of its TeX.
+        if (node.parentElement.closest('button, script, style, .loom-diagram, .loom-math')) continue;
         if (node.nodeValue.toLowerCase().indexOf(needle) !== -1) { targets.push(node); }
       }
       targets.forEach(function (text) {
@@ -740,6 +897,7 @@
       buildSections();
       linkAssets(true);
       drawDiagrams();
+      typesetMath();
       window.scrollTo(0, keepY);
       reportHeight();
       if (rerun) { findRun(rerun, true); }

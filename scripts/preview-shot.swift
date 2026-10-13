@@ -44,17 +44,21 @@ let html = page
         with: purify.isEmpty ? "" : "<script>\(purify)</script>"
     )
 
-/// The bundled scripts the page loads on demand, which the app's asset scheme
-/// would otherwise serve — the diagram renderer, so diagrams come out drawn.
+/// What the page loads on demand, which the app's asset scheme would
+/// otherwise serve — the diagram renderer and KaTeX, so diagrams come out
+/// drawn and formulas typeset.
 final class BundledScripts: NSObject, WKURLSchemeHandler {
+    static let types = ["js": "text/javascript", "css": "text/css", "woff2": "font/woff2"]
     func webView(_ webView: WKWebView, start task: WKURLSchemeTask) {
         guard let url = task.request.url, url.host == "bundle",
-              let data = try? Data(contentsOf: root.appending(path: "Resources/\(url.lastPathComponent)"))
+              let type = Self.types[url.pathExtension],
+              let data = try? Data(contentsOf: root.appending(path: "Resources" + url.path))
         else {
             task.didFailWithError(URLError(.fileDoesNotExist))
             return
         }
-        task.didReceive(URLResponse(url: url, mimeType: "text/javascript", expectedContentLength: data.count, textEncodingName: "utf-8"))
+        task.didReceive(URLResponse(url: url, mimeType: type, expectedContentLength: data.count,
+                                    textEncodingName: type.hasPrefix("text/") ? "utf-8" : nil))
         task.didReceive(data)
         task.didFinish()
     }
@@ -87,10 +91,12 @@ final class Shooter: NSObject, WKNavigationDelegate {
         }
     }
 
-    /// Diagrams draw after the render returns; photographing the placeholder
-    /// would show nothing worth looking at.
+    /// Diagrams draw and formulas typeset after the render returns;
+    /// photographing the placeholders would show nothing worth looking at.
     private func waitForDiagrams(tries: Int) {
-        web.evaluateJavaScript("!!document.querySelector('.loom-diagram.drawing')") { busy, _ in
+        let busy = "!!document.querySelector('.loom-diagram.drawing, .loom-math.waiting')"
+            + " || document.fonts.status === 'loading'"
+        web.evaluateJavaScript(busy) { busy, _ in
             if (busy as? Bool) == true && tries > 0 {
                 DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) { self.waitForDiagrams(tries: tries - 1) }
                 return

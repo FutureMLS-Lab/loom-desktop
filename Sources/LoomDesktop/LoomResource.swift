@@ -1,7 +1,7 @@
 import Foundation
 
-/// Reads a bundled text asset — the web pages the app hosts, and the
-/// JavaScript they load.
+/// Reads a bundled asset — the web pages the app hosts, and the scripts,
+/// stylesheet and fonts they load.
 ///
 /// Three places to look, because the app runs two ways. Installed, the files
 /// sit in the `.app`'s Resources. Run as a bare binary out of a checkout there
@@ -26,6 +26,39 @@ enum LoomResource {
             }
         }
         return nil
+    }
+
+    /// What the markdown page may fetch as `loom-asset://bundle/<path>`, with
+    /// its type: the diagram renderer, and KaTeX with its fonts, each loaded
+    /// only once a document needs it. Any other path is refused, so a
+    /// document cannot read the rest of the bundle through the scheme.
+    static func pageAsset(_ path: String) -> (data: Data, type: String)? {
+        guard let type = pageAssetType(path) else { return nil }
+        let file = path as NSString
+        return data(file.deletingPathExtension, file.pathExtension).map { ($0, type) }
+    }
+
+    static func pageAssetResponse(_ url: URL, _ asset: (data: Data, type: String)) -> URLResponse {
+        URLResponse(
+            url: url, mimeType: asset.type, expectedContentLength: asset.data.count,
+            textEncodingName: asset.type.hasPrefix("text/") ? "utf-8" : nil
+        )
+    }
+
+    private static func pageAssetType(_ path: String) -> String? {
+        switch path {
+        case "mermaid.min.js", "katex/katex.min.js", "katex/copy-tex.min.js":
+            return "text/javascript"
+        case "katex/katex.min.css":
+            return "text/css"
+        default:
+            let prefix = "katex/fonts/KaTeX_", suffix = ".woff2"
+            guard path.hasPrefix(prefix), path.hasSuffix(suffix) else { return nil }
+            let name = path.dropFirst(prefix.count).dropLast(suffix.count)
+            let plain = !name.isEmpty
+                && name.allSatisfy { $0.isASCII && ($0.isLetter || $0.isNumber || $0 == "-") }
+            return plain ? "font/woff2" : nil
+        }
     }
 
     private static func candidates(_ name: String, _ ext: String) -> [URL?] {

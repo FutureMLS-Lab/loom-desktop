@@ -53,6 +53,10 @@ targets:
       - path: ../Resources/mermaid.min.js
         group: Shared
         buildPhase: resources
+      - path: ../Resources/katex
+        type: folder
+        group: Shared
+        buildPhase: resources
     dependencies:
       - package: SwiftTerm
     info:

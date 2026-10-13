@@ -34,6 +34,7 @@ cp .build/debug/LoomDesktop "$APP/Contents/MacOS/LoomDesktop"
 cp Resources/marked.min.js Resources/purify.min.js Resources/mermaid.min.js Resources/xterm.js Resources/xterm.css \
    Resources/addon-fit.js Resources/markdown-preview.html Resources/terminal.html \
    "$APP/Contents/Resources/"
+cp -R Resources/katex "$APP/Contents/Resources/"
 cp Resources/loom-icon.png "$APP/Contents/Resources/loom-mark.png"
 
 cat > "$APP/Contents/Info.plist" <<PLIST

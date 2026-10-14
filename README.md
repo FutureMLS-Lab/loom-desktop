@@ -128,12 +128,23 @@ the window you are in now.
 
 ## Install as an app
 
+The latest release, with no Xcode needed:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/FutureMLS-Lab/loom-desktop/main/scripts/install.sh | bash
+```
+
+or a build of this checkout:
+
 ```bash
 scripts/make-app.sh          # → /Applications/Loom Desktop.app
 ```
 
-This builds a signed bundle, installs it to `/Applications`, registers a
-login item (`~/Library/LaunchAgents/com.loom.desktop.plist`), and starts it.
+Either way the app lands in `/Applications`, registers a login item
+(`~/Library/LaunchAgents/com.loom.desktop.plist`), and starts. The release is
+one binary for Apple silicon and Intel. It installs with a command rather
+than from a disk image because it is not notarized: fetched with curl it
+carries no quarantine flag, and it starts through launchd, not Finder.
 
 - **Open**: it auto-starts at login; or double-click it in `/Applications`;
   or `launchctl kickstart gui/$(id -u)/com.loom.desktop`. (Note: `open` from
@@ -152,6 +163,25 @@ alongside its menu-bar icon and floating panel. It is deliberately not an
 that is not a registered foreground application draws its windows fine but
 never receives clicks, resizes, or focus.
 
+## Releasing
+
+Pushing a `v*` tag runs `.github/workflows/release.yml` on a macOS runner:
+`scripts/package-release.sh` builds the app for both architectures and
+publishes `LoomDesktop.zip` as that tag's release, the file the install
+command fetches. Running the workflow by hand from the Actions tab builds
+the same zip as an artifact, without releasing it.
+
+```bash
+git tag v0.2.0 && git push origin v0.2.0
+```
+
+Given a Developer ID certificate, the release also carries a notarized
+`LoomDesktop.dmg`, which opens from Finder like any downloaded app. That
+takes five repository secrets: `MACOS_CERTIFICATE` (the "Developer ID
+Application" certificate exported as a .p12, base64) and
+`MACOS_CERTIFICATE_PASSWORD`, and an App Store Connect API key —
+`NOTARY_KEY` (the .p8's contents), `NOTARY_KEY_ID` and `NOTARY_ISSUER_ID`.
+
 ## Build & run from source
 
 ```bash
@@ -163,7 +193,7 @@ scripts/swift-build.sh -c release
 With Xcode 27's default build engine a plain `swift build` stamps the binary
 as built against macOS 14, and the app then runs in that release's
 compatibility mode — sidebar drags never start, and the window loses the
-current design. `make-app.sh` refuses to install a binary stamped that way.
+current design. `bundle-app.sh` refuses to package a binary stamped that way.
 
 Configure servers via the loom menu → **Settings…**. Point each at whatever
 serves the Loom HTTP API: the loom-app gateway (which holds the Loom token
@@ -249,8 +279,9 @@ tabs and sidebar can be exercised without a person.
 
 ## Auto-start at login
 
-`scripts/make-app.sh` writes `~/Library/LaunchAgents/com.loom.desktop.plist`
-itself, pointing at the installed bundle, so installing is all it takes.
+`scripts/install.sh` — which `make-app.sh` runs too — writes
+`~/Library/LaunchAgents/com.loom.desktop.plist` itself, pointing at the
+installed bundle, so installing is all it takes.
 `launchagent/com.loom.desktop.plist.template` is the same thing by hand, for a
 binary somewhere else.
 
@@ -289,8 +320,12 @@ binary somewhere else.
 | `LoomServers.swift` | The configured Looms, and which one is current |
 | `SettingsWindow.swift` | Managing servers: URL, token, and switching |
 | `Snapshotter.swift` | Window → PNG for the headless UI check, web views included |
-| `Resources/` | App icon, the two pages the app hosts (`terminal.html`, `markdown-preview.html`), and the bundled `marked`, DOMPurify (`purify.min.js`, v3), `xterm`, and fit addon that get spliced into them at their placeholders. `mermaid.min.js` (v12) is not spliced — at megabytes, the preview loads it only for a document with a diagram — and neither is `katex/` (KaTeX 0.18, MIT, the build the web console vendors), which comes with `copy-tex` and its fonts only for a document with a formula. Anything added here must also be copied in `make-app.sh`, or it exists for the checkout and not for the installed app. The sidebar watermark reads `loom-mark.png`, which only the installed bundle has — the bare binary runs without it |
-| `scripts/make-app.sh` | Build, sign, install to `/Applications`, register the login item |
+| `Resources/` | App icon, the two pages the app hosts (`terminal.html`, `markdown-preview.html`), and the bundled `marked`, DOMPurify (`purify.min.js`, v3), `xterm`, and fit addon that get spliced into them at their placeholders. `mermaid.min.js` (v12) is not spliced — at megabytes, the preview loads it only for a document with a diagram — and neither is `katex/` (KaTeX 0.18, MIT, the build the web console vendors), which comes with `copy-tex` and its fonts only for a document with a formula. Anything added here must also be copied in `bundle-app.sh`, or it exists for the checkout and not for the installed app. The sidebar watermark reads `loom-mark.png`, which only the installed bundle has — the bare binary runs without it |
+| `scripts/make-app.sh` | Build, sign, install to `/Applications`, register the login item: `bundle-app.sh`, then `install.sh` |
+| `scripts/bundle-app.sh` | Build and assemble the signed `Loom Desktop.app` in a directory; optionally universal, versioned, or signed with a given identity |
+| `scripts/install.sh` | Install a bundle, or download the latest release and install that, then start it through launchd |
+| `scripts/package-release.sh` | The release assets: `LoomDesktop.zip`, and a notarized `LoomDesktop.dmg` when a Developer ID and an API key are at hand |
+| `.github/workflows/release.yml` | On a `v*` tag, run `package-release.sh` on a macOS runner and publish the release |
 | `scripts/swift-build.sh` | `swift build` that stamps the binary with the SDK it was built against — see *Build & run from source* |
 | `scripts/dev-shot.sh` | Build a dev copy under its own bundle id, run it against the mock, and save window PNGs — without killing or replacing the installed app the way `make-app.sh` does. The dev hooks below pass through (`LOOM_DESKTOP_OPEN_CHAT=… scripts/dev-shot.sh`) |
 | `scripts/mock-loom.py` | Offline mock of the Loom API for development |

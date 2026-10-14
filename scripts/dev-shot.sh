@@ -15,7 +15,7 @@
 #   LOOM_DESKTOP_OPEN_WINDOWS=settings scripts/dev-shot.sh
 #
 # Run the bundle's binary directly, never `open`: LaunchServices suspends
-# locally built apps on this machine (see make-app.sh).
+# locally built apps on this machine (see install.sh).
 set -euo pipefail
 cd "$(dirname "$0")/.."
 

@@ -1,0 +1,79 @@
+name: Release
+
+# A v* tag builds Loom Desktop for Apple silicon and Intel and publishes it as
+# that tag's GitHub release: LoomDesktop.zip, which scripts/install.sh
+# downloads, and LoomDesktop.dmg once the app can be signed and notarized.
+# Run by hand, it keeps the build as a workflow artifact instead.
+#
+# Signing and notarizing take these repository secrets; without them the app
+# is signed ad hoc, which install.sh handles and Finder does not:
+#   MACOS_CERTIFICATE           a "Developer ID Application" .p12, base64
+#   MACOS_CERTIFICATE_PASSWORD  its password
+#   NOTARY_KEY                  an App Store Connect API key (.p8 contents)
+#   NOTARY_KEY_ID, NOTARY_ISSUER_ID
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: macos-26
+    env:
+      HAS_CERTIFICATE: ${{ secrets.MACOS_CERTIFICATE != '' }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          # The build number counts commits, and the version falls back to
+          # the latest tag; a shallow clone has neither.
+          fetch-depth: 0
+
+      - name: Import the Developer ID certificate
+        if: env.HAS_CERTIFICATE == 'true'
+        env:
+          MACOS_CERTIFICATE: ${{ secrets.MACOS_CERTIFICATE }}
+          MACOS_CERTIFICATE_PASSWORD: ${{ secrets.MACOS_CERTIFICATE_PASSWORD }}
+        run: |
+          KEYCHAIN="$RUNNER_TEMP/signing.keychain-db"
+          PASSWORD="$(uuidgen)"
+          security create-keychain -p "$PASSWORD" "$KEYCHAIN"
+          security set-keychain-settings -lut 21600 "$KEYCHAIN"
+          security unlock-keychain -p "$PASSWORD" "$KEYCHAIN"
+          printf '%s' "$MACOS_CERTIFICATE" | base64 --decode > "$RUNNER_TEMP/certificate.p12"
+          security import "$RUNNER_TEMP/certificate.p12" -k "$KEYCHAIN" \
+            -P "$MACOS_CERTIFICATE_PASSWORD" -T /usr/bin/codesign
+          rm "$RUNNER_TEMP/certificate.p12"
+          security set-key-partition-list -S apple-tool:,apple: -s -k "$PASSWORD" "$KEYCHAIN" >/dev/null
+          security list-keychains -d user -s "$KEYCHAIN" $(security list-keychains -d user | tr -d '"')
+          IDENTITY="$(security find-identity -v -p codesigning "$KEYCHAIN" \
+            | sed -n 's/.*"\(Developer ID Application:.*\)".*/\1/p' | head -1)"
+          [ -n "$IDENTITY" ] || { echo "no Developer ID Application identity in the certificate" >&2; exit 1; }
+          echo "LOOM_SIGN_IDENTITY=$IDENTITY" >> "$GITHUB_ENV"
+
+      - name: Build
+        env:
+          NOTARY_KEY: ${{ secrets.NOTARY_KEY }}
+          NOTARY_KEY_ID: ${{ secrets.NOTARY_KEY_ID }}
+          NOTARY_ISSUER_ID: ${{ secrets.NOTARY_ISSUER_ID }}
+        run: |
+          if [ "$GITHUB_REF_TYPE" = tag ]; then export LOOM_VERSION="${GITHUB_REF_NAME#v}"; fi
+          scripts/package-release.sh dist
+
+      - name: Publish the release
+        if: github.ref_type == 'tag'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "$GITHUB_REF_NAME" dist/LoomDesktop.zip $(ls dist/LoomDesktop.dmg 2>/dev/null) \
+            --title "Loom Desktop ${GITHUB_REF_NAME#v}" --generate-notes
+
+      - name: Keep the build
+        if: github.ref_type != 'tag'
+        uses: actions/upload-artifact@v7
+        with:
+          name: LoomDesktop
+          path: dist/LoomDesktop.*

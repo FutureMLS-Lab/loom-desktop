@@ -95,6 +95,9 @@ final class ChatSession: ObservableObject, Identifiable {
     /// How many times the task detail may fail before the Terminal tab stops
     /// saying it is loading and says it cannot be reached.
     private static let detailAttemptsBeforeComplaining = 3
+    /// How often the past sessions are asked for again while the agent is
+    /// offline and the last read failed. The read scans transcripts on disk.
+    private static let sessionsRetryInterval: TimeInterval = 20
 
     private var pollDelay: TimeInterval {
         if failureStreak > 0 {
@@ -254,6 +257,7 @@ final class ChatSession: ObservableObject, Identifiable {
             apply(feed, updateOnly: !full)
             publish(\.error, "")
             failureStreak = 0
+            refreshSessionsIfStale()
         } catch {
             if Self.wasCancelled(error) { return }
             failureStreak += 1
@@ -279,7 +283,12 @@ final class ChatSession: ObservableObject, Identifiable {
 
     private func apply(_ feed: ConversationFeed, updateOnly: Bool) {
         publish(\.available, feed.available ?? true)
+        let wasOnline = online
         publish(\.online, feed.online ?? false)
+        if wasOnline && !online {
+            sessionsFresh = false
+            sessionsAskedAt = nil
+        }
         publish(\.working, feed.working ?? false)
         publish(\.agent, feed.agent ?? agent)
         publish(\.total, feed.total ?? total)
@@ -571,14 +580,31 @@ final class ChatSession: ObservableObject, Identifiable {
     // MARK: Sessions
 
     @Published private(set) var sessions: [SessionInfo] = []
+    /// Whether `sessions` has been read since the agent last stopped. Read
+    /// once when the task opened, a list that failed while the server was
+    /// down stayed empty — no way to resume — and one read while the agent
+    /// ran lacked the session that just ended.
+    private var sessionsFresh = false
+    private var sessionsAskedAt: Date?
 
     func loadSessions() {
+        sessionsAskedAt = Date()
         Task {
             guard let list = try? await api.sessions(projectId: projectId, slug: slug) else { return }
+            sessionsFresh = true
             // Newest first: resuming almost always means "the one I was just
             // in", and on-disk transcripts arrive in no useful order.
             publish(\.sessions, (list.sessions ?? []).sorted { ($0.mtime ?? 0) > ($1.mtime ?? 0) })
         }
+    }
+
+    /// While the agent is offline, resuming is the likely next step: keep
+    /// asking until the list has been read.
+    private func refreshSessionsIfStale() {
+        guard !online, !sessionsFresh else { return }
+        if let asked = sessionsAskedAt,
+           Date().timeIntervalSince(asked) < Self.sessionsRetryInterval { return }
+        loadSessions()
     }
 
     // MARK: Run monitor

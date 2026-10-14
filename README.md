@@ -41,7 +41,11 @@ land on is the one you used last:
 Above the tabs are the flow buttons the web console has — Deep Interview,
 Run `/goal`, Write result — and, under **⋯**, start / stop / resume for the
 agent session and *Notify when finished*, which has the server watch the pane
-for a finishing phrase whether or not the task is open.
+for a finishing phrase whether or not the task is open. While the agent is
+offline — after a restart of the Loom host, its tmux is gone — the header
+offers **Resume**, which carries on in the session it was last in, beside
+**Start new**; the list under **⋯** has the earlier ones, and is read again
+until it loads.
 
 The window's toolbar holds **+** (a new task, or a project to add — an
 existing folder on the Loom host, a new folder, or a repo to clone), refresh,

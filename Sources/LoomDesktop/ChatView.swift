@@ -189,7 +189,9 @@ struct ChatView: View {
                     .font(.system(size: 14, weight: .semibold))
                 Text(session.online
                      ? "The agent is ready for a follow-up."
-                     : "Start the agent to begin.")
+                     : session.sessions.isEmpty
+                        ? "Start the agent to begin."
+                        : "Resume its last session from the header, or start a new one.")
                     .font(.system(size: 12))
                     .foregroundColor(.secondary)
             }

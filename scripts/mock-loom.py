@@ -12,6 +12,9 @@ Serves just enough of the Loom HTTP API on http://127.0.0.1:8787:
 - /api/tasks/<slug>[/conversation]    — a canned feed with every message kind
 - /api/tasks/<slug>/claude/send       — echoes your message, "works" for a
                                         few seconds, then replies
+- /api/tasks/<slug>/claude-sessions   — past sessions of the offline paper
+                                        draft; claude/resume opens its pane
+                                        as interview/start does
 - /api/tasks/<slug>/conversation/answer, /api/tmux/send-key,
   /api/tasks/<slug>/interview/start   — accepted and reflected in the feed
 
@@ -151,6 +154,16 @@ PLAN_MD = "\n".join(
 )
 
 
+# The paper draft has no pane, as after a restart of the Loom host, and two
+# transcripts to resume from.
+PAST_SESSIONS = {
+    "p2/paper-draft": [
+        {"id": "5c1e9a7d-2f4b-4e8a-9d61-0b7f3c2a8e14", "mtime": time.time() - 3 * 3600},
+        {"id": "a83f0d52-6b19-47c3-8e2a-d94c51b07f6e", "mtime": time.time() - 2 * 86400},
+    ],
+}
+
+
 def feed_working(key):
     return bool(ACTIVITY.get(key, {}).get("working"))
 
@@ -241,7 +254,7 @@ class Handler(BaseHTTPRequestHandler):
             if len(parts) == 4 and parts[:2] == ["api", "tasks"] and parts[3] == "claude-sessions":
                 key, project = self._key(parsed, parts[2])
                 meta = next((t for t in TASKS.get(project, []) if t["slug"] == parts[2]), {})
-                return self._json({"sessions": [], "tracked": [], "tmux_alive": feed_online(key),
+                return self._json({"sessions": PAST_SESSIONS.get(key, []), "tracked": [], "tmux_alive": feed_online(key),
                                    "agent_running": feed_online(key), "tmux_target": meta.get("tmux_interview_target", "")})
             if len(parts) == 4 and parts[:2] == ["api", "tasks"] and parts[3] == "diff":
                 return self._json({"slug": parts[2], "worktrees": []})
@@ -352,7 +365,7 @@ class Handler(BaseHTTPRequestHandler):
                 FEEDS[key]["messages"].append(msg("event", text="Answer sent to agent"))
                 schedule_reply(key, "answer")
                 return self._json({"ok": True})
-            if len(parts) == 5 and parts[3] == "interview" and parts[4] == "start":
+            if len(parts) == 5 and (parts[3], parts[4]) in (("interview", "start"), ("claude", "resume")):
                 key, project = self._key(parsed, parts[2])
                 for t in TASKS.get(project, []):
                     if t["slug"] == parts[2] and not t.get("tmux_interview_target"):

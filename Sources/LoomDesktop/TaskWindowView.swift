@@ -274,7 +274,9 @@ struct TaskPane: View {
             if session.online {
                 Button("Stop agent") { session.stopAgent() }
             } else {
-                Button("Start agent") { session.startAgent() }
+                Button(session.sessions.isEmpty ? "Start agent" : "Start new session") {
+                    session.startAgent()
+                }
             }
             Divider()
             Toggle("Notify when finished", isOn: Binding(
@@ -354,12 +356,33 @@ struct TaskPane: View {
                     Circle().fill(Color.secondary).frame(width: 7, height: 7)
                     Text("Offline")
                 }
-                Button(session.starting ? "Starting…" : "Start agent") {
-                    session.startAgent()
-                }
-                .disabled(session.starting)
-                .controlSize(.small)
+                launchButtons
             }
+        }
+    }
+
+    /// When the agent is offline — most often because its tmux went with a
+    /// restart of the Loom host — carrying on in the session it was last in
+    /// is the usual next step, and the one Start would throw away. So that
+    /// session leads, and Start begins a new one.
+    @ViewBuilder
+    private var launchButtons: some View {
+        if session.starting {
+            Button("Starting…") {}
+                .disabled(true)
+                .controlSize(.small)
+        } else if let last = session.sessions.first {
+            Button("Resume") { session.resume(last) }
+                .buttonStyle(.borderedProminent)
+                .tint(LoomColors.accent)
+                .controlSize(.small)
+                .help("Carry on in the last session, \(Self.sessionLabel(last))")
+            Button("Start new") { session.startAgent() }
+                .controlSize(.small)
+                .help("Start the agent in a new session")
+        } else {
+            Button("Start agent") { session.startAgent() }
+                .controlSize(.small)
         }
     }
 
@@ -390,9 +413,10 @@ struct TaskPane: View {
             return "\(session.detailError)\n\nThe pane may well be running — this is the "
                 + "task's own details that could not be read. Retrying."
         }
-        return session.online
-            ? "Waiting for the pane target…"
-            : "Start the agent to open its terminal."
+        if session.online { return "Waiting for the pane target…" }
+        return session.sessions.isEmpty
+            ? "Start the agent to open its terminal."
+            : "Resume its last session, or start a new one, to open its terminal."
     }
 
     @ViewBuilder
@@ -421,10 +445,25 @@ struct TaskPane: View {
                 // the app does not know whether an agent is already running,
                 // so inviting you to start one is a guess.
                 if !session.online && session.detailError.isEmpty && !session.detailLoading {
-                    Button("Start agent") { session.startAgent() }
-                        .buttonStyle(.borderedProminent)
-                        .tint(LoomColors.accent)
-                        .controlSize(.large)
+                    if let last = session.sessions.first {
+                        Button("Resume last session") { session.resume(last) }
+                            .buttonStyle(.borderedProminent)
+                            .tint(LoomColors.accent)
+                            .controlSize(.large)
+                            .disabled(session.starting)
+                        Text(Self.sessionLabel(last))
+                            .font(.system(size: 12))
+                            .foregroundColor(.secondary)
+                        Button("Start a new session") { session.startAgent() }
+                            .buttonStyle(.link)
+                            .disabled(session.starting)
+                    } else {
+                        Button("Start agent") { session.startAgent() }
+                            .buttonStyle(.borderedProminent)
+                            .tint(LoomColors.accent)
+                            .controlSize(.large)
+                            .disabled(session.starting)
+                    }
                 }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)

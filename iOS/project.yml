@@ -18,7 +18,7 @@ settings:
 packages:
   SwiftTerm:
     url: https://github.com/migueldeicaza/SwiftTerm
-    from: 1.20.0
+    exactVersion: 1.20.0
 targets:
   Loom:
     type: application

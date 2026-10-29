@@ -10,6 +10,7 @@ struct LoomApp: App {
         // Before anything reads the server list: an install that replaced the
         // React Native app inherits its container, servers and tokens included.
         LegacyServerImport.runIfNeeded()
+        LaunchServerAddress.applyIfGiven()
     }
 
     var body: some Scene {

@@ -116,7 +116,7 @@ struct LoomAPI {
 
     func projects() async throws -> [LoomProject] {
         let out: ProjectsResponse = try await request("/api/projects")
-        return out.projects ?? []
+        return out.projects
     }
 
     /// The same call, kept whole for the Add sheet, which also needs the root
@@ -172,7 +172,7 @@ struct LoomAPI {
 
     func tasks(projectId: String) async throws -> [LoomTaskMeta] {
         let out: TasksResponse = try await request(scoped("/api/tasks", projectId))
-        return out.tasks ?? []
+        return out.tasks
     }
 
     func activity() async throws -> ActivitySnapshot {

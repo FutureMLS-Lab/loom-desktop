@@ -83,6 +83,7 @@ final class TaskStore: ObservableObject {
     private var acked: [String: Double] = [:]
     private var finishByTask: [String: Double] = [:]
     private var labelsFetchedAt: Date = .distantPast
+    private var pollRevision = 0
     private var pollTask: Task<Void, Never>?
 
     static let activityInterval: TimeInterval = 4
@@ -177,6 +178,7 @@ final class TaskStore: ObservableObject {
         activeServerID = LoomSettings.activeServerID
         activeServerName = LoomSettings.activeName
         stop()
+        pollRevision += 1
         pills = []
         projects = []
         tasksByProject = [:]
@@ -254,18 +256,19 @@ final class TaskStore: ObservableObject {
     }
 
     private func tick() async {
-        let serverID = activeServerID
+        pollRevision += 1
+        let revision = pollRevision
         do {
             let snapshot = try await api.activity()
-            guard serverID == activeServerID else { return }
+            guard revision == pollRevision, !Task.isCancelled else { return }
             let entries = snapshot.tasks ?? [:]
 
             let unknown = entries.keys.contains { labelFor(key: $0) == nil }
             if unknown || Date().timeIntervalSince(labelsFetchedAt) > Self.labelsInterval {
-                await refreshLabels(projectIds: Set(entries.values.map(\.project)))
+                await refreshLabels(revision: revision)
             }
 
-            guard serverID == activeServerID else { return }
+            guard revision == pollRevision, !Task.isCancelled else { return }
             finishByTask = entries.mapValues { $0.finished_at ?? 0 }
             var next: [TaskPill] = []
             for (key, entry) in entries {
@@ -307,37 +310,39 @@ final class TaskStore: ObservableObject {
             failureStreak = 0
             Notifier.shared.reconcile(pills: pills)
         } catch {
+            guard revision == pollRevision, !Task.isCancelled else { return }
             failureStreak += 1
             let offline = ConnectionState.offline(error.localizedDescription)
             if connection != offline { connection = offline }
         }
     }
 
-    private func refreshLabels(projectIds: Set<String>) async {
-        do {
-            let all = try await api.projects()
-            if all != projects { projects = all }
-            // In parallel: one sequential round trip per project against a
-            // remote gateway added up to seconds of stalling every refresh.
-            let api = self.api
-            let fetched = await withTaskGroup(
-                of: (String, [LoomTaskMeta]).self
-            ) { group -> [String: [LoomTaskMeta]] in
-                for project in all {
-                    group.addTask {
-                        let metas = (try? await api.tasks(projectId: project.id)) ?? []
-                        return (project.id, metas)
-                    }
-                }
-                var result: [String: [LoomTaskMeta]] = [:]
-                for await (id, metas) in group { result[id] = metas }
-                return result
+    private func refreshLabels(revision: Int) async {
+        guard let all = try? await api.projects(),
+              revision == pollRevision, !Task.isCancelled else { return }
+
+        let api = self.api
+        let fetched = await withTaskGroup(of: (String, [LoomTaskMeta]?).self) { group in
+            var result: [String: [LoomTaskMeta]] = [:]
+            // Bound concurrent requests on the shared gateway.
+            for (index, project) in all.enumerated() {
+                if index >= 4, let (id, metas) = await group.next() { result[id] = metas }
+                guard !Task.isCancelled else { break }
+                group.addTask { (project.id, try? await api.tasks(projectId: project.id)) }
             }
-            if fetched != tasksByProject { tasksByProject = fetched }
-            labelsFetchedAt = Date()
-        } catch {
-            // Labels are cosmetic; pills fall back to slugs until this works.
+            for await (id, metas) in group { result[id] = metas }
+            return result
         }
+        guard revision == pollRevision, !Task.isCancelled else { return }
+
+        // A failed request has no fresh list. Only a successful empty list
+        // clears that project's tasks; projects removed by the server drop out.
+        let currentIDs = Set(all.map(\.id))
+        var next = tasksByProject.filter { currentIDs.contains($0.key) }
+        next.merge(fetched) { _, fresh in fresh }
+        if all != projects { projects = all }
+        if next != tasksByProject { tasksByProject = next }
+        if fetched.count == all.count { labelsFetchedAt = Date() }
     }
 
     private func labelFor(key: String) -> (title: String, project: String, agent: String)? {

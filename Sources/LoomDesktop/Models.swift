@@ -18,7 +18,7 @@ struct LoomProject: Decodable, Identifiable, Equatable {
 }
 
 struct ProjectsResponse: Decodable {
-    var projects: [LoomProject]?
+    var projects: [LoomProject]
     /// The directory the server was launched in. A new folder may only be
     /// created inside it, so the Add sheet offers its children as shortcuts
     /// and says so when a path is rejected.
@@ -58,7 +58,7 @@ struct LoomTaskMeta: Decodable, Equatable {
 }
 
 struct TasksResponse: Decodable {
-    var tasks: [LoomTaskMeta]?
+    var tasks: [LoomTaskMeta]
 }
 
 struct TaskDetail: Decodable {

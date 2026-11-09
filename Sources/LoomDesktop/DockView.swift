@@ -72,6 +72,10 @@ struct DockView: View {
         .padding(.horizontal, DockView.contentInset)
         .padding(.vertical, DockView.contentInset)
         .frame(maxWidth: .infinity, alignment: .leading)
+        // Above the card's fill and below the controls, so a press on any
+        // bare part of the card moves the panel and a press on a control
+        // still reaches the control.
+        .background(PanelDragArea())
         // The shadow hangs on the card's own backing shape rather than on the
         // card as a whole. A shadow over the whole card is computed from
         // everything inside it, so one pill animating had the compositor
@@ -94,6 +98,10 @@ struct DockView: View {
         // nothing on it gets sliced.
         .padding(DockView.cardMargin)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        // macOS 27 hands SwiftUI the hidden title bar as a 32-point top safe
+        // area. The window is already sized to the card and its margins, so
+        // honouring the inset too pushed the card down and cut its bottom off.
+        .ignoresSafeArea()
     }
 
     static var contentInset: CGFloat { (8 * DockScale.factor).rounded() }
@@ -386,6 +394,8 @@ private struct DockStatus: View {
             in: Capsule()
         )
         .help("\(working) working · \(finished) finished and unseen")
+        // Not a control, so it moves the panel like the bare card around it.
+        .overlay(PanelDragArea())
     }
 
     private var isOffline: Bool {

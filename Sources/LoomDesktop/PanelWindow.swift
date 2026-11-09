@@ -8,6 +8,25 @@ final class FirstMouseHostingView<Content: View>: NSHostingView<Content> {
     override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
 }
 
+/// The card itself, wherever no control covers it, as the handle that moves
+/// the panel. On macOS 27 `isMovableByWindowBackground` no longer moves a
+/// window from SwiftUI content — the press logs "Window move completed
+/// without beginning" and the panel stays put — so this view starts the move
+/// itself.
+struct PanelDragArea: NSViewRepresentable {
+    func makeNSView(context: Context) -> NSView { DragView() }
+    func updateNSView(_ nsView: NSView, context: Context) {}
+
+    private final class DragView: NSView {
+        // Every press comes to `mouseDown`, never down the background path.
+        override var mouseDownCanMoveWindow: Bool { false }
+        override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
+        override func mouseDown(with event: NSEvent) {
+            window?.performDrag(with: event)
+        }
+    }
+}
+
 /// The always-on-top dock. A titled window with both its title bar and its
 /// traffic lights hidden — the dock is a card, not a document window — while
 /// the SwiftUI header carries the loom menu and the hide button. It opens at

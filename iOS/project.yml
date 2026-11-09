@@ -9,13 +9,16 @@
 #
 # The watch app ships inside the iPhone app and gets its servers from it over
 # WatchConnectivity. Its complication reads what the watch app last saw, and
-# what it can fetch itself, through the shared app group.
+# what it can fetch itself, through the shared app group. Both live in
+# loom-watch (github.com/FutureMLS-Lab/loom-watch), whose targets are included
+# from a checkout beside this repository.
 name: Loom
+include:
+  - ../../loom-watch/watch.yml
 options:
   bundleIdPrefix: engineering.loom
   deploymentTarget:
     iOS: "18.0"
-    watchOS: "10.0"
   createIntermediateGroups: true
   developmentLanguage: en
 settings:
@@ -106,78 +109,3 @@ targets:
         SUPPORTS_MACCATALYST: false
         SUPPORTS_MAC_DESIGNED_FOR_IPHONE_IPAD: false
         ENABLE_PREVIEWS: true
-
-  LoomWatch:
-    type: application
-    platform: watchOS
-    sources:
-      - path: LoomWatch
-      - path: Loom/Common/Cancellation.swift
-      - path: ../Sources/LoomDesktop/LoomAPI.swift
-        group: Shared
-      - path: ../Sources/LoomDesktop/Models.swift
-        group: Shared
-      - path: ../Sources/LoomDesktop/LoomServers.swift
-        group: Shared
-    dependencies:
-      - target: LoomWatchWidgets
-    info:
-      path: LoomWatch/Info.plist
-      properties:
-        CFBundleDisplayName: Loom
-        CFBundleShortVersionString: $(MARKETING_VERSION)
-        CFBundleVersion: $(CURRENT_PROJECT_VERSION)
-        WKApplication: true
-        WKCompanionAppBundleIdentifier: engineering.loom.ios
-        ITSAppUsesNonExemptEncryption: false
-        NSAppTransportSecurity:
-          NSAllowsLocalNetworking: true
-    entitlements:
-      path: LoomWatch/LoomWatch.entitlements
-      properties:
-        com.apple.security.application-groups:
-          - group.engineering.loom
-    settings:
-      base:
-        PRODUCT_NAME: LoomWatch
-        PRODUCT_BUNDLE_IDENTIFIER: engineering.loom.ios.watchkitapp
-        # Installed inside the iPhone app, never on its own: without this an
-        # archive carries it twice and the export refuses it.
-        SKIP_INSTALL: true
-        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
-        ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME: AccentColor
-        ENABLE_PREVIEWS: true
-
-  LoomWatchWidgets:
-    type: app-extension
-    platform: watchOS
-    sources:
-      - path: LoomWatchWidgets
-      - path: LoomWatch/Glance/Glance.swift
-      - path: ../Sources/LoomDesktop/Models.swift
-        group: Shared
-      - path: ../Sources/LoomDesktop/LoomServers.swift
-        group: Shared
-    dependencies:
-      - sdk: WidgetKit.framework
-      - sdk: SwiftUI.framework
-    info:
-      path: LoomWatchWidgets/Info.plist
-      properties:
-        CFBundleDisplayName: Loom
-        CFBundleShortVersionString: $(MARKETING_VERSION)
-        CFBundleVersion: $(CURRENT_PROJECT_VERSION)
-        NSExtension:
-          NSExtensionPointIdentifier: com.apple.widgetkit-extension
-        NSAppTransportSecurity:
-          NSAllowsLocalNetworking: true
-    entitlements:
-      path: LoomWatchWidgets/LoomWatchWidgets.entitlements
-      properties:
-        com.apple.security.application-groups:
-          - group.engineering.loom
-    settings:
-      base:
-        PRODUCT_NAME: LoomWatchWidgets
-        PRODUCT_BUNDLE_IDENTIFIER: engineering.loom.ios.watchkitapp.widgets
-        SKIP_INSTALL: true

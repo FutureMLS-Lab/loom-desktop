@@ -288,68 +288,20 @@ binary somewhere else.
 ## Apple Watch
 
 The iPhone app (`iOS/`) carries a watch app for keeping an eye on agents
-from the wrist. It is built for looking and nudging, not for working: there
-is no terminal, plan or diff on it.
-
-- **Home** puts what needs you first — finishes you have not looked at, and
-  agents stopped on a question — then what is working, then agents waiting at
-  a prompt. Each row says what the agent last said, or what it is running.
-  Stopped tasks are under **All Tasks**.
-- **A task** shows the agent's latest words (headings, lists and tables
-  flattened to fit), the tool running now, and the steps since your last
-  message. From there: answer its question, pick a numbered reply, dictate or
-  scribble a message, send *Continue* / *Yes* / *No*, interrupt with Esc, or
-  start and stop the agent. Opening a finish acknowledges it everywhere, as
-  on the other clients.
-- **When an agent stops**, the watch taps if Loom is on screen, and otherwise
-  posts a notification with the agent's last words. **Reply** on the
-  notification sends straight to the agent.
-- **The complication** shows how many agents are working and how many
-  finishes wait for you, in the circular, corner, inline and rectangular
-  families.
-
-It gets its servers from the iPhone over WatchConnectivity — a token is no
-fun to type on a watch — and follows the phone when the phone switches
-server; picking another one on the watch sticks until the phone switches
-again. Requests go to the server directly, over the watch's Wi-Fi or through
-the phone.
-
-What a watch allows in the background sets the limits. While Loom is on
-screen it polls every 4 s, and every 20 s while it stays frontmost with the
-wrist down. After that, watchOS wakes it a few times an hour at most — up to
-four with the complication on the face, far fewer without — so a finish can
-take a while to be announced unless the app is up. The task view never reads
-`/api/tasks/<slug>`, which inlines every markdown file under the task; the
-pane target comes from `claude-sessions` instead.
-
-The watch app is a target of the same XcodeGen project and is embedded in the
-iPhone app, so `scripts/ios-install.sh` and `scripts/ios-testflight.sh`
-deliver it too. From the iPhone's Watch app, install it under *Available
-Apps* if automatic app install is off. The first signed build registers
-`engineering.loom.ios.watchkitapp`, its widget extension and the app group
-`group.engineering.loom` for the team.
-
-To try it without a phone or a server, against the mock:
+from the wrist. Its code is in
+[loom-watch](https://github.com/FutureMLS-Lab/loom-watch): `iOS/project.yml`
+includes that repository's `watch.yml`, so check it out beside this one
+before generating the iPhone project:
 
 ```bash
-xcodebuild -downloadPlatform watchOS   # once: a watchOS simulator runtime
-scripts/watch-sim.sh                   # → /tmp/loom-watch/shots/home.png
-LOOM_WATCH_OPEN=quant scripts/watch-sim.sh
+git clone https://github.com/FutureMLS-Lab/loom-watch.git ../loom-watch
 ```
 
-Debug builds read `-LoomWatchServer <url>` (and `-LoomWatchToken`) in place
-of the list the phone would send, and `-LoomWatchOpen <title>` opens a task
-once it is listed.
-
-| File | What it is |
-| --- | --- |
-| `iOS/Loom/App/WatchSync.swift` | iPhone side: sends the server list whenever it changes, and on request |
-| `iOS/LoomWatch/Workspace/WatchStore.swift` | Polls activity, reads ahead the conversations worth a row, acknowledges finishes |
-| `iOS/LoomWatch/Task/TaskSession.swift` | The open task: its feed's tail, sending, answering, Esc, start and stop |
-| `iOS/LoomWatch/Supervision/` | Which finishes are news (`FinishLedger`), taps and notifications, background checks |
-| `iOS/LoomWatch/Sync/PhoneSync.swift` | Watch side of the server list |
-| `iOS/LoomWatch/Glance/Glance.swift` | What the complication shows, shared with the widget through the app group |
-| `iOS/LoomWatchWidgets/` | The complication, which also fetches for itself when its timeline is due |
+The watch app is embedded in the iPhone app, so `scripts/ios-install.sh` and
+`scripts/ios-testflight.sh` deliver it too. The iPhone side is
+`iOS/Loom/App/WatchSync.swift`, which sends the watch the server list
+whenever it changes, and on request. loom-watch's README covers the rest,
+down to running it in a simulator against the mock.
 
 ## Files
 

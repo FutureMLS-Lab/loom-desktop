@@ -11,6 +11,9 @@ struct LoomApp: App {
         // React Native app inherits its container, servers and tokens included.
         LegacyServerImport.runIfNeeded()
         LaunchServerAddress.applyIfGiven()
+        // At launch rather than on first appearance: a watch asking for the
+        // list wakes this app in the background, with no scene to appear.
+        WatchSync.shared.start()
     }
 
     var body: some Scene {

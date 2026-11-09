@@ -17,6 +17,8 @@ Serves just enough of the Loom HTTP API on http://127.0.0.1:8787:
                                         as interview/start does
 - /api/tasks/<slug>/conversation/answer, /api/tmux/send-key,
   /api/tasks/<slug>/interview/start   — accepted and reflected in the feed
+- /api/tasks/<slug>/interview/stop    — closes the pane: off the activity
+                                        snapshot, feed offline
 
 Run:  python3 scripts/mock-loom.py [port]
 """
@@ -346,6 +348,21 @@ class Handler(BaseHTTPRequestHandler):
                     ACTIVITY[key]["finished_at"] = 0
                 return self._json({"ok": True})
             if path == "/api/tmux/send-key":
+                # Escape stops a working agent the way a real one stops: the
+                # running tool is cancelled and the task reads as finished.
+                if body.get("key") == "Escape":
+                    for project, tasks in TASKS.items():
+                        for t in tasks:
+                            key = f"{project}/{t['slug']}"
+                            if t.get("tmux_interview_target") != body.get("target") or not feed_working(key):
+                                continue
+                            ACTIVITY[key]["working"] = False
+                            ACTIVITY[key]["finished_at"] = time.time()
+                            for m in FEEDS.get(key, {}).get("messages", []):
+                                if m.get("tool", {}).get("status") == "running":
+                                    m["tool"]["status"] = "canceled"
+                            FEEDS.setdefault(key, {"session_id": None, "messages": []})["messages"].append(
+                                msg("event", text="Interrupted by user"))
                 return self._json({"ok": True})
             if len(parts) == 5 and parts[3] == "claude" and parts[4] == "send":
                 key, _ = self._key(parsed, parts[2])
@@ -373,6 +390,15 @@ class Handler(BaseHTTPRequestHandler):
                 ACTIVITY.setdefault(key, {"project": project, "slug": parts[2],
                                           "working": False, "finished_at": 0})
                 return self._json({"ok": True, "target": f"loom-mock-{parts[2]}:0.0"})
+            # The pane goes, so the task drops out of the activity snapshot
+            # and its feed reads offline until it is started again.
+            if len(parts) == 5 and parts[3] in ("interview", "claude") and parts[4] == "stop":
+                key, project = self._key(parsed, parts[2])
+                for t in TASKS.get(project, []):
+                    if t["slug"] == parts[2]:
+                        t["tmux_interview_target"] = ""
+                ACTIVITY.pop(key, None)
+                return self._json({"ok": True})
         self._json({"error": "unknown route"}, 404)
 
 

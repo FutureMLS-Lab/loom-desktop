@@ -6,6 +6,9 @@ import SwiftUI
 struct SettingsView: View {
     @State private var servers: [LoomServer] = LoomSettings.servers
     @State private var selectedID: String = LoomSettings.activeServerID
+    /// Bumped when a browser sign-in lands, so the status beside the button
+    /// is read again.
+    @State private var signedInTick = 0
     var onApply: () -> Void
 
     private var selectedIndex: Int? {
@@ -37,6 +40,9 @@ struct SettingsView: View {
         }
         .padding(18)
         .frame(width: 620)
+        .onReceive(NotificationCenter.default.publisher(for: BrowserSignIn.didSignIn)) { _ in
+            signedInTick += 1
+        }
     }
 
     /// A bounded panel with the add/remove bar attached at its foot, the way
@@ -126,6 +132,21 @@ struct SettingsView: View {
                         .foregroundColor(.secondary)
                         .fixedSize(horizontal: false, vertical: true)
                 }
+                VStack(alignment: .leading, spacing: 4) {
+                    HStack(spacing: 8) {
+                        Button("Sign in with Google…") {
+                            BrowserSignIn.shared.signIn(baseURL: servers[index].baseURL)
+                        }
+                        let signedIn = isSignedIn(servers[index].baseURL)
+                        Text(signedIn ? "Signed in" : "Not signed in")
+                            .font(.system(size: 10.5))
+                            .foregroundColor(signedIn ? LoomColors.green : .secondary)
+                    }
+                    Text("For a Loom behind a Google sign-in (IAP), such as https://NAME-PORT.loop.corp.discoloop.com. Once signed in, the token above is not sent.")
+                        .font(.system(size: 10.5))
+                        .foregroundColor(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
             }
             .frame(maxWidth: .infinity, alignment: .leading)
         } else {
@@ -133,6 +154,12 @@ struct SettingsView: View {
                 .foregroundColor(.secondary)
                 .frame(maxWidth: .infinity, alignment: .leading)
         }
+    }
+
+    /// Reads `signedInTick` so SwiftUI redraws this when a sign-in lands.
+    private func isSignedIn(_ baseURL: String) -> Bool {
+        _ = signedInTick
+        return BrowserAuth.isSignedIn(baseURL)
     }
 
     private func field(_ label: String, text: Binding<String>, prompt: String) -> some View {

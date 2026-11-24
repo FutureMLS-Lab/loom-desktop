@@ -60,10 +60,7 @@ struct LoomAPI {
         var req = URLRequest(url: url)
         req.httpMethod = method
         req.setValue("application/json", forHTTPHeaderField: "Accept")
-        let token = LoomSettings.token
-        if !token.isEmpty {
-            req.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
-        }
+        BrowserAuth.authorize(&req)
         if let body {
             req.setValue("application/json", forHTTPHeaderField: "Content-Type")
             req.httpBody = try JSONSerialization.data(withJSONObject: body)
@@ -80,6 +77,9 @@ struct LoomAPI {
             }
         }()
         let (data, response) = try await session.data(for: req)
+        if BrowserAuth.noteResponse(response) {
+            throw LoomAPIError(message: "Signing in to Loom…", status: 401)
+        }
         let status = (response as? HTTPURLResponse)?.statusCode ?? 0
         guard (200..<300).contains(status) else {
             let detail = (try? JSONDecoder().decode(OkResponse.self, from: data))?.error
@@ -495,10 +495,7 @@ struct LoomAPI {
         ) else { return nil }
         var request = URLRequest(url: url)
         request.setValue("no-store", forHTTPHeaderField: "Cache-Control")
-        let token = LoomSettings.token
-        if !token.isEmpty {
-            request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
-        }
+        BrowserAuth.authorize(&request)
         return request
     }
 
@@ -543,11 +540,9 @@ struct LoomAPI {
             throw LoomAPIError(message: "Invalid asset URL", status: 0)
         }
         var request = URLRequest(url: url)
-        let token = LoomSettings.token
-        if !token.isEmpty {
-            request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
-        }
+        BrowserAuth.authorize(&request)
         let (data, response) = try await Self.session.data(for: request)
+        BrowserAuth.noteResponse(response)
         let http = response as? HTTPURLResponse
         guard let http, (200..<300).contains(http.statusCode) else {
             throw LoomAPIError(
@@ -579,10 +574,7 @@ struct LoomAPI {
         request.httpMethod = "POST"
         request.timeoutInterval = timeout
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        let token = LoomSettings.token
-        if !token.isEmpty {
-            request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
-        }
+        BrowserAuth.authorize(&request)
         request.httpBody = try? JSONSerialization.data(withJSONObject: ["stream_id": streamId])
         let done = DispatchSemaphore(value: 0)
         URLSession.shared.dataTask(with: request) { _, _, _ in done.signal() }.resume()

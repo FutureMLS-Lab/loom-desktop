@@ -658,7 +658,10 @@ private final class PtyStreamDelegate: NSObject, URLSessionDataDelegate {
         didReceive response: URLResponse,
         completionHandler: @escaping (URLSession.ResponseDisposition) -> Void
     ) {
-        if let http = response as? HTTPURLResponse { onResponse(http) }
+        if let http = response as? HTTPURLResponse {
+            BrowserAuth.noteResponse(http)
+            onResponse(http)
+        }
         completionHandler(.allow)
     }
 

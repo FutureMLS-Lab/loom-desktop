@@ -26,6 +26,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             loomBoot("another instance is already running; standing down")
             exit(0)
         }
+        BrowserSignIn.shared.start()
         DistributedNotificationCenter.default().addObserver(
             forName: .init(Self.summonNotification), object: nil, queue: .main
         ) { [weak self] _ in
@@ -46,6 +47,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         buildMainMenu()
 
         SettingsWindowController.shared.store = store
+        // A sign-in (or a quiet renewal) makes requests that were failing
+        // good again: ask now rather than at the next poll.
+        NotificationCenter.default.addObserver(
+            forName: BrowserSignIn.didSignIn, object: nil, queue: .main
+        ) { [weak store] _ in
+            Task { @MainActor in store?.refreshNow() }
+        }
 
         panel = PanelWindow(store: store)
         if !panel.isPanelHidden {

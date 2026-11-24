@@ -200,9 +200,10 @@ serves the Loom HTTP API: the loom-app gateway (which holds the Loom token
 itself, so the app only needs the gateway's own token), or a
 `loom web --auth-token …` instance reachable directly or over an SSH tunnel.
 
-A Loom behind a Google sign-in (IAP, or a proxy built on it) works too: use
-**Sign in with Google…** in Settings, or just connect — the app opens a sign-in
-window when the proxy asks for one. The session lives in WebKit's store, its
+A Loom behind a Google sign-in (IAP, or a proxy built on it) works too: turn
+on **Behind a Google sign-in (IAP)** for that server in Settings (off by
+default; the token is used otherwise), then **Sign in with Google…**, or just
+connect — the app opens a sign-in window when the proxy asks for one. The session lives in WebKit's store, its
 cookie is sent with every request instead of the token, and it is renewed
 quietly when it expires (`BrowserSignIn.swift`). The Loom behind the proxy has
 to trust the proxy's own identity header, since the token never reaches it.

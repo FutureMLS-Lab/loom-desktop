@@ -133,16 +133,20 @@ struct SettingsView: View {
                         .fixedSize(horizontal: false, vertical: true)
                 }
                 VStack(alignment: .leading, spacing: 4) {
-                    HStack(spacing: 8) {
-                        Button("Sign in with Google…") {
-                            BrowserSignIn.shared.signIn(baseURL: servers[index].baseURL)
+                    Toggle("Behind a Google sign-in (IAP)", isOn: $servers[index].googleSignIn)
+                        .font(.system(size: 11, weight: .medium))
+                    if servers[index].googleSignIn {
+                        HStack(spacing: 8) {
+                            Button("Sign in with Google…") {
+                                BrowserSignIn.shared.signIn(baseURL: servers[index].baseURL)
+                            }
+                            let signedIn = isSignedIn(servers[index].baseURL)
+                            Text(signedIn ? "Signed in" : "Not signed in")
+                                .font(.system(size: 10.5))
+                                .foregroundColor(signedIn ? LoomColors.green : .secondary)
                         }
-                        let signedIn = isSignedIn(servers[index].baseURL)
-                        Text(signedIn ? "Signed in" : "Not signed in")
-                            .font(.system(size: 10.5))
-                            .foregroundColor(signedIn ? LoomColors.green : .secondary)
                     }
-                    Text("For a Loom behind a Google sign-in (IAP), such as https://NAME-PORT.loop.corp.discoloop.com. Once signed in, the token above is not sent.")
+                    Text("Off: the token above is used. On: for a Loom reached through Google IAP, such as https://NAME-PORT.loop.corp.discoloop.com — the app signs in with Google and sends that session instead of the token.")
                         .font(.system(size: 10.5))
                         .foregroundColor(.secondary)
                         .fixedSize(horizontal: false, vertical: true)

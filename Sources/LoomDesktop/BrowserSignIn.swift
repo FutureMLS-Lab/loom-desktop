@@ -55,7 +55,7 @@ enum BrowserAuth {
     /// alongside the cookie would lock us out. The Loom behind such a proxy
     /// trusts the proxy's own signed header instead.
     static func authorize(_ request: inout URLRequest) {
-        if let url = request.url {
+        if LoomSettings.googleSignIn, let url = request.url {
             let session = cookies(for: url)
             if !session.isEmpty {
                 request.httpShouldHandleCookies = false
@@ -91,7 +91,7 @@ enum BrowserAuth {
     /// proxy wants a sign-in. Returns whether it did.
     @discardableResult
     static func noteResponse(_ response: URLResponse?) -> Bool {
-        guard needsSignIn(response) else { return false }
+        guard LoomSettings.googleSignIn, needsSignIn(response) else { return false }
         Task { @MainActor in BrowserSignIn.shared.renew() }
         return true
     }
@@ -157,7 +157,7 @@ final class BrowserSignIn: NSObject, WKNavigationDelegate, WKHTTPCookieStoreObse
     /// Quietly renew the current server's session. Rate-limited: every failing
     /// request calls this, and one renewal answers them all.
     func renew() {
-        guard !inFlight, Date().timeIntervalSince(lastRenewal) > 20 else { return }
+        guard LoomSettings.googleSignIn, !inFlight, Date().timeIntervalSince(lastRenewal) > 20 else { return }
         begin(baseURL: LoomSettings.baseURL, interactive: false)
     }
 

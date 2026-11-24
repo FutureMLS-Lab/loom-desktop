@@ -7,12 +7,36 @@ struct LoomServer: Identifiable, Codable, Hashable {
     var name: String
     var baseURL: String
     var token: String
+    /// Reached through a Google sign-in (IAP) instead of the token. Off unless
+    /// chosen in Settings: with it off, nothing here ever opens a sign-in.
+    var googleSignIn: Bool
 
-    init(id: String = UUID().uuidString, name: String, baseURL: String, token: String) {
+    init(
+        id: String = UUID().uuidString,
+        name: String,
+        baseURL: String,
+        token: String,
+        googleSignIn: Bool = false
+    ) {
         self.id = id
         self.name = name
         self.baseURL = baseURL
         self.token = token
+        self.googleSignIn = googleSignIn
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case id, name, baseURL, token, googleSignIn
+    }
+
+    /// A list saved before `googleSignIn` existed decodes with it off.
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        id = try c.decode(String.self, forKey: .id)
+        name = try c.decode(String.self, forKey: .name)
+        baseURL = try c.decode(String.self, forKey: .baseURL)
+        token = try c.decode(String.self, forKey: .token)
+        googleSignIn = try c.decodeIfPresent(Bool.self, forKey: .googleSignIn) ?? false
     }
 
     /// A readable default when the name field is left empty — the host is what
@@ -124,6 +148,11 @@ enum LoomSettings {
     static var token: String {
         (active?.token ?? UserDefaults.standard.string(forKey: tokenKey) ?? "")
             .trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    /// Whether the current server is reached through a Google sign-in.
+    static var googleSignIn: Bool {
+        active?.googleSignIn ?? false
     }
 
     /// The current server's name, for anywhere that has to say which Loom this
